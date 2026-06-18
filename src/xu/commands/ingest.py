@@ -167,16 +167,19 @@ def cmd_ingest_commit(args) -> dict:
         if not pages:
             return error("no content to commit after splitting", "EmptyContent")
 
-        # Level-2 dedup: source file hash (CONST-ING-3, PRIN-ING-3)
+        # Level-2 dedup: source file hash across ALL pages (CONST-ING-3,
+        # PRIN-ING-3). Note: Level-2 is "所有 Page" — NOT filtered by active —
+        # so re-ingesting the same source is caught even against a deactivated
+        # page. (Level-1 below is active-only, per the design's contrast.)
         if source_hash:
             dup = conn.execute(
-                "SELECT uid, title FROM nodes WHERE source_hash=? AND active=1 LIMIT 1",
+                "SELECT uid, title, active FROM nodes WHERE source_hash=? LIMIT 1",
                 (source_hash,),
             ).fetchone()
             if dup:
                 return warning(
                     {"existing_uid": dup["uid"], "existing_title": dup["title"],
-                     "source_hash": source_hash},
+                     "existing_active": bool(dup["active"]), "source_hash": source_hash},
                     f"source already ingested as {dup['uid']} (BAN-ING-4); not re-created",
                     hints=["use 'revise' to update; ingest never overwrites (PRIN-ING-3)"],
                 )

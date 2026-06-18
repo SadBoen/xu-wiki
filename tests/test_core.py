@@ -62,6 +62,18 @@ def test_merge_adjacent_slices():
     assert merged[0]["hits"] == {"k1", "k2"}
 
 
+def test_merge_recomputes_text_from_document():
+    doc = "X" * 120
+    slices = [
+        {"start": 0, "end": 40, "text": doc[0:40], "hits": {"k1"}, "line": 1},
+        {"start": 60, "end": 110, "text": doc[60:110], "hits": {"k2"}, "line": 2},
+    ]
+    merged = merge_slices(slices, radius=80, text=doc)
+    assert len(merged) == 1
+    assert merged[0]["start"] == 0 and merged[0]["end"] == 110
+    assert merged[0]["text"] == doc[0:110]  # spans the whole merged region (PRIN-QRY-9)
+
+
 def test_extract_nouns_nonempty():
     nouns = extract_nouns("convolutional neural network architecture design")
     assert len(nouns) >= 1

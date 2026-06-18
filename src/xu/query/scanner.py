@@ -50,11 +50,17 @@ def _scan_rg(search_dir: Path, keywords: list[str], timeout: float) -> dict:
             path = d["path"]["text"]
             line_no = d["line_number"]
             text = d["lines"]["text"]
+            line_bytes = text.encode("utf-8")
             for sm in d.get("submatches", []):
+                # rg reports byte offsets; convert to a CHARACTER offset so it
+                # matches the Python-re fallback and the char-based slicer
+                # (CONST-QRY-8 determinism on CJK text).
+                byte_start = sm["start"]
+                col_char = len(line_bytes[:byte_start].decode("utf-8", errors="ignore"))
                 results[kw].append({
                     "file": path,
                     "line": line_no,
-                    "col": sm["start"],
+                    "col": col_char,
                     "match": sm["match"]["text"],
                     "line_text": text.rstrip("\n"),
                 })

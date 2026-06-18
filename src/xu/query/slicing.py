@@ -46,10 +46,13 @@ def _expand_right(text: str, pos: int, soft: int, hard: int) -> int:
     return hard_bound
 
 
-def merge_slices(slices: list[dict], radius: int) -> list[dict]:
+def merge_slices(slices: list[dict], radius: int, text: str | None = None) -> list[dict]:
     """Merge same-file slices whose physical distance < radius (PRIN-QRY-9).
 
     Each slice dict: {start, end, text, hits:set, line}. Returns merged blocks.
+    When `text` (the full document) is provided, a merged block's `text` is
+    re-sliced from [start, end] so the context block actually spans the merged
+    region (otherwise scoring & snippets would only see the first slice).
     """
     if not slices:
         return []
@@ -59,9 +62,11 @@ def merge_slices(slices: list[dict], radius: int) -> list[dict]:
     for s in ordered[1:]:
         last = merged[-1]
         if s["start"] - last["end"] < radius:
-            # overlap or close → merge
+            # overlap or close → merge into one context block
             last["end"] = max(last["end"], s["end"])
             last["hits"] |= set(s["hits"])
+            if text is not None:
+                last["text"] = text[last["start"]:last["end"]]
         else:
             nb = dict(s)
             nb["hits"] = set(s["hits"])

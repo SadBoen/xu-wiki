@@ -104,7 +104,7 @@ def cmd_query(args) -> dict:
             slices.append({"start": s, "end": e, "text": snippet,
                            "hits": {kw}, "line": h["line"]})
 
-        merged = merge_slices(slices, radius)
+        merged = merge_slices(slices, radius, text)
         for blk in merged:
             score = _score_block(blk, core, expansion, core_w, exp_w, density, idf_weight, text)
             scored_blocks.append({
