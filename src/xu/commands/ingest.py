@@ -185,6 +185,7 @@ def cmd_ingest_commit(args) -> dict:
         dup_pages = []
         multi = len(pages) > 1
         for idx, page_body in enumerate(pages):
+            page_body = page_body.rstrip()  # normalize to match fm.render storage
             content_hash = sha256_text(page_body)
             # Level-1 dedup: body hash (CONST-ING-3)
             dup = conn.execute(
@@ -197,7 +198,9 @@ def cmd_ingest_commit(args) -> dict:
 
             uid = gen_uid()
             title = args.title if not multi else f"{args.title} (part {idx + 1}/{len(pages)})"
-            slug = f"{safe_slug(args.title)}-{idx + 1}" if multi else safe_slug(args.title)
+            uid_suffix = uid.split("-", 1)[1].lower()
+            base_slug = safe_slug(args.title)
+            slug = f"{base_slug}-{idx + 1}-{uid_suffix}" if multi else f"{base_slug}-{uid_suffix}"
             ts = now_ts()
 
             frontmatter = {
