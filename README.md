@@ -52,6 +52,38 @@ python3 -m venv .venv
 `install` sets up capabilities only; it never creates wiki data. Set `XU_HOME`
 to relocate the global config/registry directory (defaults to `~/.xu`).
 
+## Configuring MinerU (optional)
+
+MinerU is the first parser tried for PDF/DOCX/PPTX in `ingest-file`. It is
+**optional** — when no key is configured, the chain silently falls back to
+`markitdown` (CONST-ING-1, PRIN-ING-5). The key is resolved in this order:
+
+1. `--api-key` argument (if your wrapper passes one)
+2. environment variable `MINERU_API_KEY`
+3. `~/.xu/config.yaml` field `mineru.api_key` (overridable with `XU_HOME`)
+
+```bash
+# preferred for one-off runs (never touches a file)
+export MINERU_API_KEY="<your-key>"
+
+# or persist in the global config (file is OUTSIDE the project, not git-tracked)
+xu-wiki install                                  # creates ~/.xu/config.yaml skeleton
+python3 -c "
+import os
+from xu.utils.config import load_global_config, save_global_config
+cfg = load_global_config()
+cfg['mineru']['api_key'] = os.environ['MY_KEY']
+save_global_config(cfg)
+"
+chmod 600 ~/.xu/config.yaml                     # private permissions
+```
+
+The configured key is sent as `Authorization: Bearer <key>` against the MinerU
+v4 Precision Extract API (`/api/v4/file-urls/batch` →
+`/api/v4/extract-results/batch/{batch_id}` → ZIP → `full.md`). Any failure
+(network error, 401, non-zero `code`, ZIP without `full.md`) returns `""` and
+the next parser in the chain takes over.
+
 ## Quick start
 
 ```bash
