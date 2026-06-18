@@ -41,22 +41,42 @@ Use it whenever the user wants to:
 ```
 xu-wiki install                        # capabilities only; never touches wiki data
 xu-wiki uninstall [--execute]          # default dry-run
-xu-wiki create --name <n> --path <abs> # empty template at <abs>
-xu-wiki ingest-file --wiki <w> --file <abs>  # parse → split → IDF → write L1
-xu-wiki query   --wiki <w> --q <str> [--top-k N] [--mode fast|deep] [--neighbors]
-xu-wiki read    --wiki <w> --uid <uid>
-xu-wiki nodes   --wiki <w> [--layer Page|List|Report] [--limit N]
-xu-wiki query-relation add --wiki <w> --from <uid> --to <uid> --name <r> [--comment <c>]
-xu-wiki query-relation list --wiki <w> --from <uid>
-xu-wiki list create --wiki <w> --title <t> --members <uid,uid,...> [--dimension <d>]
+xu-wiki create --name <n> --path <abs> [--alias <a>]   # empty template at <abs>
+xu-wiki wikis                          # list registered wikis (read-only)
+
+# ingest is TWO phases (PRIN-ING-1): parse to pending, then commit to L1.
+xu-wiki ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
+xu-wiki ingest-commit --wiki <w> [--pending <f>] [--title <t>] [--node-path <p>] \
+                      [--template article|table|gallery] [--digest <d>] \
+                      [--relations '<json>'] [--native '<md>'] [--author <a>]   # Phase 2: only write entry
+
+xu-wiki query --wiki <w> --core <kw,kw> [--expansion <kw,kw>] [--top-k N] \
+              [--neighbors] [--include-inactive]    # core vs expansion are graded by the Agent
+xu-wiki read  --wiki <w> --uid <uid>
+xu-wiki nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
+
+xu-wiki query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
+                            --relation-name <r> [--comment <c>]
+xu-wiki query-relation list --wiki <w> --from-uid <uid>
+
+xu-wiki list create --wiki <w> --title <t> --members <uid,uid,...> \
+                    [--dimension <d>] [--node-path <p>]
 xu-wiki list show   --wiki <w> --uid <uid>
-xu-wiki report create --wiki <w> --title <t> --evidence <uid,uid,...> [--conclusion <c>]
+xu-wiki report create --wiki <w> --title <t> --body <md> \
+                      --references <uid,uid,...> [--node-path <p>]   # references = evidence chain
 xu-wiki report show   --wiki <w> --uid <uid>
-xu-wiki doctor [--fix]                 # default: all 6 checks
-xu-wiki doctor-fields|files|relations|l1-immutable|report-evidence|idf [--fix]
+
+xu-wiki doctor-all --wiki <w> [--fix]   # run all 6 checks
+xu-wiki doctor-fields|doctor-files|doctor-relations|doctor-l1-immutable|\
+        doctor-report-evidence|doctor-idf --wiki <w> [--fix]
 xu-wiki delete-node --wiki <w> --uid <uid> [--force]
-xu-wiki rebuild  --wiki <w> --granularity keep-l1|keep-l1-l2|full
+xu-wiki rebuild     --wiki <w> --granularity keep-l1|keep-l1-l2|full
 ```
+
+NOTE: keyword grading is the Agent's job (PRIN-ARCH-12 / DESIGN-ARCH-4). The CLI
+does NOT split a free-text query — you pass already-graded `--core` (entities,
+weighted high) and `--expansion` (synonyms, weighted low) comma lists. There is
+no `--q`, no `--mode`, no `--limit`.
 
 ## Hard rules the agent MUST respect
 
@@ -72,7 +92,8 @@ xu-wiki rebuild  --wiki <w> --granularity keep-l1|keep-l1-l2|full
 5. **No secret in code or git** — MinerU key lives in `~/.xu/config.yaml`
    (outside this repo) or `MINERU_API_KEY` env. Never hardcode.
 6. **All commands return 4-key JSON** — `{status, data, message, hints}`.
-   `status ∈ {ok, warning, error}`. `hints` is for the agent, not the user.
+   `status ∈ {success, warning, error}` (warning = partial, e.g. SHA256 dup;
+   error carries `data.error_class`). `hints` is for the agent, not the user.
 7. **Output is deterministic** — given same wiki + same input, output bytes
    are identical. Do not inject timestamps, random IDs, or locale into the
    response body. Use `--wiki` rather than relying on CWD.
@@ -83,8 +104,8 @@ Every command prints one JSON object to stdout. Read `data.*` for facts and
 `hints` for the next step. Examples:
 
 ```json
-{"status": "ok", "data": {"uid": "2026-ABCD1234", "title": "BERT"},
- "message": "read complete", "hints": ["query-relation list --from ..."]}
+{"status": "success", "data": {"uid": "2026-ABCD1234", "title": "BERT"},
+ "message": "read complete", "hints": ["query-relation list --from-uid ..."]}
 ```
 
 On a `list_hint` / `report_hint` field, the agent decides whether to follow up
@@ -100,25 +121,27 @@ xu-wiki install
 # 2. create a wiki
 xu-wiki create --name research --path /abs/path/to/wiki
 
-# 3. ingest L1 from a source file
-xu-wiki ingest-file --wiki research --file /abs/path/to/source.pdf
+# 3. ingest L1 — two phases (PRIN-ING-1)
+xu-wiki ingest-file   --wiki research --file /abs/path/to/source.pdf   # → pending
+xu-wiki ingest-commit --wiki research --title "BERT" --template article # → L1 entry
 
-# 4. query
-xu-wiki query --wiki research --q "transformer attention" --top-k 5
+# 4. query (Agent grades the keywords into core vs expansion)
+xu-wiki query --wiki research --core "transformer,attention" \
+  --expansion "self-attention,encoder" --top-k 5
 
 # 5. wire relations
 xu-wiki query-relation add --wiki research \
-  --from <uid-A> --to <uid-B> --name cites --comment "section 3.2"
+  --from-uid <uid-A> --to-uid <uid-B> --relation-name cites --comment "section 3.2"
 
 # 6. L2 / L3
 xu-wiki list   create --wiki research --title "top 10 models" \
   --members <uid1>,<uid2>,... --dimension "by-parameter-count"
 xu-wiki report create --wiki research --title "transformer survey" \
-  --evidence <uid1>,<uid2>,<uid3> --conclusion "..."
+  --references <uid1>,<uid2>,<uid3> --body "## findings ..."
 
 # 7. health
 xu-wiki doctor-all --wiki research
-xu-wiki rebuild   --wiki research --granularity keep-l1
+xu-wiki rebuild    --wiki research --granularity keep-l1
 ```
 
 ## See also
