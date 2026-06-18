@@ -6,16 +6,19 @@ not a bug. NEVER hardcode the key here.
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import time
 import urllib.request
+import zipfile
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".ppt", ".doc", ".xls", ".xlsx"}
 _API_BATCH_URLS = "https://mineru.net/api/v4/file-urls/batch"
-_API_RESULTS = "https://mineru.net/api/v4/extract-results/batch"
+_API_RESULTS = "https://mineru.net/api/v4/extract-results/batch/{batch_id}"
 _API_MAX_PAGES = 200
 _API_MAX_SIZE_MB = 200
+_MODEL_VERSION = "vlm"
 _POLL_INTERVAL = 3
 _POLL_TIMEOUT = 600
 
@@ -60,41 +63,73 @@ def mineru_parse(path: str, api_key: str = "") -> str:
 
 
 def _do_mineru(path: str, key: str) -> str:
+    """Real MinerU v4 batch flow: request upload URL → PUT file → poll batch
+    results → download result ZIP → return full.md content.
+
+    Matches the official Precision Extract API (api/v4/file-urls/batch +
+    api/v4/extract-results/batch/{batch_id}).
+    """
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
     filename = os.path.basename(path)
+
+    # 1. request a presigned upload URL (batch). is_ocr per-file; model_version outer.
     body = json.dumps({
         "enable_formula": True,
         "enable_table": True,
+        "model_version": _MODEL_VERSION,
         "files": [{"name": filename, "is_ocr": True}],
     }).encode("utf-8")
     req = urllib.request.Request(_API_BATCH_URLS, data=body, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
+    if data.get("code") != 0:
+        return ""
     upload_url = data["data"]["file_urls"][0]
     batch_id = data["data"]["batch_id"]
 
+    # 2. PUT the raw bytes to the presigned URL (no Content-Type header per docs)
     with open(path, "rb") as f:
         put = urllib.request.Request(upload_url, data=f.read(), method="PUT")
         urllib.request.urlopen(put, timeout=120)
 
+    # 3. poll batch results until this file's state is done/failed
     deadline = time.time() + _POLL_TIMEOUT
+    poll_url = _API_RESULTS.format(batch_id=batch_id)
     while time.time() < deadline:
         time.sleep(_POLL_INTERVAL)
-        poll = urllib.request.Request(
-            f"{_API_RESULTS}?batch_id={batch_id}", headers=headers, method="GET"
-        )
+        poll = urllib.request.Request(poll_url, headers=headers, method="GET")
         with urllib.request.urlopen(poll, timeout=30) as resp:
             result = json.loads(resp.read())
+        if result.get("code") != 0:
+            continue
         extract = result.get("data", {}).get("extract_result", [])
-        if extract and extract[0].get("state") == "done":
-            md_url = extract[0].get("full_zip_url") or extract[0].get("markdown_url")
-            if md_url:
-                with urllib.request.urlopen(md_url, timeout=60) as resp:
-                    return resp.read().decode("utf-8", errors="replace")
-            return ""
-        if extract and extract[0].get("state") == "failed":
+        if not extract:
+            continue
+        entry = extract[0]
+        state = entry.get("state")
+        if state == "done":
+            zip_url = entry.get("full_zip_url")
+            return _download_full_md(zip_url) if zip_url else ""
+        if state == "failed":
             return ""
     return ""
+
+
+def _download_full_md(zip_url: str) -> str:
+    """Download the result ZIP and return the content of full.md."""
+    try:
+        with urllib.request.urlopen(zip_url, timeout=120) as resp:
+            blob = resp.read()
+        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+            names = zf.namelist()
+            target = "full.md" if "full.md" in names else next(
+                (n for n in names if n.endswith(".md")), None
+            )
+            if not target:
+                return ""
+            return zf.read(target).decode("utf-8", errors="replace")
+    except Exception:
+        return ""
