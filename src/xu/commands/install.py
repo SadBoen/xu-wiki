@@ -1,11 +1,16 @@
 """install / uninstall — software lifecycle (03-install.md / 04-uninstall.md).
 
 install装能力不装数据 (PRIN-INST-1): sets up a project-local venv + CLI symlink,
-registers the SKILL marker, writes the global config skeleton.
+verifies the project-level SKILL.md is present (PRIN-INST-3: Agent's resources
+are managed by the Agent — install does NOT touch the Agent's skill dir),
+writes the global config skeleton.
 It NEVER touches any wiki instance data.
 
 uninstall is the inverse function (PRIN-UNINST-3): default dry-run (PRIN-UNINST-6),
 removes only what install wrote, NEVER the knowledge base (BAN-UNINST-1).
+The project-level SKILL.md is left in place per PRIN-UNINST-4 (Agent's
+resources are still owned by the Agent; uninstall only informs, does not
+delete).
 """
 from __future__ import annotations
 
@@ -23,7 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]   # xu-wiki/
 VENV_DIR = PROJECT_ROOT / ".venv"
 BIN_DIR = GLOBAL_DIR / "bin"
 CLI_LINK = BIN_DIR / "xu-wiki"
-SKILL_MARKER = GLOBAL_DIR / "skills" / "xu-wiki.installed"
+PROJECT_SKILL = PROJECT_ROOT / ".trae" / "skills" / "xu-wiki" / "SKILL.md"
 INSTALL_META = GLOBAL_DIR / "install.json"
 
 
@@ -39,7 +44,10 @@ def cmd_install(args) -> dict:
     actions = []
     GLOBAL_DIR.mkdir(parents=True, exist_ok=True)
     BIN_DIR.mkdir(parents=True, exist_ok=True)
-    (GLOBAL_DIR / "skills").mkdir(parents=True, exist_ok=True)
+    # NOTE: we deliberately do NOT create GLOBAL_DIR/skills/. Per PRIN-INST-3 /
+    # BAN-INST-3, the Agent's skill dir is owned by the Agent; install only
+    # verifies the project-level SKILL.md is in place (the Agent picks it up
+    # automatically from .trae/skills/ in the project).
 
     # 1. project-local venv (CONST-INST-1) — idempotent (PRIN-INST-4)
     if not VENV_DIR.exists():
@@ -71,10 +79,12 @@ def cmd_install(args) -> dict:
         CLI_LINK.symlink_to(venv_cli)
         actions.append(f"linked CLI: {CLI_LINK} -> {venv_cli}")
 
-    # 4. SKILL registration marker (PRIN-INST-3: via agent API in real deploy)
-    SKILL_MARKER.parent.mkdir(parents=True, exist_ok=True)
-    SKILL_MARKER.write_text("xu-wiki skill registered\n", encoding="utf-8")
-    actions.append("registered SKILL marker")
+    # 4. Verify project-level SKILL.md (PRIN-INST-3). We do NOT write into
+    # the Agent's skill dir; the Agent picks the project skill up from
+    # .trae/skills/xu-wiki/SKILL.md on its own. install only reports whether
+    # the file is present so the operator can fix it themselves.
+    skill_status = "present" if PROJECT_SKILL.exists() else "MISSING"
+    actions.append(f"project skill file ({PROJECT_SKILL}): {skill_status}")
 
     # 5. global config skeleton — only non-wiki segments (BAN-CRT-2 inverse)
     cfg = load_global_config()
@@ -89,10 +99,19 @@ def cmd_install(args) -> dict:
         encoding="utf-8",
     )
 
+    data = {"actions": actions, "cli": str(CLI_LINK), "venv": str(VENV_DIR),
+            "project_skill": str(PROJECT_SKILL), "skill_status": skill_status}
+    hints = [
+        f"add {BIN_DIR} to PATH",
+        "next: xu-wiki create --name <name> --path <dir>",
+    ]
+    if not PROJECT_SKILL.exists():
+        hints.insert(0, f"WARNING: project skill file missing at {PROJECT_SKILL}; "
+                       f"the Agent may not discover this skill — restore it from git")
     return success(
-        {"actions": actions, "cli": str(CLI_LINK), "venv": str(VENV_DIR)},
+        data,
         "xu-wiki installed (capabilities only; no wiki data touched)",
-        hints=[f"add {BIN_DIR} to PATH", "next: xu-wiki create --name <name> --path <dir>"],
+        hints=hints,
     )
 
 
@@ -101,8 +120,9 @@ def cmd_uninstall(args) -> dict:
     execute = getattr(args, "execute", False)
 
     plan = []  # reverse order of install (CONST-UNINST-3)
-    if SKILL_MARKER.exists():
-        plan.append(("unregister SKILL marker", SKILL_MARKER))
+    # NOTE: PRIN-UNINST-4 — the project skill file (.trae/skills/xu-wiki/SKILL.md)
+    # is owned by the Agent, not by install. uninstall does NOT touch it. If
+    # the user wants it gone, that's a project-level decision (rm or git rm).
     if CLI_LINK.is_symlink() or CLI_LINK.exists():
         plan.append(("remove CLI symlink", CLI_LINK))
     if VENV_DIR.exists():
@@ -113,6 +133,7 @@ def cmd_uninstall(args) -> dict:
     preserved = [
         "all wiki instances (raws/ nodes/ .xu/) — BAN-UNINST-1",
         "patches table & IDF table — BAN-UNINST-4",
+        f"project skill file ({PROJECT_SKILL}) — PRIN-UNINST-4 (Agent owns it)",
         "global config api-key segment & registry",
     ]
 
@@ -124,7 +145,8 @@ def cmd_uninstall(args) -> dict:
                 "preserved": preserved,
             },
             "DRY RUN — nothing removed. Re-run with --execute to apply (PRIN-UNINST-6).",
-            hints=["xu-wiki uninstall --execute"],
+            hints=["xu-wiki uninstall --execute",
+                   f"to also drop the skill: rm {PROJECT_SKILL}"],
         )
 
     removed = []

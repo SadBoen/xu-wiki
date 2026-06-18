@@ -6,6 +6,7 @@ Builds in a temp dir then atomically renames (CONST-CRT-2).
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import tempfile
@@ -107,22 +108,20 @@ def cmd_create(args) -> dict:
                 hints=["choose an empty dir, or remove existing content yourself"],
             )
 
-    # build in temp dir, then atomic rename (CONST-CRT-2)
+    # build in temp dir, then atomic rename (CONST-CRT-2).
+    # The target dir is NOT created up-front. We build the entire skeleton
+    # inside a sibling temp dir, then `os.replace` it into place as a single
+    # atomic rename. On any failure we rmtree the temp dir and the target
+    # is never touched (no half-built state).
     tmp_parent = target.parent
     tmp_parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=".xu-create-", dir=str(tmp_parent)))
     try:
-        build_dir = tmp / "wiki"
-        build_dir.mkdir()
-        _build_skeleton(build_dir, name)
-        target.mkdir(parents=True, exist_ok=True)
-        for item in build_dir.iterdir():
-            shutil.move(str(item), str(target / item.name))
+        _build_skeleton(tmp, name)
+        os.replace(str(tmp), str(target))   # atomic on the same filesystem
     except Exception as e:  # rollback: leave no half-built artifact
         shutil.rmtree(tmp, ignore_errors=True)
         return error(f"create failed, rolled back: {e}", "CreateFailed")
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
     alias_warning = _register(name, target, args.alias)
 
