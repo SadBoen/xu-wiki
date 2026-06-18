@@ -1,0 +1,223 @@
+"""xu-wiki CLI entrypoint — argparse dispatcher.
+
+Every command prints a 4-key JSON response (CONST-ARCH-1) and logs to audit.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+import traceback
+
+from .utils.response import emit, error
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="xu-wiki", description="Relation-driven three-layer wiki engine")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    # ---- M1: install / create ----
+    sp = sub.add_parser("install", help="install the software (capabilities, not data)")
+    sp.set_defaults(func="install")
+
+    sp = sub.add_parser("uninstall", help="uninstall software (default dry-run)")
+    sp.add_argument("--execute", action="store_true", help="actually remove (default is dry-run)")
+    sp.set_defaults(func="uninstall")
+
+    sp = sub.add_parser("create", help="create a new empty wiki instance")
+    sp.add_argument("--name", required=False, help="wiki name (required, explicit)")
+    sp.add_argument("--path", required=True, help="target directory for the wiki")
+    sp.add_argument("--alias", required=False, help="optional alias")
+    sp.set_defaults(func="create")
+
+    sp = sub.add_parser("wikis", help="list registered wikis (read-only)")
+    sp.set_defaults(func="wikis")
+
+    # ---- M2: ingest / query / read ----
+    sp = sub.add_parser("ingest-file", help="Phase 1: parse a file into pending (no node created)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--file", required=True)
+    sp.add_argument("--node-path", default="", help="logical partition path")
+    sp.set_defaults(func="ingest_file")
+
+    sp = sub.add_parser("ingest-commit", help="Phase 2: commit pending pages into L1 (only write entry)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--pending", required=False, help="pending file to commit (default: all for the source)")
+    sp.add_argument("--title", required=False, help="title (required unless --native with frontmatter)")
+    sp.add_argument("--node-path", default="")
+    sp.add_argument("--template", default="article", choices=["article", "table", "gallery"])
+    sp.add_argument("--digest", default="")
+    sp.add_argument("--relations", default="", help="JSON array of {to, relation_name, comment?}")
+    sp.add_argument("--native", default="", help="raw markdown string (bypass parse, still validate)")
+    sp.add_argument("--author", default="agent")
+    sp.set_defaults(func="ingest_commit")
+
+    sp = sub.add_parser("query", help="three-layer retrieval (L1 locate + L2/L3 hints)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--core", default="", help="comma-separated core keywords")
+    sp.add_argument("--expansion", default="", help="comma-separated expansion keywords")
+    sp.add_argument("--top-k", type=int, default=None)
+    sp.add_argument("--neighbors", action="store_true", help="include 1-hop relation neighbors")
+    sp.add_argument("--include-inactive", action="store_true")
+    sp.set_defaults(func="query")
+
+    sp = sub.add_parser("read", help="read a single node full body (L1 applies patches)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True)
+    sp.set_defaults(func="read")
+
+    sp = sub.add_parser("nodes", help="DB node metadata query (read-only)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--layer", default=None, choices=["Page", "List", "Report"])
+    sp.add_argument("--include-inactive", action="store_true")
+    sp.set_defaults(func="nodes")
+
+    # ---- M3: relations ----
+    sp = sub.add_parser("query-relation", help="manage the 50-edge LRU relation list")
+    rsub = sp.add_subparsers(dest="rel_action", required=True)
+    radd = rsub.add_parser("add")
+    radd.add_argument("--wiki", required=True)
+    radd.add_argument("--from-uid", required=True)
+    radd.add_argument("--to-uid", required=True)
+    radd.add_argument("--relation-name", required=True)
+    radd.add_argument("--comment", default="")
+    rlist = rsub.add_parser("list")
+    rlist.add_argument("--wiki", required=True)
+    rlist.add_argument("--from-uid", required=True)
+    sp.set_defaults(func="query_relation")
+
+    # ---- M4: list / report ----
+    sp = sub.add_parser("list", help="L2 Node_List create/show")
+    lsub = sp.add_subparsers(dest="list_action", required=True)
+    lc = lsub.add_parser("create")
+    lc.add_argument("--wiki", required=True)
+    lc.add_argument("--title", required=True)
+    lc.add_argument("--members", required=True, help="comma-separated member UIDs")
+    lc.add_argument("--dimension", default="", help="comparison dimension")
+    lc.add_argument("--node-path", default="")
+    ls = lsub.add_parser("show")
+    ls.add_argument("--wiki", required=True)
+    ls.add_argument("--uid", required=True)
+    sp.set_defaults(func="list_cmd")
+
+    sp = sub.add_parser("report", help="L3 Node_Report create/show (evidence chain required)")
+    rpsub = sp.add_subparsers(dest="report_action", required=True)
+    rc = rpsub.add_parser("create")
+    rc.add_argument("--wiki", required=True)
+    rc.add_argument("--title", required=True)
+    rc.add_argument("--body", required=True, help="report body (markdown)")
+    rc.add_argument("--references", required=True, help="comma-separated L1/L2 evidence UIDs")
+    rc.add_argument("--node-path", default="")
+    rs = rpsub.add_parser("show")
+    rs.add_argument("--wiki", required=True)
+    rs.add_argument("--uid", required=True)
+    sp.set_defaults(func="report_cmd")
+
+    # ---- M5: doctor / delete-node / rebuild ----
+    for name in [
+        "doctor", "doctor-fields", "doctor-files", "doctor-relations",
+        "doctor-l1-immutable", "doctor-report-evidence", "doctor-idf", "doctor-all",
+    ]:
+        spx = sub.add_parser(name, help=f"{name} health check (read-only by default)")
+        spx.add_argument("--wiki", required=True)
+        spx.add_argument("--fix", action="store_true", help="apply mechanical fixes")
+        spx.set_defaults(func="doctor", doctor_kind=name)
+
+    sp = sub.add_parser("delete-node", help="physically delete a node (checks references first)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True)
+    sp.add_argument("--force", action="store_true", help="proceed despite L2/L3 references")
+    sp.set_defaults(func="delete_node")
+
+    sp = sub.add_parser("rebuild", help="rebuild derived layers (never touches L1)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--granularity", default="keep-l1", choices=["keep-l1", "keep-l1-l2", "full"])
+    sp.set_defaults(func="rebuild")
+
+    return p
+
+
+def _dispatch(args) -> dict:
+    func = args.func
+    if func == "install":
+        from .commands.install import cmd_install
+        return cmd_install(args)
+    if func == "uninstall":
+        from .commands.install import cmd_uninstall
+        return cmd_uninstall(args)
+    if func == "create":
+        from .commands.create import cmd_create
+        return cmd_create(args)
+    if func == "wikis":
+        from .commands.create import cmd_create  # noqa
+        from .utils.config import load_registry
+        from .utils.response import success
+        return success(load_registry().get("wikis", {}), "registered wikis")
+    if func == "ingest_file":
+        from .commands.ingest import cmd_ingest_file
+        return cmd_ingest_file(args)
+    if func == "ingest_commit":
+        from .commands.ingest import cmd_ingest_commit
+        return cmd_ingest_commit(args)
+    if func == "query":
+        from .commands.query import cmd_query
+        return cmd_query(args)
+    if func == "read":
+        from .commands.query import cmd_read
+        return cmd_read(args)
+    if func == "nodes":
+        from .commands.query import cmd_nodes
+        return cmd_nodes(args)
+    if func == "query_relation":
+        from .commands.relations import cmd_query_relation
+        return cmd_query_relation(args)
+    if func == "list_cmd":
+        from .commands.layers import cmd_list
+        return cmd_list(args)
+    if func == "report_cmd":
+        from .commands.layers import cmd_report
+        return cmd_report(args)
+    if func == "doctor":
+        from .commands.doctor import cmd_doctor
+        return cmd_doctor(args)
+    if func == "delete_node":
+        from .commands.doctor import cmd_delete_node
+        return cmd_delete_node(args)
+    if func == "rebuild":
+        from .commands.doctor import cmd_rebuild
+        return cmd_rebuild(args)
+    return error(f"unknown command function: {func}", "UnknownCommand")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    start = time.time()
+    try:
+        response = _dispatch(args)
+    except Exception as e:  # never crash without a 4-key response
+        response = error(
+            f"unhandled exception: {e}",
+            type(e).__name__,
+            data={"traceback": traceback.format_exc().splitlines()[-5:]},
+        )
+    # best-effort audit log
+    try:
+        from .utils.paths import append_jsonl
+        from .utils.wiki import resolve_wiki
+        wiki_ref = getattr(args, "wiki", None)
+        if wiki_ref:
+            ctx = resolve_wiki(wiki_ref)
+            if ctx:
+                append_jsonl(ctx.log_path, {
+                    "ts": int(start), "command": args.command,
+                    "status": response.get("status"),
+                    "elapsed_ms": int((time.time() - start) * 1000),
+                })
+    except Exception:
+        pass
+    return emit(response)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
