@@ -19,6 +19,27 @@ from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
 
 
+_LAYER_TAG = {"Page": "L1", "List": "L2", "Report": "L3"}
+
+
+def _summarize(checks_report: dict) -> dict:
+    """Aggregate issues by layer + fixability (CONST-DOC-7)."""
+    by_layer = {"L1": 0, "L2": 0, "L3": 0, "cross": 0}
+    auto_fixable = 0
+    read_only = 0
+    total = 0
+    for r in checks_report.values():
+        for issue in r.get("issues", []):
+            total += 1
+            by_layer[issue.get("layer", "cross")] = by_layer.get(issue.get("layer", "cross"), 0) + 1
+            if issue.get("fixable"):
+                auto_fixable += 1
+            else:
+                read_only += 1
+    return {"total_issues": total, "by_layer": by_layer,
+            "auto_fixable": auto_fixable, "read_only": read_only}
+
+
 def cmd_doctor(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
@@ -36,25 +57,40 @@ def cmd_doctor(args) -> dict:
             "doctor-idf": _check_idf,
         }
         if kind in ("doctor", "doctor-all"):
-            report = {}
-            total_issues = 0
-            for name, fn in checks.items():
-                r = fn(ctx, conn, fix)
-                report[name] = r
-                total_issues += r.get("issue_count", 0)
+            report = {fn_name: fn(ctx, conn, fix) for fn_name, fn in checks.items()}
             conn.commit()
-            status = success if total_issues == 0 else warning
-            return status({"checks": report, "total_issues": total_issues,
-                           "fix_applied": fix},
-                          f"doctor-all: {total_issues} issue(s) across {len(checks)} checks")
+            summary = _summarize(report)
+            data = {"checks": report, "fix_applied": fix, **summary}
+            # re-check after fix to verify repairs actually worked (CONST-DOC-8)
+            if fix:
+                recheck = {fn_name: fn(ctx, conn, False) for fn_name, fn in checks.items()}
+                post = _summarize(recheck)
+                data["post_fix"] = {"residual_issues": post["total_issues"],
+                                    "by_layer": post["by_layer"]}
+            status = success if summary["total_issues"] == 0 else warning
+            hints = [] if summary["total_issues"] == 0 else \
+                ([f"re-run with --fix to repair {summary['auto_fixable']} auto-fixable issue(s)"]
+                 if not fix else [])
+            return status(data,
+                          f"doctor-all: {summary['total_issues']} issue(s) "
+                          f"(L1={summary['by_layer']['L1']} L2={summary['by_layer']['L2']} "
+                          f"L3={summary['by_layer']['L3']} cross={summary['by_layer']['cross']})",
+                          hints=hints)
         fn = checks.get(kind)
         if not fn:
             return error(f"unknown doctor check: {kind}", "UnknownCheck")
         r = fn(ctx, conn, fix)
         conn.commit()
-        status = success if r.get("issue_count", 0) == 0 else warning
-        return status({kind: r, "fix_applied": fix},
-                      f"{kind}: {r.get('issue_count', 0)} issue(s)")
+        summary = _summarize({kind: r})
+        data = {kind: r, "fix_applied": fix, **summary}
+        if fix:
+            post = _summarize({kind: fn(ctx, conn, False)})
+            data["post_fix"] = {"residual_issues": post["total_issues"],
+                                "by_layer": post["by_layer"]}
+        status = success if summary["total_issues"] == 0 else warning
+        hints = [] if (summary["total_issues"] == 0 or fix) else \
+            [f"re-run with --fix to repair {summary['auto_fixable']} auto-fixable issue(s)"]
+        return status(data, f"{kind}: {summary['total_issues']} issue(s)", hints=hints)
     finally:
         conn.close()
 
@@ -65,18 +101,20 @@ def _check_fields(ctx, conn, fix) -> dict:
     fixed = []
     rows = conn.execute("SELECT uid, rel_md_path, layer FROM nodes WHERE rel_md_path IS NOT NULL").fetchall()
     for row in rows:
+        lyr = _LAYER_TAG.get(row["layer"], "cross")
         md_path = ctx.root / row["rel_md_path"]
         if not md_path.exists():
-            issues.append({"uid": row["uid"], "problem": "md file missing", "path": row["rel_md_path"]})
+            issues.append({"uid": row["uid"], "problem": "md file missing",
+                           "path": row["rel_md_path"], "layer": lyr, "fixable": False})
             continue
         frontmatter, _ = fm.parse(md_path.read_text(encoding="utf-8", errors="replace"))
         missing = [f for f in REQUIRED_FM_FIELDS if f not in frontmatter]
         if missing:
             issues.append({"uid": row["uid"], "problem": "missing frontmatter fields",
-                           "missing": missing})
+                           "missing": missing, "layer": lyr, "fixable": False})
         if frontmatter.get("uid") and frontmatter["uid"] != row["uid"]:
             issues.append({"uid": row["uid"], "problem": "uid mismatch file vs DB",
-                           "file_uid": frontmatter["uid"]})
+                           "file_uid": frontmatter["uid"], "layer": lyr, "fixable": False})
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
@@ -89,12 +127,13 @@ def _check_files(ctx, conn, fix) -> dict:
     for md in ctx.page_dir.rglob("*.md"):
         rel = str(md.relative_to(ctx.root))
         if rel not in db_paths:
-            issues.append({"problem": "orphan md file (not in DB)", "path": rel})
+            issues.append({"problem": "orphan md file (not in DB)", "path": rel,
+                           "layer": "L1", "fixable": False})
     rows = conn.execute("SELECT uid, rel_md_path FROM nodes WHERE rel_md_path IS NOT NULL").fetchall()
     for row in rows:
         if not (ctx.root / row["rel_md_path"]).exists():
             issues.append({"problem": "DB row points to missing file", "uid": row["uid"],
-                           "path": row["rel_md_path"]})
+                           "path": row["rel_md_path"], "layer": "L1", "fixable": True})
             if fix:
                 conn.execute("UPDATE nodes SET active=0 WHERE uid=?", (row["uid"],))
                 fixed.append({"uid": row["uid"], "action": "marked inactive"})
@@ -110,11 +149,19 @@ def _check_relations(ctx, conn, fix) -> dict:
     for src in sources:
         rels = list_relations(conn, src)
         if len(rels) > MAX_EDGES:
-            issues.append({"from_uid": src, "problem": f"edge count {len(rels)} > {MAX_EDGES}"})
+            issues.append({"from_uid": src, "problem": f"edge count {len(rels)} > {MAX_EDGES}",
+                           "layer": "cross", "fixable": True})
+            if fix:
+                # trim the LRU tail back to MAX_EDGES (PRIN-DOC-3 inverse of ingest)
+                for r in rels[MAX_EDGES:]:
+                    conn.execute("DELETE FROM relations WHERE from_uid=? AND to_uid=? "
+                                 "AND relation_name=?", (src, r["to_uid"], r["relation_name"]))
+                fixed.append({"from_uid": src, "action": f"trimmed {len(rels) - MAX_EDGES} tail edge(s)"})
+                rels = rels[:MAX_EDGES]
         positions = [r["position"] for r in rels]
         if positions != list(range(len(positions))):
             issues.append({"from_uid": src, "problem": "non-contiguous positions",
-                           "positions": positions})
+                           "positions": positions, "layer": "cross", "fixable": True})
             if fix:
                 for newpos, r in enumerate(rels):
                     conn.execute("UPDATE relations SET position=? WHERE from_uid=? AND to_uid=? "
@@ -124,7 +171,7 @@ def _check_relations(ctx, conn, fix) -> dict:
         for r in rels:
             if not conn.execute("SELECT 1 FROM nodes WHERE uid=?", (r["to_uid"],)).fetchone():
                 issues.append({"from_uid": src, "problem": "dangling relation target",
-                               "to_uid": r["to_uid"]})
+                               "to_uid": r["to_uid"], "layer": "cross", "fixable": True})
                 if fix:
                     conn.execute("DELETE FROM relations WHERE from_uid=? AND to_uid=? "
                                  "AND relation_name=?",
@@ -143,16 +190,18 @@ def _check_l1_immutable(ctx, conn, fix) -> dict:
     for row in rows:
         md_path = ctx.root / row["rel_md_path"]
         if not md_path.exists():
-            issues.append({"uid": row["uid"], "problem": "L1 file missing"})
+            issues.append({"uid": row["uid"], "problem": "L1 file missing",
+                           "layer": "L1", "fixable": False})
             continue
         _, body = fm.parse(md_path.read_text(encoding="utf-8", errors="replace"))
         actual = sha256_text(body)
         if actual != row["content_hash"]:
             issues.append({"uid": row["uid"], "problem": "L1 content_hash mismatch (tampered)",
-                           "expected": row["content_hash"][:12], "actual": actual[:12]})
-    # NEVER auto-fix L1 content (BAN-DOC: L1 is source of truth)
+                           "expected": row["content_hash"][:12], "actual": actual[:12],
+                           "layer": "L1", "fixable": False})
+    # NEVER auto-fix L1 content (BAN-DOC-5: L1 is source of truth)
     return {"issue_count": len(issues), "issues": issues, "fixed": [],
-            "note": "L1 mismatches are reported only; manual review required (PRIN-ARCH-3)"}
+            "note": "L1 mismatches are reported only; manual review required (BAN-DOC-5)"}
 
 
 def _check_report_evidence(ctx, conn, fix) -> dict:
@@ -162,17 +211,23 @@ def _check_report_evidence(ctx, conn, fix) -> dict:
     for r in reports:
         refs = conn.execute("SELECT ref_uid FROM evidence WHERE report_uid=?", (r["uid"],)).fetchall()
         if not refs:
-            issues.append({"report_uid": r["uid"], "problem": "report with zero evidence (BAN-ARCH-5)"})
+            issues.append({"report_uid": r["uid"], "problem": "report with zero evidence (BAN-ARCH-5)",
+                           "layer": "L3", "fixable": False})
         for ref in refs:
-            if not conn.execute("SELECT 1 FROM nodes WHERE uid=?", (ref["ref_uid"],)).fetchone():
+            target = conn.execute("SELECT active FROM nodes WHERE uid=?", (ref["ref_uid"],)).fetchone()
+            if not target:
                 issues.append({"report_uid": r["uid"], "problem": "dangling evidence ref",
-                               "ref_uid": ref["ref_uid"]})
+                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": False})
+            elif not target["active"]:
+                # CONST-DOC-3 #2: referenced node must be active
+                issues.append({"report_uid": r["uid"], "problem": "evidence ref points to inactive node",
+                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": False})
     return {"issue_count": len(issues), "issues": issues, "fixed": [],
-            "note": "evidence integrity is structural; not auto-fixed"}
+            "note": "evidence integrity is structural; never auto-deleted (BAN-DOC-6)"}
 
 
 def _check_idf(ctx, conn, fix) -> dict:
-    """IDF weight = const/(freq+1) consistency (CONST-ING-6)."""
+    """IDF weight = const/(freq+1) consistency (CONST-ING-6 / CONST-DOC-5)."""
     issues = []
     fixed = []
     rows = conn.execute("SELECT noun, freq, weight FROM idf").fetchall()
@@ -180,7 +235,8 @@ def _check_idf(ctx, conn, fix) -> dict:
         expected = IDF_CONSTANT / (row["freq"] + 1)
         if abs(expected - row["weight"]) > 1e-6:
             issues.append({"noun": row["noun"], "problem": "weight mismatch",
-                           "expected": round(expected, 4), "actual": row["weight"]})
+                           "expected": round(expected, 4), "actual": row["weight"],
+                           "layer": "cross", "fixable": True})
             if fix:
                 conn.execute("UPDATE idf SET weight=? WHERE noun=?", (expected, row["noun"]))
                 fixed.append(row["noun"])

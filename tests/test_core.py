@@ -11,6 +11,7 @@ from xu.utils import frontmatter as fm  # noqa: E402
 from xu.utils.paths import gen_uid, is_valid_uid, sha256_text  # noqa: E402
 from xu.utils import db  # noqa: E402
 from xu.ingest.relations_lru import add_relation, list_relations, touch_relation  # noqa: E402
+from xu.commands.doctor import _summarize, _check_relations  # noqa: E402
 
 
 def test_uid_format():
@@ -121,6 +122,40 @@ def test_lru_touch_moves_forward():
     rels2 = list_relations(conn, src)
     new_pos = next(r["position"] for r in rels2 if r["to_uid"] == tail_uid)
     assert new_pos == len(rels2) - 2  # moved forward by one
+
+
+def test_doctor_summarize_by_layer_and_fixability():
+    report = {
+        "doctor-files": {"issues": [{"layer": "L1", "fixable": True}]},
+        "doctor-report-evidence": {"issues": [
+            {"layer": "L3", "fixable": False},
+            {"layer": "L3", "fixable": False},
+        ]},
+        "doctor-idf": {"issues": [{"layer": "cross", "fixable": True}]},
+    }
+    s = _summarize(report)
+    assert s["total_issues"] == 4
+    assert s["by_layer"] == {"L1": 1, "L2": 0, "L3": 2, "cross": 1}
+    assert s["auto_fixable"] == 2
+    assert s["read_only"] == 2
+
+
+def test_doctor_relations_trim_over_cap():
+    conn = _mkdb()
+    src = "2026-N0000000"
+    for i in range(1, 56):
+        conn.execute(
+            "INSERT INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (src, f"2026-N{i:07d}", "related", "", i - 1, 0),
+        )
+    conn.commit()
+    r = _check_relations(None, conn, fix=True)
+    assert any("> 50" in i["problem"] for i in r["issues"])  # over-cap detected (CONST-DOC-4)
+    conn.commit()
+    assert len(list_relations(conn, src)) == 50  # trimmed back to cap
+    post = _check_relations(None, conn, fix=False)
+    assert not any("> 50" in i["problem"] for i in post["issues"])  # repair verified (CONST-DOC-8)
 
 
 if __name__ == "__main__":
