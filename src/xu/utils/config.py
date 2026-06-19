@@ -24,6 +24,11 @@ def _global_dir() -> Path:
 GLOBAL_DIR = _global_dir()
 GLOBAL_CONFIG = GLOBAL_DIR / "config.yaml"
 REGISTRY_FILE = GLOBAL_DIR / "registry.yaml"
+# PRIN-LOG-1: global process-layer audit log for commands without a wiki
+# context (create / wikis / register / unregister / config / install /
+# uninstall). Commands WITH a resolvable --wiki write to
+# <wiki>/.xu/audit.jsonl instead.
+GLOBAL_AUDIT_LOG = GLOBAL_DIR / "global_audit.jsonl"
 
 
 def load_global_config() -> dict:

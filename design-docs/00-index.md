@@ -100,7 +100,7 @@ L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
 
 ---
 
-## 跨文档核心原则（14 条）
+## 跨文档核心原则（15 条）
 
 ### 1. 图书馆哲学（[PRIN-ARCH-2]）
 
@@ -169,6 +169,23 @@ L1 body 不是「一段 markdown 字符串」——它必须与承载的内容�
 | 代码 / 命令块 | fenced code block | `ingest-commit --native` |
 
 Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散文 / 代码块」**。body 形态由内容类型决定,**不**由 template 名决定——template 是 frontmatter 标签,body 形态是文件实际写出去的 markdown 结构,二者正交。相册是这一原则的典型落地场景。
+
+### 15. 元数据三层各司其职——过程层不污染内容（[PRIN-ARCH-26]）
+
+延续图书管理比喻:一本书入库后有「内容」「修订记录」「流通记录」——三件事**互不替代**:
+
+- **内容层** = 节点正文 + frontmatter（`nodes` 表 + `.md` 文件），给人类 / Agent 看
+- **修订层** = `patches 表`，给读者追溯历史
+- **过程层** = `<wiki>/.xu/audit.jsonl`（无 wiki 时退到 `~/.xu/global_audit.jsonl`），**只**给程序诊断 SOP 健康
+
+**核心铁律**：
+
+- 过程层日志**唯一来源是 CLI 入口的自动埋点**（[CONST-ARCH-6]）。命令体**禁止**手动 `append_jsonl`——业务命令不操心「我怎么被记」
+- 一次 CLI 调用**只有一行** audit（per-wiki 或 global 二选一），失败时多带一个 `error_class`
+- 过程层**不参与** rebuild——DB / Markdown 重建不应牵连 `audit.jsonl`
+- 过程层**不等于**业务变更追溯（后者由 [PRIN-ING-15] 的数据库操作记录承担，不是过程日志）
+
+这条原则是过去把 `op-log` 写进各命令、又用 LLM 重写 .md 的反模式里沉淀出来的——**把过程当内容，是高熵增的源头**。
 
 ---
 

@@ -29,7 +29,6 @@ from ..parsers.image_meta import read_image_meta
 from ..utils import frontmatter as fm
 from ..utils.constants import IDF_CONSTANT
 from ..utils.paths import (
-    append_jsonl,
     atomic_write_text,
     gen_uid,
     now_ts,
@@ -317,16 +316,6 @@ def cmd_ingest_album(args) -> dict:
             )
 
         conn.commit()
-
-        append_jsonl(ctx.log_path, {
-            "ts": ts,
-            "op": "ingest-album",
-            "uid": uid,
-            "count": len(rows),
-            "layout": layout,
-            "vision": vision,
-            "source_hashes": [r["source_hash"] for r in rows],
-        })
 
         data = {
             "uid": uid,

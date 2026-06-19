@@ -275,19 +275,39 @@ def main(argv: list[str] | None = None) -> int:
             type(e).__name__,
             data={"traceback": traceback.format_exc().splitlines()[-5:]},
         )
-    # best-effort audit log
+    # PRIN-LOG-1 process-layer audit: ALL CLI commands emit exactly one line.
+    # - commands with a resolvable --wiki → <wiki>/.xu/audit.jsonl
+    # - commands without wiki OR unresolvable wiki → GLOBAL_AUDIT_LOG
     try:
+        from .utils.config import GLOBAL_AUDIT_LOG
         from .utils.paths import append_jsonl
         from .utils.wiki import resolve_wiki
+
         wiki_ref = getattr(args, "wiki", None)
+        audit_path = GLOBAL_AUDIT_LOG
+        wiki_for_log = None
+
         if wiki_ref:
+            # Preserve the wiki reference in the log even when it doesn't
+            # resolve — an unresolvable wiki is itself a diagnostic signal
+            # (typo'd name, missing registry entry, wrong CWD).
+            wiki_for_log = wiki_ref
             ctx = resolve_wiki(wiki_ref)
             if ctx:
-                append_jsonl(ctx.log_path, {
-                    "ts": int(start), "command": args.command,
-                    "status": response.get("status"),
-                    "elapsed_ms": int((time.time() - start) * 1000),
-                })
+                audit_path = ctx.log_path
+
+        record = {
+            "ts": int(start),
+            "command": args.command,
+            "wiki": wiki_for_log,
+            "status": response.get("status"),
+            "elapsed_ms": int((time.time() - start) * 1000),
+        }
+        if response.get("status") == "error":
+            err_data = response.get("data") or {}
+            if "error_class" in err_data:
+                record["error_class"] = err_data["error_class"]
+        append_jsonl(audit_path, record)
     except Exception:
         pass
     return emit(response)

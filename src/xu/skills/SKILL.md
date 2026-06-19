@@ -206,6 +206,20 @@ no `--q`, no `--mode`, no `--limit`.
     has no vision backend, set `--vision` so the intent is recorded
     (PRIN-SOP-7). Never decide for the user.
 
+## Process-layer audit log (CONST-ARCH-6 / PRIN-ARCH-26)
+
+**Every CLI invocation emits exactly one process-layer audit line** — the
+agent does NOT need to (and must NOT) call any logging command explicitly:
+
+- Commands with a resolvable `--wiki` write to `<wiki>/.xu/audit.jsonl`
+- Commands without `--wiki` (or unresolvable) write to
+  `~/.xu/global_audit.jsonl`
+
+Each line carries `ts` / `command` / `wiki` / `status` / `elapsed_ms`;
+failures add `error_class`. This log exists for SOP / CLI health diagnosis
+only — it is NOT content history, NOT a substitute for `nodes.created_at`,
+and NOT consumed by any CLI decision.
+
 ## Reading the response
 
 Every command prints one JSON object to stdout. Read `data.*` for facts and

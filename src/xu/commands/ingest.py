@@ -32,7 +32,6 @@ from ..utils.constants import (
     TEMPLATES,
 )
 from ..utils.paths import (
-    append_jsonl,
     atomic_write_text,
     gen_uid,
     now_ts,
@@ -290,10 +289,6 @@ def cmd_ingest_commit(args) -> dict:
                 Path(args.pending).expanduser().resolve().unlink()
             except OSError:
                 pass
-
-        append_jsonl(ctx.log_path, {"ts": now_ts(), "op": "ingest-commit",
-                                    "created": [c["uid"] for c in created],
-                                    "parser": parser_used})
 
         data = {"created": created, "page_count": len(created),
                 "duplicate_parts": dup_pages, "invalid_relations": invalid_relations}
