@@ -9,6 +9,24 @@ xu-wiki is a **relation-driven three-layer knowledge base** designed for AI
 agents. It exposes a deterministic offline-first CLI; this skill is the
 authoritative invocation guide for the agent side.
 
+## File layout
+
+This skill is split into 6 files per the principles in
+`design-docs/09-skill-architecture.md` (PRIN-SKILL-1~6, BAN-SKILL-1/2):
+
+| File | Purpose | When to load |
+|---|---|---|
+| `SKILL.md` (this file) | Index + cross-cutting rules | **Always** |
+| `create.md` | `/xu-wiki create` SOP — full self-contained | When entering create SOP |
+| `ingest.md` | `/xu-wiki ingest` SOP — full self-contained | When entering ingest SOP |
+| `query.md` | `/xu-wiki query` SOP — full self-contained | When entering query SOP |
+| `doctor.md` | `/xu-wiki doctor` SOP — full self-contained | When entering doctor SOP |
+| `config.md` | `/xu-wiki config` SOP — full self-contained | When entering config SOP |
+
+**No file links to another SOP file** (BAN-SKILL-1). If an SOP file needs to
+mention a CLI from another SOP, it says "see SKILL.md §X" — never links
+directly. The deployer puts all 6 files in the Agent's discovery dir.
+
 ## When to use this skill
 
 The skill exposes **five SOPs** (Standard Operating Procedures). The
@@ -33,7 +51,8 @@ more CLI subcommands. The five SOPs cover the full wiki lifecycle:
   MinerU API key, inspect the registered wikis.
 
 Software-lifecycle commands (`install` / `uninstall`) are **not** SOPs —
-they manage the CLI itself, not wiki data (CONST-SOP-3).
+they manage the CLI itself, not wiki data (CONST-SOP-3). They live in
+`config.md` since they share the software-lifecycle scope.
 
 ## SOP map (slash command ↔ CLI orchestration)
 
@@ -46,7 +65,7 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); optional `query-relation add`, `list create`, `report create` |
 | `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint |
 | `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
-| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings |
+| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `install` / `uninstall` for software lifecycle |
 
 `xu-wiki install` and `xu-wiki uninstall` are **not** SOPs — they manage
 the software itself, not wiki data (CONST-SOP-3, design-docs/08).
@@ -63,63 +82,6 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 - **CLI is offline-first** (CONST-ARCH-1 / PRIN-ARCH-11/12). MinerU is an optional
   parser in the fallback chain; the key is loaded from `MINERU_API_KEY` env or
   `~/.xu/config.yaml` (`XU_HOME` overrides the dir).
-
-## Command map (use the EXACT subcommand names — see `xu-wiki <sub> --help`)
-
-```
-xu-wiki install                        # capabilities only; never touches wiki data
-xu-wiki uninstall [--execute]          # default dry-run
-xu-wiki create --name <n> --path <abs> [--alias <a>]   # empty template at <abs>
-xu-wiki wikis                          # list registered wikis (read-only)
-
-# ingest is TWO phases (PRIN-ING-1): parse to pending, then commit to L1.
-xu-wiki ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
-xu-wiki ingest-commit --wiki <w> [--pending <f>] [--title <t>] [--node-path <p>] \
-                      [--template article|table|gallery] [--digest <d>] \
-                      [--relations '<json>'] [--native '<md>'] [--author <a>]   # Phase 2: only write entry
-
-# Album (PRIN-ING-14, single-shot; body style = table, PRIN-ING-13)
-xu-wiki ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
-                      [--node-path <p>] [--layout table|list] [--vision] \
-                      [--captions '<json>'] [--digest <d>] [--author <a>]
-
-xu-wiki query --wiki <w> --core <kw,kw> [--expansion <kw,kw>] [--top-k N] \
-              [--neighbors] [--include-inactive]    # core vs expansion are graded by the Agent
-xu-wiki read  --wiki <w> --uid <uid>
-xu-wiki nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
-
-xu-wiki query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
-                            --relation-name <r> [--comment <c>]
-xu-wiki query-relation list --wiki <w> --from-uid <uid>
-
-xu-wiki list create --wiki <w> --title <t> --members <uid,uid,...> \
-                    [--dimension <d>] [--node-path <p>]
-xu-wiki list show   --wiki <w> --uid <uid>
-xu-wiki report create --wiki <w> --title <t> --body <md> \
-                      --references <uid,uid,...> [--node-path <p>]   # references = evidence chain
-xu-wiki report show   --wiki <w> --uid <uid>
-
-xu-wiki doctor-all --wiki <w> [--fix]   # run all 6 checks
-xu-wiki doctor-fields|doctor-files|doctor-relations|doctor-l1-immutable|\
-        doctor-report-evidence|doctor-idf --wiki <w> [--fix]
-xu-wiki delete-node --wiki <w> --uid <uid> [--force]
-xu-wiki rebuild     --wiki <w> --granularity keep-l1|keep-l1-l2|full
-
-# SOP-config (M6): alias / register / unregister / global config
-xu-wiki alias set     --wiki <w> --alias <new>     # set or change alias
-xu-wiki alias unset   --wiki <w>                   # remove alias (warns if none)
-xu-wiki alias show    --wiki <w>                   # show current alias
-xu-wiki register      --name <n> --path <abs> [--alias <a>]   # register existing dir (NO files written)
-xu-wiki unregister    --name <n>                   # remove from registry (wiki files NOT touched)
-xu-wiki config set-mineru-key                       # reads from MINERU_API_KEY env (safer than --key)
-xu-wiki config show                                 # global config (secrets masked)
-xu-wiki config path                                 # global config file paths
-```
-
-NOTE: keyword grading is the Agent's job (PRIN-ARCH-12 / DESIGN-ARCH-4). The CLI
-does NOT split a free-text query — you pass already-graded `--core` (entities,
-weighted high) and `--expansion` (synonyms, weighted low) comma lists. There is
-no `--q`, no `--mode`, no `--limit`.
 
 ## Hard rules the agent MUST respect
 
@@ -155,8 +117,8 @@ no `--q`, no `--mode`, no `--limit`.
    internally, so the agent may pass `~/Documents/NepTune` directly
    without pre-expansion. Never pass relative paths like `./foo` — they
    break idempotency (CONST-CRT-3) and the symlink-escape guard
-   (CONST-CRT-5). If the user gave a relative path, ask for the
-   absolute location before invoking.
+   (CONST-CRT-5). If the user gave a relative path, ask for the absolute
+   location before invoking.
 10. **Slash command is a SOP entry, NOT a CLI subcommand (BAN-SOP-1).**
     `/xu-wiki <verb>` enters the `<verb>` SOP, which orchestrates one or
     more CLI subcommands. It does **not** translate to `xu-wiki <verb>`.
@@ -184,27 +146,9 @@ no `--q`, no `--mode`, no `--limit`.
     Refusing an unsupported intent is correct behavior; coercing to
     an unrelated CLI is the same class of bug as the
     `/xu-wiki config → create --alias` workaround.
-12. **Ingest: ask content-form first; route to the right flow (PRIN-ING-13).**
-    When the user wants to ingest content, the **first** question is the
-    body form: "table (album) / prose (document) / code block (snippet)?"
-    Each form has a fixed CLI route:
-    - **table / album** (multiple images, one themed page) →
-      `xu-wiki ingest-album` (single-shot, PRIN-ING-14). Body is a markdown
-      table with one row per photo (Filename / Path / Resolution / GPS /
-      Captured / Description). The album theme IS the L1 title.
-    - **prose** (PDF / DOCX / MD / text / single image) →
-      `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase).
-    - **code block / terminal output** →
-      `ingest-commit --native "<code block>"` (no parse, but still
-      goes through the commit pipeline including dedup / patches v1 / IDF).
-    Never split a single album into N parallel `ingest-file` + `ingest-commit`
-    cycles — that breaks the body-form rule and leaves N disjoint L1 pages
-    with no album structure. The L1 body style MUST match the content type;
-    `template` is just a frontmatter label, the body is the file content.
-    For albums, the agent should also ask "vision per-photo? (yes/no)"
-    BEFORE calling — if the user wants per-photo captions and the build
-    has no vision backend, set `--vision` so the intent is recorded
-    (PRIN-SOP-7). Never decide for the user.
+
+> **Ingest-specific rule** (PRIN-ING-13, the body-form decision tree) lives
+> in `ingest.md` since it only applies to the ingest SOP.
 
 ## Process-layer audit log (CONST-ARCH-6 / PRIN-ARCH-26)
 
@@ -271,3 +215,4 @@ xu-wiki rebuild    --wiki research --granularity keep-l1
 - `README.md` in this repo for the full reference
 - `tests/e2e_verify.sh` for a runnable smoke test
 - `tests/test_core.py` for unit tests of the deterministic core
+- `design-docs/09-skill-architecture.md` for the file-layout principles

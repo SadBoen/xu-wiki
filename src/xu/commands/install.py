@@ -1,14 +1,15 @@
 """install / uninstall — software lifecycle (03-install.md / 04-uninstall.md).
 
 install装能力不装数据 (PRIN-INST-1): sets up a project-local venv + CLI symlink,
-deploys the packaged SKILL.md into the Agent's discovery dir, and writes the
-global config skeleton. The authoritative skill SOURCE lives inside the package
-(`xu/skills/SKILL.md`) so it ships with pip; install only DEPLOYS a copy into
-the Agent's directory (PRIN-INST-3 — let the Agent own its resource location).
-It NEVER touches any wiki instance data.
+deploys the packaged skill files (SKILL.md + 5 SOP task files per
+design-docs/09-skill-architecture.md) into the Agent's discovery dir, and
+writes the global config skeleton. The authoritative skill SOURCE lives
+inside the package (`xu/skills/*.md`) so it ships with pip; install only
+DEPLOYS a copy into the Agent's directory (PRIN-INST-3 — let the Agent own
+its resource location). It NEVER touches any wiki instance data.
 
 uninstall is the inverse function (PRIN-UNINST-3): default dry-run (PRIN-UNINST-6),
-removes only what install wrote — including the deployed skill copy — and
+removes only what install wrote — including all deployed skill files — and
 verifies no residue afterward (PRIN-UNINST-5). It NEVER deletes the knowledge
 base (BAN-UNINST-1) nor the packaged skill source.
 """
@@ -20,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..skills import SKILL_NAME, SKILL_SRC
+from ..skills import ALL_SKILL_FILES, SKILL_NAME, SKILL_SRC_DIR
 from ..utils.config import GLOBAL_DIR, load_global_config, save_global_config
 from ..utils.paths import now_ts
 from ..utils.response import error, success, warning
@@ -31,7 +32,6 @@ BIN_DIR = GLOBAL_DIR / "bin"
 CLI_LINK = BIN_DIR / "xu-wiki"
 # Agent discovery dir: where the Agent looks for skills in this project.
 SKILL_DEPLOY_DIR = PROJECT_ROOT / ".trae" / "skills" / SKILL_NAME
-SKILL_DEPLOY = SKILL_DEPLOY_DIR / "SKILL.md"
 INSTALL_META = GLOBAL_DIR / "install.json"
 
 
@@ -78,19 +78,33 @@ def cmd_install(args) -> dict:
         CLI_LINK.symlink_to(venv_cli)
         actions.append(f"linked CLI: {CLI_LINK} -> {venv_cli}")
 
-    # 4. Deploy the packaged SKILL.md into the Agent's discovery dir
+    # 4. Deploy the packaged skill files into the Agent's discovery dir
     # (PRIN-INST-3). The authoritative source ships inside the package
-    # (xu/skills/SKILL.md); we copy it out so the Agent can index it. We do
-    # NOT hand-write skill content here — the package source is the single
-    # source of truth, and deploy is idempotent (PRIN-INST-4).
-    if not SKILL_SRC.exists():
+    # (xu/skills/*.md — SKILL.md + 5 SOP task files per PRIN-SKILL-1); we
+    # copy them out so the Agent can index them. We do NOT hand-write skill
+    # content here — the package source is the single source of truth, and
+    # deploy is idempotent (PRIN-INST-4).
+    missing_sources = [name for name in ALL_SKILL_FILES
+                       if not (SKILL_SRC_DIR / name).exists()]
+    if missing_sources:
         skill_status = "SOURCE-MISSING"
-        actions.append(f"packaged skill source missing: {SKILL_SRC}")
+        actions.append(f"packaged skill source missing: {missing_sources}")
     else:
         SKILL_DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(SKILL_SRC, SKILL_DEPLOY)
+        deployed = []
+        for rel in ALL_SKILL_FILES:
+            src = SKILL_SRC_DIR / rel
+            dst = SKILL_DEPLOY_DIR / rel
+            # ALL_SKILL_FILES contains paths like "reference/error-catalog.md";
+            # ensure the parent subdir exists in the deploy dir.
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dst)
+            deployed.append(str(dst))
         skill_status = "deployed"
-        actions.append(f"deployed skill: {SKILL_SRC} -> {SKILL_DEPLOY}")
+        actions.append(
+            f"deployed {len(deployed)} skill files: "
+            f"{SKILL_SRC_DIR} -> {SKILL_DEPLOY_DIR}"
+        )
 
     # 5. global config skeleton — only non-wiki segments (BAN-CRT-2 inverse)
     cfg = load_global_config()
@@ -106,7 +120,8 @@ def cmd_install(args) -> dict:
     )
 
     data = {"actions": actions, "cli": str(CLI_LINK), "venv": str(VENV_DIR),
-            "skill_source": str(SKILL_SRC), "skill_deployed": str(SKILL_DEPLOY),
+            "skill_source_dir": str(SKILL_SRC_DIR),
+            "skill_deploy_dir": str(SKILL_DEPLOY_DIR),
             "skill_status": skill_status}
     hints = [
         f"add {BIN_DIR} to PATH",
@@ -127,12 +142,14 @@ def cmd_uninstall(args) -> dict:
     execute = getattr(args, "execute", False)
 
     plan = []  # reverse order of install (CONST-UNINST-3)
-    # PRIN-UNINST-4: the deployed skill copy in the Agent's dir IS something
-    # install wrote, so uninstall removes it (reverse of deploy). The packaged
-    # skill SOURCE (xu/skills/SKILL.md) is part of the software itself and is
-    # NEVER touched here. Skill is deployed last → torn down first.
-    if SKILL_DEPLOY.exists():
-        plan.append(("remove deployed skill copy", SKILL_DEPLOY))
+    # PRIN-UNINST-4: the deployed skill files in the Agent's dir ARE something
+    # install wrote, so uninstall removes them (reverse of deploy). The
+    # packaged skill SOURCE (xu/skills/*.md) is part of the software itself
+    # and is NEVER touched here. Skill is deployed last → torn down first.
+    for rel in ALL_SKILL_FILES:
+        f = SKILL_DEPLOY_DIR / rel
+        if f.exists():
+            plan.append((f"remove deployed skill file: {rel}", f))
     if CLI_LINK.is_symlink() or CLI_LINK.exists():
         plan.append(("remove CLI symlink", CLI_LINK))
     if VENV_DIR.exists():
@@ -143,7 +160,7 @@ def cmd_uninstall(args) -> dict:
     preserved = [
         "all wiki instances (raws/ nodes/ .xu/) — BAN-UNINST-1",
         "patches table & IDF table — BAN-UNINST-4",
-        f"packaged skill source ({SKILL_SRC}) — part of the software, not a deploy artifact",
+        f"packaged skill source ({SKILL_SRC_DIR}) — part of the software, not a deploy artifact",
         "global config api-key segment & registry",
     ]
 
