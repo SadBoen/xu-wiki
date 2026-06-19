@@ -95,13 +95,20 @@ def extract_nouns(text: str) -> dict[str, int]:
     """
     counts: dict[str, int] = {}
     try:
+        # CONST-ARCH-1: every CLI emits one 4-key JSON line; jieba's first-run
+        # banner ("Building prefix dict...") writes to stdout and would corrupt
+        # the JSON protocol. Suppress by redirecting stdout during jieba import
+        # + first call.
+        import contextlib
+        import io
         import jieba.posseg as pseg
-        for word, flag in pseg.cut(text):
-            w = word.strip().lower()
-            if len(w) < 2:
-                continue
-            if flag in _NOUN_FLAGS:
-                counts[w] = counts.get(w, 0) + 1
+        with contextlib.redirect_stdout(io.StringIO()):
+            for word, flag in pseg.cut(text):
+                w = word.strip().lower()
+                if len(w) < 2:
+                    continue
+                if flag in _NOUN_FLAGS:
+                    counts[w] = counts.get(w, 0) + 1
         if counts:
             return counts
     except Exception:

@@ -264,7 +264,47 @@ def _dispatch(args) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    # CONST-ARCH-1: every CLI invocation MUST emit a 4-key JSON response,
+    # including argparse-level errors (missing/unknown args). Override
+    # parser.error so it raises instead of calling sys.exit(2)+stderr.
+    class _ArgParseError(Exception):
+        def __init__(self, message):
+            super().__init__(message)
+            self.message = message
+
+    def _parser_error(message):
+        raise _ArgParseError(message)
+
+    parser.error = _parser_error
+    # Subparsers have their own .error method; override on every subparser too.
+    for action in parser._actions:
+        if isinstance(action, __import__("argparse")._SubParsersAction):
+            for sub in action.choices.values():
+                sub.error = _parser_error
+    try:
+        args = parser.parse_args(argv)
+    except _ArgParseError as e:
+        # Map argparse error → 4-key JSON; do not pollute stdout with usage banner.
+        response = error(
+            e.message,
+            "ArgParseError",
+            hints=["check the command name + flags; see `xu-wiki <subcommand> --help`"],
+        )
+        try:
+            from .utils.config import GLOBAL_AUDIT_LOG
+            from .utils.paths import append_jsonl
+            record = {
+                "ts": int(time.time()),
+                "command": "<argparse>",
+                "wiki": None,
+                "status": "error",
+                "elapsed_ms": 0,
+                "error_class": "ArgParseError",
+            }
+            append_jsonl(GLOBAL_AUDIT_LOG, record)
+        except Exception:
+            pass
+        return emit(response)
     start = time.time()
     try:
         response = _dispatch(args)

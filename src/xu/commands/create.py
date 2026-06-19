@@ -75,8 +75,14 @@ def cmd_create(args) -> dict:
             hints=["name must be alnum/-/_ and <= 64 chars"],
         )
 
-    # path normalization + symlink escape guard (CONST-CRT-5)
+    # path normalization + symlink escape guard (CONST-CRT-5: absolute paths only)
     raw_path = Path(args.path).expanduser()
+    if not raw_path.is_absolute():
+        return error(
+            f"--path must be absolute (CONST-CRT-5); got: {args.path!r}",
+            "PathNotAbsolute",
+            hints=["provide the full absolute path; do not assume CWD"],
+        )
     try:
         parent = raw_path.parent.resolve(strict=False)
         target = (parent / raw_path.name).resolve(strict=False)
