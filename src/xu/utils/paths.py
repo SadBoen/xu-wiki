@@ -65,6 +65,23 @@ def normalize_within(root: str | Path, candidate: str | Path) -> Path:
     return cand_resolved
 
 
+def safe_node_path(node_path: str) -> str:
+    """Validate a user-supplied logical node_path (BAN-ARCH-7).
+
+    node_path is a relative logical partition like ``papers/ml``. It must stay
+    in-tree: no absolute paths, no '..' traversal segments. Returns the cleaned
+    (slash-stripped) value. Raises ValueError on any escape attempt.
+    """
+    np = (node_path or "").strip().replace("\\", "/").strip("/")
+    if not np:
+        return ""
+    if Path(np).is_absolute():
+        raise ValueError(f"node_path must be relative: {node_path!r}")
+    if any(part == ".." for part in np.split("/")):
+        raise ValueError(f"node_path must not contain '..': {node_path!r}")
+    return np
+
+
 def safe_slug(text: str, maxlen: int = 80) -> str:
     s = re.sub(r"[^\w\-]+", "-", (text or "").strip().lower(), flags=re.UNICODE)
     s = re.sub(r"-+", "-", s).strip("-")
@@ -86,8 +103,16 @@ def atomic_write_text(path: str | Path, content: str) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(content)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError:
+        # don't leave a half-written temp behind on rename/IO failure
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise

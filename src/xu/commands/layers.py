@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from ..utils.response import error, success, warning
-from ..utils.paths import gen_uid, now_ts
+from ..utils.paths import gen_uid, now_ts, safe_node_path
 from ..utils.wiki import resolve_wiki
 
 
@@ -33,6 +33,10 @@ def _list_create(args) -> dict:
     members = _split_uids(args.members)
     if not members:
         return error("a List needs at least one member (--members)", "EmptyList")
+    try:
+        node_path = safe_node_path(args.node_path)
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
 
     conn = ctx.connect()
     try:
@@ -50,7 +54,7 @@ def _list_create(args) -> dict:
             "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
             "attrs, created_at, updated_at) "
             "VALUES(?,?,?,?,?,?,NULL,NULL,NULL,NULL,1,?,?,?,?)",
-            (uid, "List", "table", args.title, args.node_path.strip("/"),
+            (uid, "List", "table", args.title, node_path,
              None, args.dimension, attrs, ts, ts),
         )
         for pos, m in enumerate(members):
@@ -118,6 +122,10 @@ def _report_create(args) -> dict:
             "EmptyEvidence",
             hints=["L3 conclusions require an evidence chain; no naked reports"],
         )
+    try:
+        node_path = safe_node_path(args.node_path)
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
 
     conn = ctx.connect()
     try:
@@ -135,7 +143,7 @@ def _report_create(args) -> dict:
             "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
             "attrs, created_at, updated_at) "
             "VALUES(?,?,?,?,?,NULL,NULL,NULL,NULL,NULL,1,?,?,?,?)",
-            (uid, "Report", "article", args.title, args.node_path.strip("/"),
+            (uid, "Report", "article", args.title, node_path,
              args.body[:200], attrs, ts, ts),
         )
         for r in refs:

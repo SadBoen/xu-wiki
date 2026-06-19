@@ -36,6 +36,7 @@ from ..utils.paths import (
     atomic_write_text,
     gen_uid,
     now_ts,
+    safe_node_path,
     safe_slug,
     sha256_file,
     sha256_text,
@@ -67,7 +68,10 @@ def cmd_ingest_file(args) -> dict:
             data={"file": str(src)},
         )
 
-    node_path = args.node_path.strip("/")
+    try:
+        node_path = safe_node_path(args.node_path)
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
     stem = safe_slug(src.stem)
     pending_name = f"{node_path.replace('/', '__') + '__' if node_path else ''}{stem}-pre.md"
     pending_path = ctx.pending_dir / pending_name
@@ -123,7 +127,7 @@ def cmd_ingest_commit(args) -> dict:
     parser_used = "native"
     if args.native:
         content = args.native
-        node_path = args.node_path.strip("/")
+        node_path = args.node_path
     elif args.pending:
         pending_path = Path(args.pending).expanduser()
         # whitelist: pending must live inside the wiki (BAN-ING-5)
@@ -139,9 +143,14 @@ def cmd_ingest_commit(args) -> dict:
         source_hash = meta.get("source_hash")
         parser_used = meta.get("parser", "unknown")
         raw_src_path = meta.get("source")
-        node_path = (args.node_path or meta.get("node_path", "")).strip("/")
+        node_path = (args.node_path or meta.get("node_path", ""))
     else:
         return error("ingest-commit requires --pending or --native", "MissingInput")
+
+    try:
+        node_path = safe_node_path(node_path)
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
 
     if not args.title:
         return error("ingest-commit requires --title (CONST-ING-4)", "MissingTitle",

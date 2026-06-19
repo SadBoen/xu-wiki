@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS evidence (
     ref_uid     TEXT NOT NULL,
     note        TEXT,
     PRIMARY KEY (report_uid, ref_uid),
-    FOREIGN KEY (report_uid) REFERENCES nodes(uid) ON DELETE CASCADE
+    FOREIGN KEY (report_uid) REFERENCES nodes(uid) ON DELETE CASCADE,
+    FOREIGN KEY (ref_uid) REFERENCES nodes(uid) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_report ON evidence(report_uid);
 CREATE INDEX IF NOT EXISTS idx_evidence_ref ON evidence(ref_uid);
@@ -86,7 +87,8 @@ CREATE TABLE IF NOT EXISTS list_members (
     member_uid  TEXT NOT NULL,
     position    INTEGER NOT NULL,
     PRIMARY KEY (list_uid, member_uid),
-    FOREIGN KEY (list_uid) REFERENCES nodes(uid) ON DELETE CASCADE
+    FOREIGN KEY (list_uid) REFERENCES nodes(uid) ON DELETE CASCADE,
+    FOREIGN KEY (member_uid) REFERENCES nodes(uid) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_list_members ON list_members(list_uid, position);
 

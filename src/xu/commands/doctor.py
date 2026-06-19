@@ -277,25 +277,42 @@ def cmd_delete_node(args) -> dict:
                 hints=["remove the references first, or pass --force to cascade"],
             )
 
-        # delete md file + raw if present
-        removed_files = []
-        if node["rel_md_path"]:
-            p = ctx.root / node["rel_md_path"]
-            if p.exists():
-                p.unlink()
-                removed_files.append(node["rel_md_path"])
-        if node["raw_path"]:
-            p = ctx.root / node["raw_path"]
-            if p.exists():
-                p.unlink()
-                removed_files.append(node["raw_path"])
+        # Decrement IDF frequencies contributed by this Page's body so deleted
+        # nodes don't leave ghost nouns skewing query scores (CONST-ING-6).
+        if node["layer"] == "Page" and node["rel_md_path"]:
+            mp = ctx.root / node["rel_md_path"]
+            if mp.exists():
+                _, body = fm.parse(mp.read_text(encoding="utf-8", errors="replace"))
+                ts = now_ts()
+                for noun, cnt in extract_nouns(body).items():
+                    rw = conn.execute("SELECT freq FROM idf WHERE noun=?", (noun,)).fetchone()
+                    if not rw:
+                        continue
+                    new_freq = rw["freq"] - cnt
+                    if new_freq <= 0:
+                        conn.execute("DELETE FROM idf WHERE noun=?", (noun,))
+                    else:
+                        conn.execute("UPDATE idf SET freq=?, weight=?, updated_at=? WHERE noun=?",
+                                     (new_freq, IDF_CONSTANT / (new_freq + 1), ts, noun))
 
-        # cascade DB (relations from this node cascade via FK; clean inbound too)
+        # Commit the DB cascade FIRST, then unlink files. Files are
+        # unrecoverable; the DB is transactional. If a file unlink fails after
+        # commit we only leak an orphan (doctor-files catches it) — far safer
+        # than deleting files first and losing them when the DB write fails.
         conn.execute("DELETE FROM relations WHERE to_uid=?", (args.uid,))
         conn.execute("DELETE FROM evidence WHERE ref_uid=?", (args.uid,))
         conn.execute("DELETE FROM list_members WHERE member_uid=?", (args.uid,))
         conn.execute("DELETE FROM nodes WHERE uid=?", (args.uid,))  # FK cascades patches/evidence/relations(from)
         conn.commit()
+
+        # DB committed — now remove md file + raw if present (best-effort)
+        removed_files = []
+        for rel in (node["rel_md_path"], node["raw_path"]):
+            if rel:
+                p = ctx.root / rel
+                if p.exists():
+                    p.unlink()
+                    removed_files.append(rel)
 
         return success(
             {"uid": args.uid, "removed_files": removed_files,
@@ -341,11 +358,18 @@ def cmd_rebuild(args) -> dict:
                     ts = now_ts()
                     conn.execute(
                         "INSERT INTO nodes(uid,layer,template,title,node_path,slug,rel_md_path,"
-                        "content_hash,active,created_at,updated_at) "
-                        "VALUES(?,?,?,?,?,?,?,?,1,?,?)",
+                        "source_hash,content_hash,active,digest,created_at,updated_at) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)",
                         (uid, frontmatter.get("layer", "Page"), frontmatter.get("template", "article"),
                          frontmatter.get("title", uid), frontmatter.get("node_path", ""),
-                         md.stem, rel, ch, ts, ts),
+                         md.stem, rel, frontmatter.get("source_hash"), ch,
+                         frontmatter.get("digest"), ts, ts),
+                    )
+                    # patches v1 so reconciled rows aren't missing their create record
+                    conn.execute(
+                        "INSERT OR IGNORE INTO patches(page_uid,version,op,delta,author,created_at) "
+                        "VALUES(?,1,'create',?,?,?)",
+                        (uid, ch, "rebuild", ts),
                     )
                     reconciled += 1
                 else:

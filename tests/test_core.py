@@ -206,6 +206,20 @@ def test_extract_nouns_cjk_bigram_fallback(monkeypatch):
     assert "中文搜索词" not in nouns  # whole run is no longer swallowed
 
 
+def test_safe_node_path_blocks_traversal():
+    from xu.utils.paths import safe_node_path
+    assert safe_node_path("papers/ml") == "papers/ml"
+    assert safe_node_path("/papers/ml/") == "papers/ml"
+    assert safe_node_path("") == ""
+    assert safe_node_path("/abs/path") == "abs/path"  # leading slash stripped, stays in-tree
+    for bad in ("../etc", "a/../../b", "../../tmp/evil"):
+        try:
+            safe_node_path(bad)
+            assert False, f"should reject {bad!r}"
+        except ValueError:
+            pass
+
+
 if __name__ == "__main__":
     import traceback
     funcs = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
