@@ -123,9 +123,12 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     `/xu-wiki <verb>` enters the `<verb>` SOP, which orchestrates one or
     more CLI subcommands. It does **not** translate to `xu-wiki <verb>`.
     Specifically:
-    - `/xu-wiki config` does **not** call a CLI named `config` (none
-      exists in the current CLI); it enters the config SOP, which calls
-      `alias` / `register` / `unregister` / `wikis` / `config`.
+    - `/xu-wiki config` does **not** call a CLI subcommand literally
+      named `config` with no sub-subcommand; it enters the config SOP,
+      which calls `alias set/unset/show` / `register` / `unregister` /
+      `wikis` / `config set-mineru-key|show|path` / `install` /
+      `uninstall`. (`config` itself is a subcommand that **requires**
+      one of `set-mineru-key | show | path`.)
     - `/xu-wiki ingest` does **not** call a CLI named `ingest`; it
       calls `ingest-file` then `ingest-commit` (PRIN-ING-1).
     Before invoking anything, read the SOP map above and identify which

@@ -27,7 +27,19 @@ from typing import Any
 from ..ingest.splitter import extract_nouns
 from ..parsers.image_meta import read_image_meta
 from ..utils import frontmatter as fm
-from ..utils.constants import IDF_CONSTANT
+from ..utils.db import idf_increment
+from ..utils.constants import (
+    FM_ACTIVE,
+    FM_CONTENT_HASH,
+    FM_CREATED,
+    FM_LAYER,
+    FM_NODE_PATH,
+    FM_SOURCE_HASH,
+    FM_TEMPLATE,
+    FM_TITLE,
+    FM_UID,
+    IDF_CONSTANT,
+)
 from ..utils.paths import (
     atomic_write_text,
     gen_uid,
@@ -249,17 +261,18 @@ def cmd_ingest_album(args) -> dict:
         ts = now_ts()
 
         frontmatter = {
-            "uid": uid,
-            "title": args.title,
-            "layer": "Page",
-            "template": ALBUM_TEMPLATE,
-            "active": True,
-            "created_at": ts,
-            "content_hash": content_hash,
-            "node_path": node_path,
+            FM_UID: uid,
+            FM_TITLE: args.title,
+            FM_LAYER: "Page",
+            FM_TEMPLATE: ALBUM_TEMPLATE,
+            FM_ACTIVE: True,
+            FM_CREATED: ts,
+            FM_CONTENT_HASH: content_hash,
+            FM_NODE_PATH: node_path,
             "digest": args.digest,
         }
-        frontmatter["source_hash"] = rows[0]["source_hash"] if rows else None
+        if rows:
+            frontmatter[FM_SOURCE_HASH] = rows[0]["source_hash"]
 
         rel_md = (Path("nodes") / "page" / Path(node_path) / f"{slug}.md") \
             if node_path else Path("nodes") / "page" / f"{slug}.md"
@@ -305,15 +318,7 @@ def cmd_ingest_album(args) -> dict:
             (uid, content_hash, args.author, ts),
         )
         # IDF incremental (PRIN-ING-9, CONST-ING-6)
-        for noun, cnt in extract_nouns(body).items():
-            row = conn.execute("SELECT freq FROM idf WHERE noun=?", (noun,)).fetchone()
-            new_freq = (row["freq"] if row else 0) + cnt
-            weight = IDF_CONSTANT / (new_freq + 1)
-            conn.execute(
-                "INSERT INTO idf(noun, freq, weight, updated_at) VALUES(?,?,?,?) "
-                "ON CONFLICT(noun) DO UPDATE SET freq=?, weight=?, updated_at=?",
-                (noun, new_freq, weight, ts, new_freq, weight, ts),
-            )
+        idf_increment(conn, body, extract_nouns_fn=extract_nouns, constant=IDF_CONSTANT)
 
         conn.commit()
 

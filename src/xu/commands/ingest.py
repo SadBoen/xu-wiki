@@ -15,6 +15,7 @@ from ..ingest.splitter import extract_nouns, split_pages
 from ..parsers.registry import parse_file
 from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
+from ..utils.db import idf_increment
 from ..utils.constants import (
     FM_ACTIVE,
     FM_CONTENT_HASH,
@@ -310,14 +311,5 @@ def cmd_ingest_commit(args) -> dict:
 
 
 def _update_idf(conn, body: str) -> None:
-    nouns = extract_nouns(body)
-    ts = now_ts()
-    for noun, cnt in nouns.items():
-        row = conn.execute("SELECT freq FROM idf WHERE noun=?", (noun,)).fetchone()
-        new_freq = (row["freq"] if row else 0) + cnt
-        weight = IDF_CONSTANT / (new_freq + 1)
-        conn.execute(
-            "INSERT INTO idf(noun, freq, weight, updated_at) VALUES(?,?,?,?) "
-            "ON CONFLICT(noun) DO UPDATE SET freq=?, weight=?, updated_at=?",
-            (noun, new_freq, weight, ts, new_freq, weight, ts),
-        )
+    """Thin wrapper for backwards-compat; logic now lives in utils.db.idf_increment."""
+    idf_increment(conn, body, extract_nouns_fn=extract_nouns, constant=IDF_CONSTANT)

@@ -196,7 +196,6 @@ def _dispatch(args) -> dict:
         from .commands.create import cmd_create
         return cmd_create(args)
     if func == "wikis":
-        from .commands.create import cmd_create  # noqa
         from .utils.config import load_registry
         from .utils.response import success
         return success(load_registry().get("wikis", {}), "registered wikis")
