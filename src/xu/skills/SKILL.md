@@ -42,7 +42,7 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | `/xu-wiki create` | build a new empty wiki | `create` (+ optional `wikis` to verify) |
 | `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase); optional `query-relation add`, `list create`, `report create` |
 | `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint |
-| `/xu-wiki doctor` | check / repair health | `doctor-all`; optional `--fix`; `rebuild` for derived layers |
+| `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
 | `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings |
 
 `xu-wiki install` and `xu-wiki uninstall` are **not** SOPs — they manage
@@ -161,6 +161,21 @@ no `--q`, no `--mode`, no `--limit`.
     Before invoking anything, read the SOP map above and identify which
     CLI subcommands the SOP needs. If the user's `<verb>` is not in the
     five-SOP list, **stop and ask** — do not guess the nearest CLI name.
+11. **Within a SOP, match user natural-language intent to CLI (PRIN-SOP-7).**
+    After entering a SOP, the agent's job is to interpret the user's
+    actual intent (often natural language, not a verb-noun command)
+    and pick the right CLI from that SOP's palette. CLIs are atomic
+    capabilities, NOT aliases of the SOP.
+    - `/xu-wiki doctor` then user says "delete X node" → call
+      `delete-node --wiki W --uid X` (with `--force` if referenced).
+    - `/xu-wiki doctor` then user says "full check" → call
+      `doctor-all --wiki W`.
+    - `/xu-wiki doctor` then user says "move X to Y directory" →
+      **no CLI exists for node-move**; SOP must **explicitly refuse
+      and explain** (do NOT coerce by calling an unrelated CLI).
+    Refusing an unsupported intent is correct behavior; coercing to
+    an unrelated CLI is the same class of bug as the
+    `/xu-wiki config → create --alias` workaround.
 
 ## Reading the response
 

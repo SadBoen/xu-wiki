@@ -24,9 +24,23 @@ SOP 层是 xu-wiki skill 暴露给 Agent 的**5 个意图动词**（create / ing
 
 至少一个 SOP（ingest）必然要调 ≥ 2 个 CLI 命令（ingest-file → ingest-commit 两阶段，PRIN-ING-1），其他 SOP 也常需要多步（query 经常需要 query → 解读 hint → read / list show / report show）。SOP 是**编排**而非**包装**。
 
-### [PRIN-SOP-3] 同一 CLI 可被多个 SOP 共享——共享原则
+### [PRIN-SOP-3] CLI 是原子能力，SOP 是其按需组合——原子化原则
 
-`xu-wiki wikis`（列出已注册 wiki）被 `SOP: create` 用来验证建库结果，被 `SOP: config` 用来查看注册表。共享 CLI 不破坏 SOP 边界——边界由 Agent 入口决定，不由 CLI 决定。
+CLI 命令代表一项**原子能力**（atomic capability）：`delete-node` = 物理删除一个节点；`doctor-all` = 跑全部 6 项检查；`wikis` = 列出注册表；`rebuild` = 重衍生层。
+
+**CLI 不「属于」任何 SOP**。任何 SOP 都可以按用户意图，**挑选并编排**这些原子能力来满足用户请求。
+
+例子：
+
+| 用户输入 | 进入的 SOP | 编排的 CLI |
+|---|---|---|
+| `/xu-wiki doctor 删除 NepTune 的 dangling 节点` | doctor | `doctor-all` → `delete-node --force` |
+| `/xu-wiki config 全面清空 NepTune 的过时内容` | config | `doctor-all` → `delete-node` |
+| `/xu-wiki ingest 重建 NepTune 的 dangling 关系` | ingest | `query-relation add` |
+
+`delete-node` 同时被 doctor 和 config 引用——这不是「共享」，是「同一原子能力被两个 SOP 按各自意图嵌入使用」。
+
+理由：用户意图是**自然语言**（「把 X 移到 Y」「删 Z」「检查 W」），不是 SOP 名也不是 CLI 名。SOP 必须能根据意图**挑选并编排**合适的 CLI。如果把 CLI 钉死给某个 SOP，就等于让 Agent 失去按意图编排的灵活性。
 
 ### [PRIN-SOP-4] SOP 的错误恢复必须显式定义——失败模式原则
 
@@ -42,6 +56,58 @@ SOP 层是 xu-wiki skill 暴露给 Agent 的**5 个意图动词**（create / ing
 所有写动作（写 wiki DB、改 raws/、改 registry、改全局 config）必须经由 CLI 命令。SOP 编排层**只**调用 CLI，不自己 open() 文件、不自己 exec SQL。
 
 理由：CLI 是唯一有审计、错误处理、约束校验的层；SOP 直接动 FS 会绕过这些护栏（[BAN-SOP-2]）。
+
+### [PRIN-SOP-6] SOP 边界由用户意图决定，不由 CLI 决定——意图分层原则
+
+SOP 不是「这一组 CLI 的别名」，而是「**这一类用户意图**的承接入口」。
+
+正确框架（按意图归类）：
+- **破坏性 / 修复性意图**（删、改、查后修、移位）→ doctor SOP
+- **配置性意图**（注册、别名、密钥、路径）→ config SOP
+- **构建性意图**（建库、入库、建关系）→ create / ingest SOP
+- **检索性意图**（找内容、列节点、读全文）→ query SOP
+
+反例（按 CLI 归类，是错误的）：
+- 「`doctor-*` 命令归 doctor SOP」← 这是 CLI 视角，**不是** SOP 视角
+
+同一 CLI 可跨越 SOP 边界，**这是设计意图，不是例外**：
+- `wikis`：被 create 用来「建完验证」，被 config 用来「看注册表」
+- `nodes`：被 query 用来「找 UID」，被 doctor 用来「找 dangling」，被 config 用来「看 DB」
+- `delete-node`：被 doctor 用来「清 dangling」，未来也可被 config 用来「清库」
+
+理由：如果 CLI 决定 SOP 边界，SOP 就退化成「CLI 命令的别名分类」，失去 SOP 层存在的意义。SOP 的价值在于**按意图重新组合** CLI，不是按 CLI 重新分类。
+
+### [PRIN-SOP-7] SOP 接受自然语言意图，不是只接受动词命令——意图层原则
+
+SOP 是 Agent 层的**自然语言入口**。Agent 进入 SOP 后，根据用户的具体意图（自然语言短语）挑选 CLI。
+
+错误框架：把 SOP 当 verb-only 命令解释。
+
+```
+用户：/xu-wiki doctor 删除 X 节点
+错误响应：请用 xu-wiki delete-node --wiki W --uid X  ← 把 SOP 当 CLI 别名
+```
+
+正确框架：SOP 解析意图 → 编排 CLI。
+
+```
+用户：/xu-wiki doctor 删除 X 节点
+正确响应：Agent 在 doctor SOP 内识别意图 = 物理删除
+         → 调用 delete-node --wiki W --uid X（必要时 --force）
+```
+
+SOP recipe 必须覆盖**意图 → CLI** 的映射，不仅列 CLI 步骤。本文档 §五每个 SOP 都必须包含「典型用户意图 → 编排」表。
+
+**意图不可达时必须显式拒绝**（这是 SOP 编排的自然延伸）：
+
+```
+用户：/xu-wiki doctor 请将 X 节点移位到 Y 目录下
+正确响应：SOP 识别意图 = 移动节点位置
+         → 当前无对应 CLI（节点无「目录」概念）
+         → 拒绝并解释：建议用「删 + 重建」或「重新 ingest」代替
+```
+
+理由：如果 SOP 不显式拒绝，Agent 会**强行调一个不相关的 CLI**凑合（这是上一轮 `/xu-wiki config` 仿真时 Agent 调 `create --alias` 幂等分支凑合的根因）。
 
 ---
 
@@ -152,23 +218,62 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 **成功标志**：`query` 返回 `data.hits` 非空。
 
-### 5.4 SOP: doctor — 检查与修复
+### 5.4 SOP: doctor — 检查 / 修复 / 破坏性操作
 
-**意图**：用户说「我要检查 wiki 健康」或「wiki 出问题了」。
+**意图**：用户说「我要检查 wiki 健康」「删一个节点」「移位节点」「重衍生层」等一切涉及**修改 wiki 内容**或**修复不一致**的操作。
 
-**调用步骤**：
-1. `xu-wiki doctor-all --wiki <w>` 跑全部 6 项检查
-2. 若有 issue：
-   - 若 `--fix` 支持的（fields / files / l1-immutable 等机械修复），先告诉用户再应用
-   - 若需手工决策（如 L2/L3 引用冲突），给 Agent hint，不擅自动作
-3. （可选）重衍生层：`xu-wiki rebuild --wiki <w> --granularity keep-l1`（默认不动 L1）
+**典型用户意图 → CLI 编排**（按 [PRIN-SOP-7] 必须显式列出）：
+
+| 用户意图 | 编排 |
+|---|---|
+| 「全面检查」「健康检查」 | `doctor-all --wiki <w>` |
+| 「检查 fields / files / relations / l1-immutable / report-evidence / idf」 | 对应 `doctor-{xxx} --wiki <w>` |
+| 「修了再告诉我」（自动修） | `doctor-all --wiki <w> --fix`（先告诉用户再应用） |
+| 「删节点 X」 | `delete-node --wiki <w> --uid X`（若被 L2/L3 引用则先确认 `--force`） |
+| 「移位 / 移动 节点 X 到 Y」 | **当前无对应 CLI** → SOP 拒绝并解释（见下） |
+| 「重衍生层」「重建 IDF/LRU」 | `rebuild --wiki <w> --granularity keep-l1`（默认不动 L1） |
+
+**意图不可达的显式拒绝**（[PRIN-SOP-7]）：
+
+> 用户：「请将 X 节点移位到 Y 目录下」
+>
+> Agent 在 doctor SOP 内识别意图 = 移动节点位置，但当前 CLI 集合无对应原子能力（节点无「目录」概念）。
+>
+> 正确响应：
+> ```
+> {
+>   "status": "warning",
+>   "data": {
+>     "intent": "move_node",
+>     "supported": false,
+>     "reason": "xu-wiki nodes have no filesystem location; moves are not first-class"
+>   },
+>   "message": "node-move intent is not supported by current CLI capabilities",
+>   "hints": [
+>     "if you want to relocate data: delete X (--force if referenced) and re-ingest at Y",
+>     "if you want to reclassify layer: this is a semantic change, not a move; open an issue"
+>   ]
+> }
+> ```
+
+**调用步骤**（按典型路径）：
+1. Agent 解析用户意图 → 选 CLI（按上表）
+2. 编排时遇 `--fix`：先告诉用户会改什么，再应用
+3. 遇 `delete-node`：先 `doctor-all` 或 `nodes` 检查 L2/L3 引用，按需 `--force`
+4. 遇 `rebuild`：必须先确认 `--granularity`（[PRIN-ARCH-6]）
 
 **失败模式**：
 - `--fix` 失败 → 不自动重试，告知用户
 - 任何 doctor 报错 → 不许跳过；列出全部 issue
-- rebuild 必须先确认粒度（[PRIN-ARCH-6]）
+- `delete-node` 被 L2/L3 引用且无 `--force` → `NodeReferenced`
+- `rebuild` 必须先确认粒度（[PRIN-ARCH-6]）
+- **意图无对应 CLI** → SOP 拒绝并给 hints（[PRIN-SOP-7]）
 
-**成功标志**：`doctor-all` 返回 `data.total_issues = 0`。
+**成功标志**：
+- 检索意图：`doctor-all` 返回 `data.total_issues = 0`
+- 删除意图：`delete-node` 返回 `data.deleted = true`
+- 重建意图：`rebuild` 返回 `data.layers_rebuilt` 非空
+- 不可达意图：`status = warning` 且 `data.supported = false`
 
 ### 5.5 SOP: config — 配置管理
 
@@ -215,15 +320,20 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | | `doctor-fields / files / relations / l1-immutable / report-evidence / idf` | 细分 |
 | | `rebuild` | 修复（衍生层） |
 | | `delete-node` | 清理（删 dangling 节点） |
+| | `nodes` | 找 dangling（doctor 也需要看节点列表，[PRIN-SOP-3] 共享） |
 | **config** | `wikis` | 查看注册表 |
 | | `alias set / unset / show` | 别名管理 |
 | | `register` | 注册已有目录（不写文件） |
 | | `unregister` | 取消注册（不动 wiki 本体） |
 | | `config set-mineru-key / show / path` | 全局配置读写 |
+| | `nodes` | 看 DB 内容（config 也可检视 DB） |
+| | `delete-node` | 未来若 SOP-config 加「清空数据」子意图，可嵌入 |
 | **不属于 SOP** | `install` | 软件生命周期前置 |
 | | `uninstall` | 软件生命周期反向前置 |
 
 > **约束 [CONST-SOP-2]**：上表每一个 CLI 命令都必须能反向查到至少一个 SOP。无主命令 = 设计漏洞。
+>
+> 注意：「嵌入」≠「所属」。表里只列**当前会嵌入**的 SOP；如果将来某 SOP 有了新意图用到同一 CLI，就再加一行——这是按需嵌入，不是固化绑定（[PRIN-SOP-3] / [PRIN-SOP-6]）。
 
 ---
 
@@ -260,9 +370,11 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **原则**：
 - [ ] slash command ≠ CLI 子命令（[PRIN-SOP-1]）
 - [ ] SOP 是多步编排（[PRIN-SOP-2]）
-- [ ] 同一 CLI 可被多 SOP 共享（[PRIN-SOP-3]）
+- [ ] CLI 是原子能力，SOP 是其按需组合（[PRIN-SOP-3]）
 - [ ] 错误恢复显式定义（[PRIN-SOP-4]）
 - [ ] 副作用必须经由 CLI（[PRIN-SOP-5]）
+- [ ] SOP 边界由用户意图决定，不由 CLI 决定（[PRIN-SOP-6]）
+- [ ] SOP 接受自然语言意图，不是只接受动词命令（[PRIN-SOP-7]）
 
 **禁令**：
 - [ ] Agent 不许把 SOP 当 CLI 调（[BAN-SOP-1]）
