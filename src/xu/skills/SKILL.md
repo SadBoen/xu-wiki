@@ -62,8 +62,8 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | SOP | Intent | CLI commands it calls |
 |---|---|---|
 | `/xu-wiki create` | build a new empty wiki | `create` (+ optional `wikis` to verify) |
-| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); optional `query-relation add`, `list create`, `report create` |
-| `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint |
+| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)** with PRIMARY bias toward `list create` (Report only on contradiction) |
+| `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint; **post-query reflection (PRIN-CR-1)** with PRIMARY bias toward `report create` (List only on missing axis) |
 | `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
 | `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `install` / `uninstall` for software lifecycle |
 
@@ -149,6 +149,25 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     Refusing an unsupported intent is correct behavior; coercing to
     an unrelated CLI is the same class of bug as the
     `/xu-wiki config → create --alias` workaround.
+12. **Asymmetric creation bias** (PRIN-CR-1). After `ingest-commit` or after
+    `query`, the agent MUST run a creation-value reflection before declaring
+    the task done / before answering the user. The reflection has an
+    asymmetric default so it maps to user intent:
+    - After **ingest** → bias toward proposing **List** (PRIMARY
+      valuation). Report is SECONDARY (only if a contradiction /
+      re-evaluation emerged). Single-page ingest also triggers
+      reflection; "just one page" is not an excuse.
+    - After **query**  → bias toward proposing **Report** (PRIMARY
+      valuation). List is SECONDARY (only if hits form a natural
+      comparable group on a missing axis).
+    - **Never auto-create** — if value is real, draft the payload
+      (`--title` / `--members` / `--dimension` for List;
+      `--title` / `--body` / `--references` for Report), show a
+      one-sentence preview to the user, and wait for explicit
+      approval. The CLI does not run this reflection (PRIN-QRY-3) and
+      does not act on its own (PRIN-QRY-1).
+    Full reflection checklist → `ingest.md §Post-commit reflection`
+    and `query.md §Workflow` step 5.
 
 > **Ingest-specific rule** (PRIN-ING-13, the body-form decision tree) lives
 > in `ingest.md` since it only applies to the ingest SOP.
@@ -177,9 +196,10 @@ Every command prints one JSON object to stdout. Read `data.*` for facts and
  "message": "read complete", "hints": ["query-relation list --from-uid ..."]}
 ```
 
-On a `list_hint` / `report_hint` field, the agent decides whether to follow up
-with `list create` or `report create` — the CLI does not act on its own
-(PRIN-QRY-1).
+On a `list_hint` / `report_hint` field, the agent must run the post-query
+reflection (PRIN-CR-1; see hard rule 12): hints are starting points, not
+mandates. PRIMARY bias after query is toward Report; the CLI does not
+act on its own (PRIN-QRY-1).
 
 ## Quick start for the agent
 

@@ -102,6 +102,47 @@ xu-wiki report create --wiki <w> --title <t> --body <md> \
 2. **Single `ingest-commit --native "<code>"`**: skips Phase 1 (no parse),
    goes through dedup / patches v1 / IDF directly.
 
+## Post-commit reflection (PRIN-CR-1, asymmetric bias)
+
+After **every** `ingest-commit` (single page, album, or batch), the agent MUST
+run a creation-value reflection **before declaring the task done**. The CLI
+does not run this reflection (PRIN-QRY-3) and never auto-creates (PRIN-ING-*).
+
+**Why ingest leans List (PRIMARY), not Report:**
+L1 adds fresh facts. A List curates a comparable group of facts; a Report
+needs a conclusion that doesn't yet exist. So:
+
+1. **List valuation — PRIMARY (bias toward proposing).**
+   Ask all three:
+   - Did this ingest add ≥ 1 page that is comparable to ≥ 1 existing L1
+     page on an obvious axis (parameter count / accuracy / date / location /
+     category / model family / phase)?
+   - Or did this ingest add ≥ 2 pages that share an obvious dimension?
+   - Would a Node_List save future "find me the X" queries time, or
+     prevent duplication of future ingests?
+   → If all three: draft `list create` payload
+   (`--title` / `--dimension` / `--members`), show the preview to the user
+   in **one** sentence (e.g. "建一个 List 把 X、Y、Z 放一起，按
+   parameter count 对比？"), wait for explicit approval.
+
+2. **Report valuation — SECONDARY (opportunistic only).**
+   - Did the new page CONTRADICT something in the existing wiki?
+   - Did it force a re-evaluation of an existing Report's conclusion?
+   - Is there a documented conflict the user should know about?
+   → Only propose if signal is strong. By default, after ingest, do NOT
+   propose Report.
+
+3. **Neither** — say nothing. Don't manufacture value.
+
+**Important**: single-page ingest also triggers reflection (item 1's first
+bullet). "Just one page" is not an excuse; the value can be "this page
+joins an existing group". The CLI provides no hint here — the reflection is
+the agent's job entirely.
+
+**Important**: this section is the **ingest-side counterpart** to the
+query-side reflection in `query.md §Workflow` step 5. Same asymmetric bias,
+opposite default type.
+
 ## Example — prose
 
 ```bash
