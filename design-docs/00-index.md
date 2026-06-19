@@ -49,6 +49,8 @@
 | 概念动作 | 推荐命令 | 作用层 | 备注 |
 |---|---|---|---|
 | 建 Node_Page | `ingest-commit` | L1 | 唯一写盘入口（[PRIN-ING-1]）；L1 不可变 |
+| 建相册 L1 | `ingest-album` | L1 | 单次写入多张图 → 1 个 L1（[PRIN-ING-13] 表格形态 / [PRIN-ING-14] 单次原则） |
+| 写代码块 L1 | `ingest-commit --native` | L1 | [PRIN-ING-13] 代码块形态 |
 | 建 Node_List | `list create` | L2 | **不是** `page create`——`page` 字面属 L1，易误解 |
 | 建 Node_Report | `report create` | L3 | 必须引用 L1/L2 证据链 |
 | 读单节点全文 | `read --uid` | L1/L2/L3 通用 | 叠加 patches 还原当前视图；三层皆可读 |
@@ -98,7 +100,7 @@ L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
 
 ---
 
-## 跨文档核心原则（13 条）
+## 跨文档核心原则（14 条）
 
 ### 1. 图书馆哲学（[PRIN-ARCH-2]）
 
@@ -155,6 +157,18 @@ install 装 CLI/venv/SKILL/配置 schema。**不**动用户已有的任何 wiki 
 > **知识库是长期信任资产，一次错误写入的代价远超一次追问。**
 
 跨模块最高安全原则，**正式定义见 01-wiki-architecture.md 的 [PRIN-SAFETY]**。护栏在 **Agent 层**:意图不明确时(尤其在改变状态的命令之前),先问用户,绝不猜默认值或自作主张新建对象。CLI 保持确定性,参数合法就跑——意图判断不是 CLI 的职责。「判断一个值」(如内容归哪个分区)是本职,不算猜意图;「揣测操作意图」(如写错库名就建新库)必须停下来问。
+
+### 14. L1 body 样式与内容类型匹配——内容形态原则（[PRIN-ING-13]）
+
+L1 body 不是「一段 markdown 字符串」——它必须与承载的内容形态对齐。当前三类内容形态,对应三种 body 样式:
+
+| 内容类型 | body 样式 | 典型 CLI |
+|---|---|---|
+| 表格化 (一图一行 / 一项一行) | markdown 表格 | `ingest-album` (相册) |
+| 散文 (普通文档) | prose 段落、标题、列表 | `ingest-file` → `ingest-commit` |
+| 代码 / 命令块 | fenced code block | `ingest-commit --native` |
+
+Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散文 / 代码块」**。body 形态由内容类型决定,**不**由 template 名决定——template 是 frontmatter 标签,body 形态是文件实际写出去的 markdown 结构,二者正交。相册是这一原则的典型落地场景。
 
 ---
 

@@ -98,6 +98,152 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 
 对于需要压缩的图片,使用双 SHA256 设计:压缩前的 SHA256 用于查重(保证压缩不影响幂等去重),压缩后的 SHA256 用于完整性校验。EXIF 必须保留。阈值与压缩参数由库级 config 决定。
 
+### [PRIN-ING-13] L1 body 样式与内容类型匹配——内容形态原则
+
+**不同的内容,要有不同的正文样式**。L1 body 不是"一段 markdown 字符串"——它必须与承载的内容形态对齐。
+
+当前至少有三类内容形态,对应三种 body 样式:
+
+| 内容类型 | 典型来源 | body 样式 | CLI |
+|---|---|---|---|
+| **表格化** (一图一行 / 一项一行) | 相册 (album)、参数对比表、清单 | **markdown 表格**——表头 + 一行一项;列 = 关键元数据 | `ingest-album` (album 场景) |
+| **散文** (普通文档) | PDF / DOCX / Markdown / 文本 | **prose**——段落、标题、列表;解析器按文档结构产出 | `ingest-file` + `ingest-commit` (单源) |
+| **代码 / 命令块** | 脚本片段、终端输出、API 响应 | **fenced code block**——语言标注 + 单块代码 | `ingest-commit --native` 直接 commit markdown 源码 |
+
+理由:
+
+- body 样式错配 = 后期 query 切片、read 还原、人工审阅全部成本上升
+- 表格化内容塞进 prose = 无法按行做交叉查询;prose 内容塞进表格 = 浪费表头且断行
+- **body 形态由内容类型决定,不由模板名(template)决定**——`template` 是 frontmatter 标签,可以由 L2/L3 工具识别;body 形态是文件实际写出去的 markdown 结构,二者正交
+- Agent 编排 SOP 时,**第一步就是问用户"这些内容是表格化 / 散文 / 代码块"**,而不是默认走散文
+
+#### 强制约束
+
+- **表格化 body 的列必须稳定**——同一相册的 L1,列定义改了就等于创建新形态,跨实例引用会断(PRIN-ING-4 的精神)
+- **散文 body 不允许内嵌大段代码**——超过 5 行的代码必须走 fenced code block(` ``` `),与正文分离
+- **代码块 body 不允许混入散文**——一段代码就是一段代码,需要解释时另起一个 L1 page 写说明
+
+### [PRIN-ING-14] 相册是单次写入,不走两阶段——单次原则
+
+`ingest-album` 是 ingest SOP 的**子流(sub-flow)**,用于"多张图 → 1 个 L1 相册"场景。它**不**走 `ingest-file` → `ingest-commit` 两阶段:
+
+- **单次写入**:一次调用直接产出 1 个 L1 Page + N 个源文件 copy + 1 条 patches v1 + N 条 source_hash dedup
+- **不写 pending**:相册没有"先看再 commit"的需要——body 是程序生成的,Agent 看不到中间态有意义
+- **不强求两阶段校验**:相册内容的元数据(分辨率、GPS、DateTime)是**程序可决定的**,不需要 Agent 审阅;Agent 唯一要决定的只有 title / node-path / layout / vision 意图——这些都在调用前问清
+
+理由:
+
+- 两阶段的设计初衷是**让 Agent 在两阶段之间做语义判断**([PRIN-ING-2])。相册的 body 是机器生成的,Agent 在两阶段之间没东西可判断
+- 强塞两阶段 = 多一次 IO + 多一次 pending 文件清理,无收益
+- 但**单次不意味着无校验**:dedup (CONST-ING-3)、frontmatter (CONST-ING-4)、patches v1 (PRIN-ING-10)、IDF 入库 (PRIN-ING-9) 全部照跑
+
+#### 与 PRIN-ING-1 的关系
+
+- [PRIN-ING-1] "commit 是唯一写盘入口"——**仍然成立**:相册只有 1 个写盘入口(`ingest-album` 自身,内部一次性完成所有写入),不存在"先写一个临时 entry 再 commit"
+- [PRIN-ING-1] 管的是"写盘入口数量",[PRIN-ING-14] 管的是"入库流程形状"——两个维度正交
+
+#### 子流识别与设计原则清单 (B/C/D)
+
+**B 类 (跨 SOP 共享原子能力)**:`ingest-album` 虽然是 ingest SOP 的子流,但其内部逻辑用了"复制源文件 + 提取 EXIF + 写 1 个 L1 + dedup"四件套——前两件与 `ingest-commit` 的 raws/ 复制、PRIN-ING-6 完全同源;后两件与 PRIN-ING-10 / CONST-ING-3 完全同源。所以 `ingest-album` **不是发明新能力**,而是 ingest 已有原子能力的「单次组合」(PRIN-SOP-3: CLI 是原子,SOP 是其按需组合)
+
+**C 类 (软件生命周期)**:`ingest-album` **不**属于——它动的是 wiki 数据,不是软件本体
+
+**D 类 (可争议)**:`ingest-album` 是不是应该拆成"先创建 L1 → 再循环 ingest-file 引用"?答案:**不**。因为 L1 的 body 是程序生成的,无法用 `ingest-file` 链式表达(每个 `ingest-file` 产生的是单源的 pending,不是相册的多源表格)
+
+**A 类 (明确归 SOP-ingest)**:`ingest-album` 是 ingest SOP 的子流,在 08-sop-architecture.md §5.2 SOP-ingest 的「典型用户意图 → CLI 编排」表里有专行
+
+#### `ingest-album` 详细流程 (相册子流)
+
+**调用形态**:
+
+```bash
+xu-wiki ingest-album \
+  --wiki <name> \
+  --title "SGW001 第一次岸上系统部署完工" \
+  --files /abs/001.jpeg,/abs/002.jpeg,... \
+  --node-path "船舶/SGW001/联想产岸系统/首次完工/照片" \
+  --layout table|list \
+  [--vision] \
+  [--captions '{"001.jpeg":"船头整体完工",...}'] \
+  --digest <D> --author <A>
+```
+
+**9 步内部流程**:
+
+| # | 步骤 | 说明 |
+|---|---|---|
+| 1 | 解析 wiki | `resolve_wiki` (CONST-ING: wiki 必须先存在) |
+| 2 | 校验必填 | `--title` 必须非空;`--files` 必须 ≥ 1;`--layout ∈ {table, list}` (CONST-ING-4) |
+| 3 | 路径校验 | 所有源文件**绝对路径** + 文件存在 (hard rule 9 / BAN-CRT-1) |
+| 4 | captions 解析 | `--captions` JSON → `{filename: description}`;缺省视为空串 |
+| 5 | EXIF 提取 | `parsers/image_meta.read_image_meta` (Pillow 软依赖);resolution + GPS + DateTime 缺失字段一律 "—" (PRIN-ING-13 优雅降级) |
+| 6 | 源文件 copy | 每张图 `shutil.copy2` 到 `raws/<node-path>/<原文件名>` (PRIN-ING-6) |
+| 7 | Level-2 dedup | 对每张图 `SELECT ... WHERE source_hash=?`;任一命中 → warning + 整相册拒绝 (CONST-ING-3 / BAN-ING-4) |
+| 8 | 渲染 body | `_render_body` 生成 markdown 表格或列表;每行包含 # / Filename / Path / Resolution / GPS / Captured / Description 七列 (PRIN-ING-13 表格化形态) |
+| 9 | 一次性写盘 | 1 条 INSERT nodes (template=gallery) + 1 条 INSERT patches v1 + N 条 IDF 增量;**单事务,失败全回滚** (PRIN-ING-1 / PRIN-ING-10 / PRIN-ING-9) |
+
+**与两阶段流的差异**:
+
+| 维度 | `ingest-file` → `ingest-commit` | `ingest-album` |
+|---|---|---|
+| 源文件数 | 1 | N (≥1) |
+| 写盘入口 | 2 个 (file 写 pending + commit 写正式) | 1 个 (album 内部完成所有写入) |
+| pending 文件 | 有,Phase 2 后删 | 无 (PRIN-ING-14 单次原则) |
+| body 来源 | 解析器产出 | 程序渲染 |
+| Agent 介入点 | Phase 1 与 Phase 2 之间 | 调用前 (title / node-path / layout / vision 全部问清) |
+| 关系建 | commit 时 `--relations` | 不在本次建;调用后由 SOP 调 `query-relation add` (PRIN-ING-14 子流识别 B 类) |
+| 模板 | `article` / `table` / `gallery` | `gallery` (固定;相册语义本就如此) |
+
+**Vision/OCR 子流程 (--vision 标志)**:
+
+- Agent 在调用 `ingest-album` **之前**应主动问用户「要不要给每张图加视觉识别描述?」(PRIN-SOP-7 主动澄清)
+- 用户答 yes → `--vision` 标志置位,body 末尾 marker 记录 `vision=yes`;**当前 build 无 vision 后端** → 提示「vision 意图已标记,等后端就位再补 caption」
+- 用户答 no → `--vision` 缺省,marker 记录 `vision=no`;相册只有元数据
+- 用户没被问 / 问完没答 → **禁止** Agent 自己决定 yes/no → CLI 用 `--vision` 缺省值(no),并在 `hints` 里说「vision intent was not set; per-photo captions are empty」
+
+**典型 body 输出样例 (table layout)**:
+
+```markdown
+# SGW001 第一次岸上系统部署完工
+
+> 相册主题:SGW001 第一次岸上系统部署完工;10 张图片;源文件存于 `raws/船舶/SGW001/.../照片/`。
+
+| # | Filename | Path | Resolution | GPS | Captured | Description |
+|---|----------|------|------------|-----|----------|-------------|
+| 1 | 001.jpeg | `raws/船舶/SGW001/.../001.jpeg` | 6000×4000 | 31.23450°N, 121.45670°E | 2026-01-15 | 船头整体完工 |
+| 2 | 002.jpeg | `raws/船舶/SGW001/.../002.jpeg` | 6000×4000 | — | 2026-01-15 | — |
+| ... |
+| 10 | 010.jpeg | `raws/船舶/SGW001/.../010.jpeg` | 6000×4000 | — | 2026-01-15 | — |
+
+<!-- xu-album layout=table count=10 vision=no -->
+```
+
+**attrs.album.sources 存储形态 (供 L2/L3 工具查询)**:
+
+```json
+{
+  "album": {
+    "layout": "table",
+    "count": 10,
+    "vision": false,
+    "sources": [
+      {
+        "filename": "001.jpeg",
+        "source_hash": "sha256:...",
+        "raw_rel_path": "raws/船舶/SGW001/.../001.jpeg",
+        "width": 6000,
+        "height": 4000,
+        "gps": "31.23450°N, 121.45670°E",
+        "captured": "2026-01-15 14:32:00"
+      },
+      ...
+    ]
+  }
+}
+```
+
+**与 image-parser 解析器的关系**:`parsers/registry.py` 的 `ImageParser` 仍然负责**单图走散文**场景 (PRIN-ING-13 散文形态);`parsers/image_meta.read_image_meta` 专门服务**相册**场景。两者不重复——一个管 prose 形态,一个管 table 形态。
+
 ### [PRIN-ING-7] 暂存是中间产物——生命周期原则
 
 暂存文件（命名形如 `<节点路径>-pre.md`，存于暂存子目录）：
@@ -347,6 +493,8 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 - [ ] 写 patches 表初值（[PRIN-ING-10]）
 - [ ] 意图不明先问用户、绝不猜（[PRIN-ING-11]）
 - [ ] 图片压缩：双 SHA256 + 保 EXIF（[PRIN-ING-12]）
+- [ ] L1 body 样式与内容类型匹配（[PRIN-ING-13]——表格/散文/代码块三种形态，Agent 必须先问内容形态）
+- [ ] 相册子流 `ingest-album` 单次写入（[PRIN-ING-14]——不走两阶段，但 dedup / patches v1 / IDF 全跑）
 
 **禁令**：
 - [ ] Agent 不直写 Page（[BAN-ING-1]）

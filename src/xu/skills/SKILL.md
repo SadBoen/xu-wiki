@@ -18,8 +18,11 @@ more CLI subcommands. The five SOPs cover the full wiki lifecycle:
 - **create** — `/xu-wiki create` — build a new empty wiki at a path
   (raws/, nodes/{page,list,report,pending}/, .xu/).
 - **ingest** — `/xu-wiki ingest` — add content (PDF / DOCX / PPTX / MD /
-  image) to a wiki as Node_Page (L1, immutable). Two-phase flow:
-  `ingest-file` → `ingest-commit` (PRIN-ING-1).
+  image / album) to a wiki as Node_Page (L1, immutable). Two-phase flow
+  for prose / document content (`ingest-file` → `ingest-commit`,
+  PRIN-ING-1); **single-shot album flow** for a group of images
+  (`ingest-album`, PRIN-ING-14). Body style must match content type
+  (PRIN-ING-13: table / prose / code block).
 - **query** — `/xu-wiki query` — find knowledge with elastic slicing,
   IDF, Fast Pass; read individual nodes; follow L2/L3 hints.
 - **doctor** — `/xu-wiki doctor` — read-only consistency checks on
@@ -40,7 +43,7 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | SOP | Intent | CLI commands it calls |
 |---|---|---|
 | `/xu-wiki create` | build a new empty wiki | `create` (+ optional `wikis` to verify) |
-| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase); optional `query-relation add`, `list create`, `report create` |
+| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); optional `query-relation add`, `list create`, `report create` |
 | `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint |
 | `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
 | `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings |
@@ -74,6 +77,11 @@ xu-wiki ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: par
 xu-wiki ingest-commit --wiki <w> [--pending <f>] [--title <t>] [--node-path <p>] \
                       [--template article|table|gallery] [--digest <d>] \
                       [--relations '<json>'] [--native '<md>'] [--author <a>]   # Phase 2: only write entry
+
+# Album (PRIN-ING-14, single-shot; body style = table, PRIN-ING-13)
+xu-wiki ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
+                      [--node-path <p>] [--layout table|list] [--vision] \
+                      [--captions '<json>'] [--digest <d>] [--author <a>]
 
 xu-wiki query --wiki <w> --core <kw,kw> [--expansion <kw,kw>] [--top-k N] \
               [--neighbors] [--include-inactive]    # core vs expansion are graded by the Agent
@@ -176,6 +184,27 @@ no `--q`, no `--mode`, no `--limit`.
     Refusing an unsupported intent is correct behavior; coercing to
     an unrelated CLI is the same class of bug as the
     `/xu-wiki config → create --alias` workaround.
+12. **Ingest: ask content-form first; route to the right flow (PRIN-ING-13).**
+    When the user wants to ingest content, the **first** question is the
+    body form: "table (album) / prose (document) / code block (snippet)?"
+    Each form has a fixed CLI route:
+    - **table / album** (multiple images, one themed page) →
+      `xu-wiki ingest-album` (single-shot, PRIN-ING-14). Body is a markdown
+      table with one row per photo (Filename / Path / Resolution / GPS /
+      Captured / Description). The album theme IS the L1 title.
+    - **prose** (PDF / DOCX / MD / text / single image) →
+      `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase).
+    - **code block / terminal output** →
+      `ingest-commit --native "<code block>"` (no parse, but still
+      goes through the commit pipeline including dedup / patches v1 / IDF).
+    Never split a single album into N parallel `ingest-file` + `ingest-commit`
+    cycles — that breaks the body-form rule and leaves N disjoint L1 pages
+    with no album structure. The L1 body style MUST match the content type;
+    `template` is just a frontmatter label, the body is the file content.
+    For albums, the agent should also ask "vision per-photo? (yes/no)"
+    BEFORE calling — if the user wants per-photo captions and the build
+    has no vision backend, set `--vision` so the intent is recorded
+    (PRIN-SOP-7). Never decide for the user.
 
 ## Reading the response
 

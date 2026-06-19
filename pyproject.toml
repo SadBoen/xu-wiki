@@ -18,6 +18,12 @@ parse = [
 nlp = [
     "jieba",
 ]
+# Pillow is a soft dep: album metadata extraction (resolution / GPS / DateTime)
+# gracefully degrades to "—" when missing. Install via:
+#   pip install xu-wiki[vision]
+vision = [
+    "Pillow>=10.0",
+]
 
 [project.scripts]
 xu-wiki = "xu.cli:main"

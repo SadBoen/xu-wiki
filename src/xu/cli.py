@@ -52,6 +52,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_commit")
 
+    sp = sub.add_parser("ingest-album",
+                        help="Album: N images → 1 L1 Page (single-shot, no two-phase; PRIN-ING-13)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--title", required=True, help="album theme (becomes the L1 title)")
+    sp.add_argument("--files", required=True,
+                    help="comma-separated absolute image paths")
+    sp.add_argument("--node-path", default="", help="logical partition path (album lives under nodes/page/<node-path>/)")
+    sp.add_argument("--layout", default="table", choices=["table", "list"],
+                    help="body layout: table (default) or list")
+    sp.add_argument("--vision", action="store_true",
+                    help="mark vision intent (per-photo captions); SOP should ask user first")
+    sp.add_argument("--captions", default="",
+                    help='JSON object {filename: description} (optional)')
+    sp.add_argument("--digest", default="")
+    sp.add_argument("--author", default="agent")
+    sp.set_defaults(func="ingest_album")
+
     sp = sub.add_parser("query", help="three-layer retrieval (L1 locate + L2/L3 hints)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--core", default="", help="comma-separated core keywords")
@@ -189,6 +206,9 @@ def _dispatch(args) -> dict:
     if func == "ingest_commit":
         from .commands.ingest import cmd_ingest_commit
         return cmd_ingest_commit(args)
+    if func == "ingest_album":
+        from .commands.album import cmd_ingest_album
+        return cmd_ingest_album(args)
     if func == "query":
         from .commands.query import cmd_query
         return cmd_query(args)

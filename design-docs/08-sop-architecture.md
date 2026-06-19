@@ -183,20 +183,31 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 **调用步骤**：
 1. （隐含前置）目标 wiki 已建好（`xu-wiki wikis` 可见）
-2. 对每个源文件执行两阶段（[PRIN-ING-1]）：
+2. **第一步：识别内容形态**（[PRIN-ING-13]）
+   - 「散文 / 文档」(PDF / DOCX / Markdown / 文本) → 走两阶段
+   - 「代码 / 命令块」 → `ingest-commit --native` 直接 commit
+   - 「表格化 / 相册」(一组图片 / 一组参数) → 走 `ingest-album` 单次
+3. **散文 / 文档**:对每个源文件执行两阶段（[PRIN-ING-1]）：
    - Phase 1：`xu-wiki ingest-file --wiki <w> --file <abs>`
    - Phase 2：`xu-wiki ingest-commit --wiki <w> --title <t> --template article`
-3. （可选）建关系：`xu-wiki query-relation add --wiki <w> --from-uid ... --to-uid ...`
-4. （可选）建 L2 / L3：`xu-wiki list create` / `xu-wiki report create`
-5. （可选）调用 `xu-wiki nodes --wiki <w> --layer Page` 验证写入
+4. **代码块**:`xu-wiki ingest-commit --wiki <w> --title <t> --template article --native "<code block>"`
+5. **相册 (album) [PRIN-ING-14 单次原则]**:
+   - 必问 1:每张图要不要加 vision 描述?(`--vision` 标志,见 [PRIN-SOP-7])
+   - 必问 2:主题 title / node-path / layout (table 默认)
+   - 一次调用:`xu-wiki ingest-album --wiki <w> --title T --files abs1,abs2,... --node-path P --layout table`
+6. （可选）建关系：`xu-wiki query-relation add --wiki <w> --from-uid ... --to-uid ...`
+7. （可选）建 L2 / L3：`xu-wiki list create` / `xu-wiki report create`
+8. （可选）调用 `xu-wiki nodes --wiki <w> --layer Page` 验证写入
 
 **失败模式**：
 - Phase 1 失败 → 文件解析失败，不创建 L1 节点
 - Phase 2 失败 → pending 文件保留（不删），Agent 报告用户决定
+- Album 任一 source_hash 命中已存在 → 整相册拒绝（[BAN-ING-4] / [CONST-ING-3] Level-2）
+- Album 缺 title / files / node-path → 必问用户，不许猜（[PRIN-ING-11]）
 - 关系数 > 50 → 自动 LRU 淘汰队尾（[PRIN-ARCH-7~10]）
 - Report 缺证据链 → `EmptyEvidence`（[BAN-ARCH-5]）
 
-**成功标志**：Phase 2 返回 `data.uid`。
+**成功标志**：Phase 2 或 `ingest-album` 返回 `data.uid`。
 
 ### 5.3 SOP: query — 检索
 
@@ -305,8 +316,9 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 |---|---|---|
 | **create** | `create` | 主命令 |
 | | `wikis` | 验证 |
-| **ingest** | `ingest-file` | Phase 1（PRIN-ING-1） |
-| | `ingest-commit` | Phase 2 |
+| **ingest** | `ingest-file` | Phase 1（PRIN-ING-1，散文/文档形态） |
+| | `ingest-commit` | Phase 2（含 `--native` 走代码块形态） |
+| | **`ingest-album`** | **相册子流 (PRIN-ING-14, 表格形态, 单次写入)** |
 | | `query-relation add` | 建关系（可选） |
 | | `list create` | 建 L2（可选） |
 | | `report create` | 建 L3（可选） |
