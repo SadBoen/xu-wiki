@@ -191,7 +191,7 @@ doctor 全程确定性逻辑：DB 查询 + 文件状态比对 + 结构化输出�
 
 ### [CONST-DOC-9] 不修复〈形态字段〉与 body 不匹配
 
-`doctor-content-type` 检测到〈形态字段〉= table 但 body 不是 YAML list → **只报告**，不修复。
+`doctor-content-type` 检测到〈形态字段〉= table 但 body 不是 markdown 表格 → **只报告**，不修复。
 
 理由：修复需要 Agent 重新生成 body——超出 doctor 的确定性逻辑范围。
 

@@ -94,6 +94,43 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 
 **图片例外**:需要压缩的图片,其「原样可追溯」由 [PRIN-ING-12] 的双 SHA256 保证,不强求物理保留未压缩字节。
 
+### [PRIN-ING-7] 暂存是中间产物——生命周期原则
+
+暂存文件（命名形如 `<节点路径>-pre.md`，存于暂存子目录）：
+- Phase 1 创建 → 原子写
+- Phase 2 成功 → **立即删除**
+- Phase 2 失败 → 保留供 debug / 重试
+
+规则：commit 成功的 wiki **不应有 pending 文件残留**。任何残留 = 必有 ingest 半途崩了 → 用户可用 doctor 检测。
+
+### [PRIN-ING-8] 不并发 ingest——并发安全原则
+
+ingest 的暂存文件名 + DB locks 都是**单进程安全**的。并发 ingest 会让暂存文件冲突。
+
+Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Agent 自己排队。
+
+### [PRIN-ING-9] 入 IDF 词频表是 commit 的副产物
+
+`ingest-commit` 成功后，必须**用 jieba 提取 Page body 里的名词 + 计算库内频次**，写入 `IDF 词频表`。
+
+理由：检索时 `query` 会实时调取这些频次计算稀有度权重（[PRIN-ARCH-20] 的工程落地）。
+
+```
+稀有度权重 = 常量 / (库内频次 + 1)
+```
+
+稀有词（船名 LITA，库内频次低）→ 权重高（稀有 → 权重大）；通用词（项目，库内频次高）→ 权重低（常见 → 权重小）。
+
+### [PRIN-ING-10] patches 表初值是 commit 的副产物
+
+`ingest-commit` 成功后，必须在 `patches 表`（L1 修订表）写一条**初值记录**——代表「当前 Markdown 内容是 v1」。
+
+后续修订通过**增量 patch**叠加——绝不直接覆盖 Markdown（[PRIN-ARCH-3] L1 不可变原则）。
+
+### [PRIN-ING-11] 摄取意图不明就问，绝不猜（[PRIN-SAFETY] 在 ingest 的落地）
+
+摄取常有意图歧义(一批图片是按相册还是逐张?目标库不存在是写错了还是要新建?),Agent 必须先问用户、绝不替用户猜默认值。脏数据一旦摄入会污染后续所有查询和推理,多问一句远比事后清理便宜。CLI 仍保持确定性。
+
 ### [PRIN-ING-12] 图片压缩——双 SHA256
 
 对于需要压缩的图片,使用双 SHA256 设计:压缩前的 SHA256 用于查重(保证压缩不影响幂等去重),压缩后的 SHA256 用于完整性校验。EXIF 必须保留。阈值与压缩参数由库级 config 决定。
@@ -244,42 +281,20 @@ xu-wiki ingest-album \
 
 **与 image-parser 解析器的关系**:`parsers/registry.py` 的 `ImageParser` 仍然负责**单图走散文**场景 (PRIN-ING-13 散文形态);`parsers/image_meta.read_image_meta` 专门服务**相册**场景。两者不重复——一个管 prose 形态,一个管 table 形态。
 
-### [PRIN-ING-7] 暂存是中间产物——生命周期原则
+### [PRIN-ING-15] 业务变更追溯走 DB——不走过程层日志
 
-暂存文件（命名形如 `<节点路径>-pre.md`，存于暂存子目录）：
-- Phase 1 创建 → 原子写
-- Phase 2 成功 → **立即删除**
-- Phase 2 失败 → 保留供 debug / 重试
+业务侧的「这张照片是哪次加的」「这个 Page 是什么时候 commit 的」**不是**过程层的事——是**业务数据**。由 DB 自己的机制承担:
 
-规则：commit 成功的 wiki **不应有 pending 文件残留**。任何残留 = 必有 ingest 半途崩了 → 用户可用 doctor 检测。
+- `nodes.created_at` / `nodes.updated_at` —— 节点生命周期
+- `patches 表` —— L1 修订历史（[PRIN-ING-10]）
+- `nodes.attrs` 里的领域字段（如 `album.sources[i].captured`）—— 业务元数据
 
-### [PRIN-ING-8] 不并发 ingest——并发安全原则
+**审计 vs 业务变更的边界**：过程层 `audit.jsonl` 只记「谁跑了什么 CLI、跑没跑成」（[CONST-ARCH-6] / [PRIN-ARCH-26]）；业务变更历史由 DB 表与 frontmatter 字段承担。两者不重叠。
 
-ingest 的暂存文件名 + DB locks 都是**单进程安全**的。并发 ingest 会让暂存文件冲突。
-
-Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Agent 自己排队。
-
-### [PRIN-ING-9] 入 IDF 词频表是 commit 的副产物
-
-`ingest-commit` 成功后，必须**用 jieba 提取 Page body 里的名词 + 计算库内频次**，写入 `IDF 词频表`。
-
-理由：检索时 `query` 会实时调取这些频次计算稀有度权重（[PRIN-ARCH-20] 的工程落地）。
-
-```
-稀有度权重 = 常量 / (库内频次 + 1)
-```
-
-稀有词（船名 LITA，库内频次低）→ 权重高（稀有 → 权重大）；通用词（项目，库内频次高）→ 权重低（常见 → 权重小）。
-
-### [PRIN-ING-10] patches 表初值是 commit 的副产物
-
-`ingest-commit` 成功后，必须在 `patches 表`（L1 修订表）写一条**初值记录**——代表「当前 Markdown 内容是 v1」。
-
-后续修订通过**增量 patch**叠加——绝不直接覆盖 Markdown（[PRIN-ARCH-3] L1 不可变原则）。
-
-### [PRIN-ING-11] 摄取意图不明就问，绝不猜（[PRIN-SAFETY] 在 ingest 的落地）
-
-摄取常有意图歧义(一批图片是按相册还是逐张?目标库不存在是写错了还是要新建?),Agent 必须先问用户、绝不替用户猜默认值。脏数据一旦摄入会污染后续所有查询和推理,多问一句远比事后清理便宜。CLI 仍保持确定性。
+理由:
+- 审计日志是「程序行为记录」,丢了可重建（process-layer 无原始数据依赖）
+- 业务变更历史是「数据本身的一部分」,丢了**不可重建**——必须存在 DB 与 Markdown 里
+- 把业务变更塞进过程层 = 模糊边界 + 制造耦合,违反 [PRIN-ARCH-26] 的「各层不互替」精神
 
 ## 三、禁令
 
@@ -495,6 +510,7 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 - [ ] 图片压缩：双 SHA256 + 保 EXIF（[PRIN-ING-12]）
 - [ ] L1 body 样式与内容类型匹配（[PRIN-ING-13]——表格/散文/代码块三种形态，Agent 必须先问内容形态）
 - [ ] 相册子流 `ingest-album` 单次写入（[PRIN-ING-14]——不走两阶段，但 dedup / patches v1 / IDF 全跑）
+- [ ] 业务变更追溯走 DB（`nodes.created_at` / `patches 表` / 业务字段），不走过程层日志（[PRIN-ING-15]）
 
 **禁令**：
 - [ ] Agent 不直写 Page（[BAN-ING-1]）

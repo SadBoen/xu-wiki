@@ -373,7 +373,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | 07-doctor.md | 是 SOP-doctor 的 CLI 实现文档 |
 | **08-sop-architecture.md（本文）** | **定义 SOP 层与 CLI 层的边界** |
 
-> 本文档（08）是 SOP 层的**总纲**；02 / 05 / 06 / 07 是各 SOP 的 CLI 实现细节。未来若 SOP-config 落地，应新增 `09-config.md` 作为 SOP-config 的 CLI 实现文档。
+> 本文档（08）是 SOP 层的**总纲**；02 / 05 / 06 / 07 是各 SOP 的 CLI 实现细节。未来若 SOP-config 落地，应新增 `10-config.md` 作为 SOP-config 的 CLI 实现文档。
 
 ---
 

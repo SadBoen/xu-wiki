@@ -260,7 +260,7 @@ DB 是索引层，**可重建**。Markdown 永远是 ground truth。
 
 | 层 | 它是什么 | 存哪 | 谁来写 | 给谁看 |
 |---|---|---|---|---|
-| **内容层** content | 节点正文 + frontmatter | `nodes/<...>/<UID>.md` + `nodes + raws 表` | `ingest-*` / `page` / `album` 命令 | 人类 + Agent（最终消费者） |
+| **内容层** content | 节点正文 + frontmatter | `nodes/<...>/<UID>.md` + `nodes + raws 表` | `ingest-*` / `ingest-album` 命令 | 人类 + Agent（最终消费者） |
 | **修订层** revision | 内容随时间的演化 | SQLite `patches 表`（叠加 patch 还原当前视图） | `revise` / `ingest-revise` / doctor 自动 patch | 人类（看历史） |
 | **过程层** process | CLI 与 LLM 的对话、SOP 是否正常执行 | `<wiki>/.xu/audit.jsonl`（或 `~/.xu/global_audit.jsonl`） | CLI 入口自动埋点 | 程序（用来优化 CLI / 排查 SOP 问题） |
 
@@ -277,20 +277,6 @@ DB 是索引层，**可重建**。Markdown 永远是 ground truth。
 > 过程层 = 图书馆借阅台账（管理员用来优化排架、查高峰期）
 
 图书管理员不会在「书」里写一行「我今天整理过这本书」；也不必为每次借阅出一份「勘误页」。三层各管各的。
-
-### [PRIN-ARCH-26] 过程层只用于诊断 SOP——不参与内容
-
-`audit.jsonl` 唯一用途是**诊断 CLI / LLM 协作是否正常**：error 聚合、耗时分析、SOP 健康度（哪个命令经常失败、哪个 wiki 卡在哪一步）。它**不参与**：
-
-- 内容回溯（由 `patches 表` + `nodes.created_at` 承担）
-- 业务侧变更追溯（「这张照片是哪次加的」——这是 [PRIN-ING-15] 的数据库操作记录，不是过程日志）
-
-推论：
-- **禁止命令内手动 append 过程日志**——过程日志唯一来源是 CLI 入口的自动埋点（[CONST-ARCH-6]）。命令体只关心业务，不该操心「我该怎么被记」
-- **CLI 不解析 `audit.jsonl` 自己用**——它是给开发者/Agent 看的，CLI 不基于它做决策
-- **过程层日志不需要被 Rebuilt**——DB / Markdown 的 rebuild 不应连带重建 `audit.jsonl`，那是另一个时间维度
-
-这条原则是过去把 `op-log` 写进各命令、又用 LLM 重写 .md 的反模式里沉淀出来的——把过程当内容，是高熵增的源头。
 
 ---
 
@@ -387,6 +373,20 @@ Page 落在哪个层级由 node_path 决定:用户显式指定时直接用;未�
 nodes/ 与 raws/ 按同一 node_path 镜像对应。Page 移位时两侧联动移动,原子事务。
 
 要点:移动改的是位置不是内容,**不触发 patches**;引用走 UID([PRIN-ARCH-22]),移动不断引用。是否独立成命令由实现决定。
+
+### [PRIN-ARCH-26] 过程层只用于诊断 SOP——不参与内容
+
+`audit.jsonl` 唯一用途是**诊断 CLI / LLM 协作是否正常**：error 聚合、耗时分析、SOP 健康度（哪个命令经常失败、哪个 wiki 卡在哪一步）。它**不参与**：
+
+- 内容回溯（由 `patches 表` + `nodes.created_at` 承担）
+- 业务侧变更追溯（「这张照片是哪次加的」——这是 [PRIN-ING-15] 的数据库操作记录，不是过程日志）
+
+推论：
+- **禁止命令内手动 append 过程日志**——过程日志唯一来源是 CLI 入口的自动埋点（[CONST-ARCH-6]）。命令体只关心业务，不该操心「我该怎么被记」
+- **CLI 不解析 `audit.jsonl` 自己用**——它是给开发者/Agent 看的，CLI 不基于它做决策
+- **过程层日志不需要被 Rebuilt**——DB / Markdown 的 rebuild 不应连带重建 `audit.jsonl`，那是另一个时间维度
+
+这条原则是过去把 `op-log` 写进各命令、又用 LLM 重写 .md 的反模式里沉淀出来的——把过程当内容，是高熵增的源头。
 
 ---
 
