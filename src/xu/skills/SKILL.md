@@ -1,6 +1,6 @@
 ---
 name: "xu-wiki"
-description: "Operates the xu-wiki three-layer relation-driven knowledge base via deterministic CLI. Invoke when user asks to install/ingest/query/delete/rebuild a xu-wiki instance, manage 50-edge LRU relations, create Node_List (L2) or Node_Report (L3), or run doctor checks."
+description: "Operate the xu-wiki three-layer knowledge base via deterministic CLI. Invoke to install/ingest/query/read/delete/rebuild, manage 50-edge LRU relations, or build Node_List (L2) / Node_Report (L3)."
 ---
 
 # xu-wiki
@@ -82,7 +82,7 @@ no `--q`, no `--mode`, no `--limit`.
 
 1. **Never edit L1 markdown body** — it is immutable (PRIN-ARCH-2/3).
    UIDs are retired on delete, never reused (BAN-ARCH-2).
-2. **Report needs evidence** — `--evidence` must list ≥ 1 existing UIDs
+2. **Report needs evidence** — `--references` must list ≥ 1 existing UIDs
    (BAN-ARCH-5). Empty evidence is rejected at create-time.
 3. **50 edges only** — adding a 51st evicts the tail. Do not re-add the evicted
    edge unless you actually need it; it will go back to the head (PRIN-ARCH-7~10).

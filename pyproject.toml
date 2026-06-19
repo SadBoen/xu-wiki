@@ -26,5 +26,8 @@ xu = "xu.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"xu.skills" = ["SKILL.md"]
+
 [tool.xu-wiki]
 marker = "xu-wiki-project"
