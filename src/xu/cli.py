@@ -134,6 +134,36 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--granularity", default="keep-l1", choices=["keep-l1", "keep-l1-l2", "full"])
     sp.set_defaults(func="rebuild")
 
+    # ---- M6: SOP-config (alias / register / unregister / config) ----
+    sp = sub.add_parser("alias", help="manage wiki aliases (set / unset / show)")
+    asub = sp.add_subparsers(dest="alias_action", required=True)
+    asp_set = asub.add_parser("set", help="set or change the alias of a registered wiki")
+    asp_set.add_argument("--wiki", required=True, help="wiki name OR alias")
+    asp_set.add_argument("--alias", required=True)
+    asp_set.set_defaults(func="alias_set")
+    asp_unset = asub.add_parser("unset", help="remove the alias from a wiki")
+    asp_unset.add_argument("--wiki", required=True)
+    asp_unset.set_defaults(func="alias_unset")
+    asp_show = asub.add_parser("show", help="show the current alias of a wiki")
+    asp_show.add_argument("--wiki", required=True)
+    asp_show.set_defaults(func="alias_show")
+
+    sp = sub.add_parser("register", help="register an existing directory as a wiki (no files written)")
+    sp.add_argument("--name", required=True)
+    sp.add_argument("--path", required=True)
+    sp.add_argument("--alias", required=False)
+    sp.set_defaults(func="register")
+
+    sp = sub.add_parser("unregister", help="remove a wiki from the registry (wiki files untouched)")
+    sp.add_argument("--name", required=True, help="wiki name OR alias")
+    sp.set_defaults(func="unregister")
+
+    sp = sub.add_parser("config", help="manage global config (MinerU key, paths)")
+    csub = sp.add_subparsers(dest="config_action", required=True)
+    csub.add_parser("set-mineru-key", help="set MinerU key from MINERU_API_KEY env").set_defaults(func="config_set_mineru_key")
+    csub.add_parser("show", help="show global config (secrets masked)").set_defaults(func="config_show")
+    csub.add_parser("path", help="print global config file paths").set_defaults(func="config_path")
+
     return p
 
 
@@ -186,6 +216,30 @@ def _dispatch(args) -> dict:
     if func == "rebuild":
         from .commands.doctor import cmd_rebuild
         return cmd_rebuild(args)
+    if func == "alias_set":
+        from .commands.config import cmd_alias_set
+        return cmd_alias_set(args)
+    if func == "alias_unset":
+        from .commands.config import cmd_alias_unset
+        return cmd_alias_unset(args)
+    if func == "alias_show":
+        from .commands.config import cmd_alias_show
+        return cmd_alias_show(args)
+    if func == "register":
+        from .commands.config import cmd_register
+        return cmd_register(args)
+    if func == "unregister":
+        from .commands.config import cmd_unregister
+        return cmd_unregister(args)
+    if func == "config_set_mineru_key":
+        from .commands.config import cmd_config_set_mineru_key
+        return cmd_config_set_mineru_key(args)
+    if func == "config_show":
+        from .commands.config import cmd_config_show
+        return cmd_config_show(args)
+    if func == "config_path":
+        from .commands.config import cmd_config_path
+        return cmd_config_path(args)
     return error(f"unknown command function: {func}", "UnknownCommand")
 
 

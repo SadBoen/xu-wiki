@@ -1,6 +1,6 @@
 ---
 name: "xu-wiki"
-description: "Operate the xu-wiki three-layer knowledge base via deterministic CLI. Invoke to install/ingest/query/read/delete/rebuild, manage 50-edge LRU relations, or build Node_List (L2) / Node_Report (L3)."
+description: "Operate xu-wiki three-layer knowledge base via 5 SOPs (create/ingest/query/doctor/config) on a deterministic CLI. Manage 50-edge LRU, Node_List (L2), Node_Report (L3)."
 ---
 
 # xu-wiki
@@ -11,18 +11,43 @@ authoritative invocation guide for the agent side.
 
 ## When to use this skill
 
-Use it whenever the user wants to:
+The skill exposes **five SOPs** (Standard Operating Procedures). The
+slash command `/xu-wiki <verb>` enters a SOP, which orchestrates one or
+more CLI subcommands. The five SOPs cover the full wiki lifecycle:
 
-- **install** / **uninstall** the `xu-wiki` CLI capabilities (not data)
-- **create** a new empty wiki at a path (writes only `raws/`, `nodes/{page,list,report,pending}/`, `.xu/`)
-- **ingest-file** a PDF / DOCX / PPTX / MD / image into Node_Page (L1, immutable)
-- **query** L1 with elastic slicing, IDF, and Fast Pass; **read** a node
-- **query-relation** to add / list 50-edge LRU edges between nodes
-- **list create / show** for Node_List (L2, DB-only comparison)
-- **report create / show** for Node_Report (L3, DB-only with mandatory evidence chain)
-- **doctor** / **doctor-all** for read-only consistency checks (`--fix` for safe repairs)
-- **delete-node** a node (refuses if L2/L3 reference it; `--force` to cascade)
-- **rebuild** derived layers (IDF + LRU positions) without touching L1
+- **create** — `/xu-wiki create` — build a new empty wiki at a path
+  (raws/, nodes/{page,list,report,pending}/, .xu/).
+- **ingest** — `/xu-wiki ingest` — add content (PDF / DOCX / PPTX / MD /
+  image) to a wiki as Node_Page (L1, immutable). Two-phase flow:
+  `ingest-file` → `ingest-commit` (PRIN-ING-1).
+- **query** — `/xu-wiki query` — find knowledge with elastic slicing,
+  IDF, Fast Pass; read individual nodes; follow L2/L3 hints.
+- **doctor** — `/xu-wiki doctor` — read-only consistency checks on
+  fields / files / relations / L1 immutability / Report evidence / IDF;
+  apply `--fix` for safe repairs; rebuild derived layers when needed.
+- **config** — `/xu-wiki config` — manage configuration: set / change
+  wiki alias, register / unregister existing directories, manage the
+  MinerU API key, inspect the registered wikis.
+
+Software-lifecycle commands (`install` / `uninstall`) are **not** SOPs —
+they manage the CLI itself, not wiki data (CONST-SOP-3).
+
+## SOP map (slash command ↔ CLI orchestration)
+
+A slash command `/xu-wiki <verb>` enters a SOP — **not** a CLI subcommand.
+The five SOPs orchestrate one or more CLI subcommands each:
+
+| SOP | Intent | CLI commands it calls |
+|---|---|---|
+| `/xu-wiki create` | build a new empty wiki | `create` (+ optional `wikis` to verify) |
+| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase); optional `query-relation add`, `list create`, `report create` |
+| `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint |
+| `/xu-wiki doctor` | check / repair health | `doctor-all`; optional `--fix`; `rebuild` for derived layers |
+| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings |
+
+`xu-wiki install` and `xu-wiki uninstall` are **not** SOPs — they manage
+the software itself, not wiki data (CONST-SOP-3, design-docs/08).
+Full SOP semantics: design-docs/08-sop-architecture.md.
 
 ## Architecture in 30 seconds
 
@@ -71,6 +96,16 @@ xu-wiki doctor-fields|doctor-files|doctor-relations|doctor-l1-immutable|\
         doctor-report-evidence|doctor-idf --wiki <w> [--fix]
 xu-wiki delete-node --wiki <w> --uid <uid> [--force]
 xu-wiki rebuild     --wiki <w> --granularity keep-l1|keep-l1-l2|full
+
+# SOP-config (M6): alias / register / unregister / global config
+xu-wiki alias set     --wiki <w> --alias <new>     # set or change alias
+xu-wiki alias unset   --wiki <w>                   # remove alias (warns if none)
+xu-wiki alias show    --wiki <w>                   # show current alias
+xu-wiki register      --name <n> --path <abs> [--alias <a>]   # register existing dir (NO files written)
+xu-wiki unregister    --name <n>                   # remove from registry (wiki files NOT touched)
+xu-wiki config set-mineru-key                       # reads from MINERU_API_KEY env (safer than --key)
+xu-wiki config show                                 # global config (secrets masked)
+xu-wiki config path                                 # global config file paths
 ```
 
 NOTE: keyword grading is the Agent's job (PRIN-ARCH-12 / DESIGN-ARCH-4). The CLI
@@ -114,6 +149,18 @@ no `--q`, no `--mode`, no `--limit`.
    break idempotency (CONST-CRT-3) and the symlink-escape guard
    (CONST-CRT-5). If the user gave a relative path, ask for the
    absolute location before invoking.
+10. **Slash command is a SOP entry, NOT a CLI subcommand (BAN-SOP-1).**
+    `/xu-wiki <verb>` enters the `<verb>` SOP, which orchestrates one or
+    more CLI subcommands. It does **not** translate to `xu-wiki <verb>`.
+    Specifically:
+    - `/xu-wiki config` does **not** call a CLI named `config` (none
+      exists in the current CLI); it enters the config SOP, which calls
+      `alias` / `register` / `unregister` / `wikis` / `config`.
+    - `/xu-wiki ingest` does **not** call a CLI named `ingest`; it
+      calls `ingest-file` then `ingest-commit` (PRIN-ING-1).
+    Before invoking anything, read the SOP map above and identify which
+    CLI subcommands the SOP needs. If the user's `<verb>` is not in the
+    five-SOP list, **stop and ask** — do not guess the nearest CLI name.
 
 ## Reading the response
 

@@ -175,11 +175,15 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **意图**：用户说「我要管理 wiki / 全局配置」（别名、注册、密钥、查看）。
 
 **调用步骤**（按子任务）：
-- **设置 / 修改别名** → 调 `xu-wiki create --name <n> --alias <new> --path <n 的现有路径>`（走幂等分支，[CONST-CRT-3]）
-- **查看** → 调 `xu-wiki wikis`（只读）
-- **注册已有目录**（**待实现**）→ 调 `xu-wiki register --name <n> --path <abs>`
-- **取消注册**（**待实现**）→ 调 `xu-wiki unregister --name <n>`
-- **设置 MinerU key**（**待实现 CLI**）→ 当前直接编辑 `~/.xu/config.yaml` 的 `mineru.api_key`，**应实现** `xu-wiki config set-mineru-key`
+- **设置 / 修改别名** → `xu-wiki alias set --wiki <name|alias> --alias <new>`（专用命令，不动 `created_at`）
+- **解除别名** → `xu-wiki alias unset --wiki <name|alias>`
+- **查看别名** → `xu-wiki alias show --wiki <name|alias>`
+- **查看注册表** → `xu-wiki wikis`（只读）
+- **注册已有目录** → `xu-wiki register --name <n> --path <abs> [--alias <a>]`（不写文件）
+- **取消注册** → `xu-wiki unregister --name <n>`（不动 wiki 本体）
+- **设置 MinerU key** → `xu-wiki config set-mineru-key`（从 `MINERU_API_KEY` 环境变量读）
+- **查看全局配置** → `xu-wiki config show`（密钥 masked）
+- **查全局配置路径** → `xu-wiki config path`
 
 **失败模式**：
 - 别名冲突 → `warning` 不绑定（[CONST-CRT-4]）
@@ -212,10 +216,10 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | | `rebuild` | 修复（衍生层） |
 | | `delete-node` | 清理（删 dangling 节点） |
 | **config** | `wikis` | 查看注册表 |
-| | `create`（幂等分支） | 改别名（旁路） |
-| | `register`（**待实现**） | 注册已有目录 |
-| | `unregister`（**待实现**） | 取消注册 |
-| | `config`（**待实现**） | 全局配置读写 |
+| | `alias set / unset / show` | 别名管理 |
+| | `register` | 注册已有目录（不写文件） |
+| | `unregister` | 取消注册（不动 wiki 本体） |
+| | `config set-mineru-key / show / path` | 全局配置读写 |
 | **不属于 SOP** | `install` | 软件生命周期前置 |
 | | `uninstall` | 软件生命周期反向前置 |
 
