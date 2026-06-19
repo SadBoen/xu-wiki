@@ -34,23 +34,54 @@ when the list is full.
 - Python 3.10+
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on PATH (a pure-Python
   fallback scanner is used automatically if absent)
-- Python deps: `PyYAML` (required), `markitdown[all]` (document parsing),
-  `jieba` (noun extraction for IDF). The last two are optional; the engine
-  degrades gracefully without them.
+- Python deps:
+  - **Required**: `PyYAML`
+  - **Optional, recommended**: `markitdown[all]` (PDF/DOCX/PPTX parsing),
+    `jieba` (Chinese noun extraction for IDF), `Pillow` (image EXIF for albums)
+- On Debian/Ubuntu, also: `sudo apt install -y python3-venv` (the `venv` module
+  isn't bundled with the OS Python)
 
 ## Install
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/python -m pip install "markitdown[all]" jieba   # optional, recommended
+Two equivalent flows — pick whichever fits your workflow.
 
-# register the software (creates a project-local venv + CLI symlink in ~/.xu/bin)
-.venv/bin/xu-wiki install
+### Flow A — local checkout (recommended for dev / VPS)
+
+```bash
+git clone <repo-url> xu-wiki && cd xu-wiki
+
+# 1. one-shot: project-local venv + pip install + CLI symlink + skill deploy
+xu-wiki install
+#    ↳ installs xu-wiki[parse,nlp,vision] into .venv, registers ~/.xu/bin/xu-wiki,
+#      deploys SKILL.md + 5 SOP files to <project>/.trae/skills/xu-wiki/
+
+# 2. (optional) put xu-wiki on PATH for this shell
+export PATH="$HOME/.xu/bin:$PATH"
+
+# 3. verify
+xu-wiki wikis     # lists registered wikis (empty at first)
 ```
 
-`install` sets up capabilities only; it never creates wiki data. Set `XU_HOME`
-to relocate the global config/registry directory (defaults to `~/.xu`).
+### Flow B — global pip install (no project checkout)
+
+```bash
+# 1. install the package globally (pip puts xu-wiki on PATH automatically)
+python3 -m pip install "xu-wiki[parse,nlp,vision]"
+
+# 2. create a project directory for the skill bundle and config
+mkdir -p ~/xu-wiki && cd ~/xu-wiki
+
+# 3. (one-time) still need install for the skill deploy + global config skeleton
+xu-wiki install
+```
+
+After either flow, `~/.xu/install.json` records the installed package version,
+project root, venv path, and CLI symlink target. Set `XU_HOME` to relocate the
+global config / registry directory (defaults to `~/.xu`).
+
+> **What `install` does NOT touch**: any wiki instance. `install` only sets up
+> capabilities (PRIN-INST-1: install capabilities, not data). All wiki data
+> lives outside the source tree.
 
 ## Configuring MinerU (optional)
 
@@ -119,6 +150,40 @@ xu-wiki delete-node --wiki kb --uid <u> # ref-safe; --force to cascade
 # 8. uninstall (default dry-run; --execute to apply)
 xu-wiki uninstall
 ```
+
+## VPS / clean-machine deployment notes
+
+Tested flow for bringing xu-wiki up on a fresh VPS (Debian 12 / Ubuntu 22.04
+as root or a normal user):
+
+```bash
+# 1. system packages (Debian/Ubuntu only)
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip ripgrep git
+
+# 2. clone + install
+git clone <repo-url> ~/xu-wiki && cd ~/xu-wiki
+~/xu-wiki/install.sh           # or: python3 -m venv .venv && .venv/bin/pip install -e .[parse,nlp,vision] && .venv/bin/xu-wiki install
+
+# 3. PATH (one-time)
+echo 'export PATH="$HOME/.xu/bin:$PATH"' >> ~/.bashrc
+
+# 4. verify the Agent can see the skill
+ls ~/xu-wiki/.trae/skills/xu-wiki/SKILL.md   # must exist
+```
+
+Failure modes and what to check:
+
+| symptom | likely cause |
+|---|---|
+| `python3 -m venv` complains about ensurepip | missing `python3-venv` (Debian/Ubuntu) |
+| `install` returns `PipInstallFailed` | no network to PyPI, or pip is too old → `pip install --upgrade pip` |
+| `xu-wiki` not found after install | `~/.xu/bin` not on PATH (run `hash -r` or reopen shell) |
+| Agent can't find the skill | skill bundle not deployed → re-run `xu-wiki install`; check `~/.xu/install.json` |
+| `/tmp` writes fail with EPERM | running inside a sandboxed shell that disallows writes outside the project tree — run from a real shell |
+
+The CLI is **deterministic** — it never invokes an LLM or hits the network
+beyond optional `markitdown` / MinerU parsing (MinerU requires an explicit API
+key). No daemon, no background process; safe to run unattended.
 
 ## Ingest pipeline (the L1 closed loop)
 

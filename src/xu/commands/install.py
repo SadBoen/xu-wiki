@@ -15,7 +15,6 @@ base (BAN-UNINST-1) nor the packaged skill source.
 """
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -61,14 +60,31 @@ def cmd_install(args) -> dict:
         actions.append("venv already present (reused)")
 
     # 2. install package into venv (editable)
+    # If pip fails, install must ABORT loudly — silently proceeding yields a
+    # venv-without-package that downstream steps can silently mis-detect
+    # (CONST-INST-3 / PRIN-INST-5). Also install [parse,nlp,vision] optional
+    # groups so the CLI is functional out of the box on VPS.
+    from xu import __version__
     venv_py = VENV_DIR / "bin" / "python"
     if venv_py.exists():
         try:
-            subprocess.run([str(venv_py), "-m", "pip", "install", "-q", "-e", str(PROJECT_ROOT)],
-                           check=True, capture_output=True, text=True)
-            actions.append("installed xu-wiki into venv (editable)")
+            subprocess.run(
+                [str(venv_py), "-m", "pip", "install", "-q", "-e",
+                 f"{PROJECT_ROOT}[parse,nlp,vision]"],
+                check=True, capture_output=True, text=True,
+            )
+            actions.append(f"installed xu-wiki {__version__} into venv (editable, +parse,nlp,vision)")
         except subprocess.CalledProcessError as e:
-            actions.append(f"pip install skipped/failed (non-fatal): {e.stderr[-200:] if e.stderr else e}")
+            tail = (e.stderr or "").strip().splitlines()[-5:]
+            return error(
+                f"pip install failed: {' / '.join(tail) or e}",
+                "PipInstallFailed",
+                hints=[
+                    "ensure network access; check pip can reach PyPI",
+                    f"try manually: {venv_py} -m pip install -e '{PROJECT_ROOT}[parse,nlp,vision]'",
+                    "on Debian/Ubuntu, ensure python3-venv is installed",
+                ],
+            )
 
     # 3. CLI symlink, not a copy (CONST-INST-2)
     venv_cli = VENV_DIR / "bin" / "xu-wiki"
@@ -114,8 +130,8 @@ def cmd_install(args) -> dict:
     actions.append("wrote global config skeleton (api keys left empty)")
 
     INSTALL_META.write_text(
-        '{"project_root": "%s", "venv": "%s", "cli_link": "%s", "installed_at": %d}\n'
-        % (PROJECT_ROOT, VENV_DIR, CLI_LINK, now_ts()),
+        '{"version": "%s", "project_root": "%s", "venv": "%s", "cli_link": "%s", "installed_at": %d}\n'
+        % (__version__, PROJECT_ROOT, VENV_DIR, CLI_LINK, now_ts()),
         encoding="utf-8",
     )
 
