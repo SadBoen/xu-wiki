@@ -74,13 +74,24 @@ def _hard_split(lines: list[str], max_lines: int) -> list[str]:
 
 
 _NOUN_FLAGS = {"n", "nr", "ns", "nt", "nz", "nl", "ng", "eng"}
-_TOKEN_RE = re.compile(r"[A-Za-z0-9]{2,}|[\u4e00-\u9fff]{2,}")
+_LATIN_RE = re.compile(r"[A-Za-z0-9]{2,}")
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
+
+
+def _bigrams(run: str) -> list[str]:
+    """Slide a 2-char window over a CJK run (single char yields itself)."""
+    if len(run) < 2:
+        return [run]
+    return [run[i:i + 2] for i in range(len(run) - 1)]
 
 
 def extract_nouns(text: str) -> dict[str, int]:
     """Extract noun-like tokens with within-document counts.
 
-    Uses jieba POS tagging when available; falls back to a regex tokenizer.
+    Uses jieba POS tagging when available; falls back to a tokenizer that
+    splits Latin runs on word boundaries and CJK runs into overlapping
+    bigrams. The bigram fallback keeps short Chinese query terms findable in
+    the IDF table even when jieba is not installed (PRIN-ARCH-20).
     """
     counts: dict[str, int] = {}
     try:
@@ -95,7 +106,11 @@ def extract_nouns(text: str) -> dict[str, int]:
             return counts
     except Exception:
         pass
-    # fallback tokenizer
-    for tok in _TOKEN_RE.findall(text.lower()):
+    # fallback tokenizer: Latin word runs + CJK bigrams
+    lowered = text.lower()
+    for tok in _LATIN_RE.findall(lowered):
         counts[tok] = counts.get(tok, 0) + 1
+    for run in _CJK_RUN_RE.findall(lowered):
+        for tok in _bigrams(run):
+            counts[tok] = counts.get(tok, 0) + 1
     return counts

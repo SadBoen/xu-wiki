@@ -84,27 +84,39 @@ def add_relation(
 
 
 def touch_relation(conn: sqlite3.Connection, from_uid: str, to_uid: str) -> bool:
-    """Query hit → move the relation(s) to that target forward one position."""
-    rows = conn.execute(
-        "SELECT to_uid, relation_name, position FROM relations WHERE from_uid=? AND to_uid=?",
-        (from_uid, to_uid),
+    """Query hit → move the relation(s) to that target forward one position.
+
+    A single target may carry several relation_names (each is its own edge).
+    Swapping them one-by-one against live positions corrupts ordering (an
+    earlier swap shifts the row a later swap then reads), which reverses the
+    block. Instead we compute a stable reordering in one pass: every matched
+    edge gets a sort key one slot ahead of its current position while ties are
+    broken by original order, so matched edges advance without rotating.
+    """
+    all_rows = conn.execute(
+        "SELECT to_uid, relation_name, position FROM relations WHERE from_uid=? ORDER BY position",
+        (from_uid,),
     ).fetchall()
-    if not rows:
+    if not any(r["to_uid"] == to_uid for r in all_rows):
         return False
+    keyed = []
     moved = False
-    for r in rows:
-        if r["position"] > 0:
-            new_pos = r["position"] - 1
-            # swap with the node currently at new_pos
-            conn.execute(
-                "UPDATE relations SET position=? WHERE from_uid=? AND position=?",
-                (r["position"], from_uid, new_pos),
-            )
-            conn.execute(
-                "UPDATE relations SET position=? WHERE from_uid=? AND to_uid=? AND relation_name=?",
-                (new_pos, from_uid, r["to_uid"], r["relation_name"]),
-            )
+    for idx, r in enumerate(all_rows):
+        matched = r["to_uid"] == to_uid
+        if matched and r["position"] > 0:
+            primary = r["position"] - 1
             moved = True
+        else:
+            primary = r["position"]
+        # matched edges win ties at the same slot so they overtake an
+        # unmatched predecessor; original index keeps matched order stable.
+        keyed.append((primary, 0 if matched else 1, idx, r["to_uid"], r["relation_name"]))
+    keyed.sort(key=lambda x: (x[0], x[1], x[2]))
+    for pos, item in enumerate(keyed):
+        conn.execute(
+            "UPDATE relations SET position=? WHERE from_uid=? AND to_uid=? AND relation_name=?",
+            (pos, from_uid, item[3], item[4]),
+        )
     return moved
 
 

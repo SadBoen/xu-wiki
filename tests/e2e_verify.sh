@@ -3,7 +3,12 @@
 set -e
 export XU_HOME=/tmp/xw_e2e_home
 WIKI=/tmp/xw_e2e/demo
-SAMPLES="/Users/boen/Coding/xu-wiki-2/design-docs/测试用样例文件"
+SAMPLES="${XU_SAMPLES:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/design-docs/测试用样例文件}"
+if [ ! -d "$SAMPLES" ]; then
+  echo "sample dir not found: $SAMPLES" >&2
+  echo "set XU_SAMPLES to the directory holding PDF/ DOCX/ etc. sample files" >&2
+  exit 1
+fi
 XU=".venv/bin/xu-wiki"
 
 rm -rf /tmp/xw_e2e /tmp/xw_e2e_home

@@ -158,6 +158,54 @@ def test_doctor_relations_trim_over_cap():
     assert not any("> 50" in i["problem"] for i in post["issues"])  # repair verified (CONST-DOC-8)
 
 
+def test_touch_relation_no_rotation_multi_relname():
+    conn = _mkdb()
+    src = "2026-N0000000"
+    for i, rn in enumerate(("r1", "r2", "r3")):
+        conn.execute(
+            "INSERT INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (src, "2026-N0000001", rn, "", i, 0),
+        )
+    conn.commit()
+    touch_relation(conn, src, "2026-N0000001")
+    conn.commit()
+    order = [(r["position"], r["relation_name"]) for r in list_relations(conn, src)]
+    assert order == [(0, "r1"), (1, "r2"), (2, "r3")]  # stable, not rotated (BUG-16)
+
+
+def test_touch_relation_advances_one_slot():
+    conn = _mkdb()
+    src = "2026-N0000000"
+    for i, (to, rn) in enumerate([("2026-N0000001", "a"), ("2026-N0000002", "b"),
+                                  ("2026-N0000003", "c")]):
+        conn.execute(
+            "INSERT INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (src, to, rn, "", i, 0),
+        )
+    conn.commit()
+    touch_relation(conn, src, "2026-N0000003")
+    conn.commit()
+    order = [r["to_uid"] for r in list_relations(conn, src)]
+    assert order == ["2026-N0000001", "2026-N0000003", "2026-N0000002"]  # c moved up one
+
+
+def test_extract_nouns_cjk_bigram_fallback(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def no_jieba(name, *a, **k):
+        if name.startswith("jieba"):
+            raise ImportError("blocked")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_jieba)
+    nouns = extract_nouns("中文搜索词")
+    assert "中文" in nouns and "搜索" in nouns  # short CJK terms become findable (BUG-2)
+    assert "中文搜索词" not in nouns  # whole run is no longer swallowed
+
+
 if __name__ == "__main__":
     import traceback
     funcs = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
