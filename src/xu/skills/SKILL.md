@@ -97,6 +97,23 @@ no `--q`, no `--mode`, no `--limit`.
 7. **Output is deterministic** — given same wiki + same input, output bytes
    are identical. Do not inject timestamps, random IDs, or locale into the
    response body. Use `--wiki` rather than relying on CWD.
+8. **Missing required args: ask, do not guess.** When the user requests a
+   command whose required flag (`--name`, `--path`, `--file`, `--title`,
+   `--references`, `--members`, etc.) is missing from the request,
+   **ask the user explicitly before invoking**. The CLI never auto-picks
+   a name (`xu-wiki create` without `--name` returns `MissingName` per
+   BAN-CRT-3) and never auto-picks a path (a guessed path that already
+   holds user content is refused by BAN-CRT-1 — protecting data beats
+   saving a round trip). The wrong-name-then-silent-new-wiki failure
+   mode is the single most common agent accident; the only safe guard
+   is to ask first, every time.
+9. **Paths are absolute; `~` is fine.** All `--path` and `--file`
+   arguments must be absolute paths. The CLI calls `Path.expanduser`
+   internally, so the agent may pass `~/Documents/NepTune` directly
+   without pre-expansion. Never pass relative paths like `./foo` — they
+   break idempotency (CONST-CRT-3) and the symlink-escape guard
+   (CONST-CRT-5). If the user gave a relative path, ask for the
+   absolute location before invoking.
 
 ## Reading the response
 
