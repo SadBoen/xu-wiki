@@ -36,6 +36,16 @@ One command. Works on both Linux and macOS, PEP 668-safe:
 pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
 ```
 
+**What each extra provides** (install all three — they are all required):
+
+| Extra | Packages installed | Purpose |
+|---|---|---|
+| `parse` | `markitdown[all]` | PDF / DOCX / PPTX text extraction |
+| `nlp` | `jieba` | Chinese word segmentation for query |
+| `vision` | `Pillow>=10.0` | Image metadata extraction (resolution, GPS, DateTime) for albums |
+
+Without any extra: the CLI works, but PDF/DOCX ingestion silently fails and album images show no metadata.
+
 After install, the agent deploys the skill bundle:
 
 ```bash
