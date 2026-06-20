@@ -28,6 +28,68 @@ from ..utils.wiki import is_wiki_root
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
+_WIKI_CONFIG_COMMENTED_TEMPLATE = """\
+# xu-wiki per-wiki configuration
+# ================================
+# YAML 不支持内联注释，所有配置项及说明列在下方。
+# 修改值即可，不要删除注释（注释是文档）。
+
+# --- 基本信息 ---
+version: "1.0.0"           # 格式版本，不要修改
+name: "{name}"             # wiki 名称（由 create --name 指定）
+
+# --- 模板定义（预留，暂无内置模板）---
+templates: {{}}
+
+# --- 检索切片参数（query CLI） ---
+query:
+  slice:
+    soft_limit: 80         # 软上限：query 返回前先做切片，单次切片 token 数的软上限（超限触发合并）
+    hard_limit: 150        # 硬上限：单次切片 token 数的绝对上限（超限直接截断）
+    merge_radius: 80       # 相邻切片合并半径（token 距离）
+
+  scoring:
+    core_weight: 2000      # core 关键词权重（分母上的常量）
+    expansion_weight: 500   # expansion 关键词权重
+    density_bonus: 1.5     # 密度奖励系数（>1，高密度切片权重上浮）
+
+  fast_pass:
+    enabled: true          # 是否启用 Fast Pass（提前退出优化）
+    dynamic: true          # 是否动态调整 k
+    k: 3.0                # Fast Pass 阈值系数：TF-IDF 得分第 k 名高于均值 × k 时提前退出
+    low_hit: 3            # Fast Pass 低命中下限：低于此阈值时不触发快速退出
+
+  top_k: 10               # query 默认返回条数（--top-k 覆盖）
+  timeout_seconds: 10      # query 超时（秒），超时则返回已有结果
+
+# --- 关系管理 ---
+relation:
+  max_edges: 50            # 每节点最大关系边数（LRU，超出后淘汰尾部）
+  policy: lru             # 淘汰策略（目前仅支持 lru）
+
+# --- 资产管理 ---
+asset:
+  compress_over: 2097152   # 触发压缩的文件大小阈值（字节），默认 2 MiB
+  preserve_exif: true      # 是否保留 EXIF 元数据（true = 保留，压缩时也尽量保留）
+
+# --- 摄取参数 ---
+ingest:
+  page_split_lines: 300    # PDF/DOCX 分页行数阈值（300 行切一刀，不足则余数独立成页）
+
+# --- 重建参数 ---
+rebuild:
+  granularity:             # rebuild CLI 的 --granularity 选项候选值（不要修改）
+    - keep-l1
+    - keep-l1-l2
+    - full
+"""
+
+
+def _write_wiki_config(path: Path, name: str) -> None:
+    content = _WIKI_CONFIG_COMMENTED_TEMPLATE.format(name=name)
+    path.write_text(content, encoding="utf-8")
+
+
 def _build_skeleton(target: Path, name: str) -> None:
     """Create full structure inside `target` (a fresh dir)."""
     (target / "raws").mkdir(parents=True)
@@ -44,11 +106,8 @@ def _build_skeleton(target: Path, name: str) -> None:
         encoding="utf-8",
     )
 
-    # wiki-internal config (CONST-CRT-6)
-    cfg = default_wiki_config(name)
-    (target / ".xu" / "config.yaml").write_text(
-        yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8"
-    )
+    # wiki-internal config (CONST-CRT-6) — written with inline comments
+    _write_wiki_config(target / ".xu" / "config.yaml", name)
 
     # state.json
     (target / ".xu" / "state.json").write_text(

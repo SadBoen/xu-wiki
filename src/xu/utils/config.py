@@ -56,14 +56,20 @@ def save_global_config(cfg: dict) -> None:
     auto-chmod 600 if the saved config contains a non-empty
     `mineru.api_key` (or any other future `*.api_key`).
     """
-    atomic_write_text(GLOBAL_CONFIG, yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    header = ""
+    if not GLOBAL_CONFIG.exists():
+        header = (
+            "# xu-wiki 全局配置文件\n"
+            "# ========================\n"
+            "# mineru.api_key: MinerU 云端解析服务的 API 密钥（用于 PDF 在线解析，markitdown 不可用时触发）\n"
+            "# wikis: wiki 注册表（xu create / register 自动写入，不要手动编辑）\n"
+            "#\n"
+        )
+    atomic_write_text(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
     if _contains_secret(cfg):
         try:
             os.chmod(GLOBAL_CONFIG, 0o600)
         except OSError:
-            # non-fatal; the user can chmod manually if the FS doesn't
-            # support it (e.g. some FAT mounts). Worst case: README's
-            # `chmod 600` note still applies.
             pass
 
 
@@ -99,7 +105,16 @@ def save_registry(reg: dict) -> None:
         with open(GLOBAL_CONFIG, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
     cfg["wikis"] = reg.get("wikis", {})
-    atomic_write_text(GLOBAL_CONFIG, yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    header = ""
+    if not GLOBAL_CONFIG.exists():
+        header = (
+            "# xu-wiki 全局配置文件\n"
+            "# ========================\n"
+            "# mineru.api_key: MinerU 云端解析服务的 API 密钥（用于 PDF 在线解析，markitdown 不可用时触发）\n"
+            "# wikis: wiki 注册表（xu create / register 自动写入，不要手动编辑）\n"
+            "#\n"
+        )
+    atomic_write_text(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
     if _contains_secret(cfg):
         try:
             os.chmod(GLOBAL_CONFIG, 0o600)
