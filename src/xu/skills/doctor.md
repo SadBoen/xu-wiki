@@ -107,11 +107,11 @@ xu doctor-relations --wiki research --fix
 
 ```bash
 # Step 1: dry check (no --force)
-xu delete-node --wiki research --uid 2026-WXYZ5678
+xu delete-node --wiki research --uid WXYZ5678
 # → {"status": "error", "data": {"error_class": "ReferencedByList", "refs": ["..."]}, ...}
 
 # Step 2: user accepts orphan refs → re-run with --force
-xu delete-node --wiki research --uid 2026-WXYZ5678 --force
+xu delete-node --wiki research --uid WXYZ5678 --force
 # → {"status": "success", "data": {"uid": "...", "deleted": true}, ...}
 ```
 

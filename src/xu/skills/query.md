@@ -103,11 +103,11 @@ xu query --wiki research --core "BERT,transformer" \
   --expansion "pre-training,encoder,attention" --top-k 5
 # → {"status": "success", "data": {"hits": [{"uid": "...", "score": 0.92}, ...]}, ...}
 
-xu read --wiki research --uid 2026-WXYZ5678
+xu read --wiki research --uid WXYZ5678
 # → {"status": "success", "data": {"uid": "...", "body": "## BERT\n..."}, ...}
 
 xu query-relation add --wiki research \
-  --from-uid 2026-WXYZ5678 --to-uid 2026-ABCD1234 \
+  --from-uid WXYZ5678 --to-uid ABCD1234 \
   --relation-name cites --comment "section 3.2"
 # → {"status": "success", "data": {"from": "...", "to": "...", "relation": "cites"}, ...}
 ```

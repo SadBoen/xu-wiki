@@ -259,9 +259,8 @@ def cmd_ingest_album(args) -> dict:
         content_hash = sha256_text(body)
 
         uid = gen_uid()
-        uid_suffix = uid.split("-", 1)[1].lower()
         base_slug = safe_slug(args.title)
-        slug = f"{base_slug}-{uid_suffix}"
+        slug = f"{base_slug}-{uid}"
         ts = now_ts()
 
         frontmatter = {

@@ -181,7 +181,7 @@ xu ingest-file   --wiki research --file ~/Downloads/bert.pdf
 xu ingest-commit --wiki research \
   --title "BERT: Pre-training of Deep Bidirectional Transformers" \
   --template article --digest "Masked LM + NSP pre-training achieves SOTA on 11 NLP tasks."
-# → {"status": "success", "data": {"uid": "2026-WXYZ5678", "title": "BERT: ..."}, ...}
+# → {"status": "success", "data": {"uid": "WXYZ5678", "title": "BERT: ..."}, ...}
 ```
 
 ## Example — album

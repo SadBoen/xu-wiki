@@ -313,7 +313,7 @@ Every command prints one JSON object to stdout. Read `data.*` for facts and
 `hints` for the next step. Examples:
 
 ```json
-{"status": "success", "data": {"uid": "2026-ABCD1234", "title": "BERT"},
+{"status": "success", "data": {"uid": "ABCD1234", "title": "BERT"},
  "message": "read complete", "hints": ["query-relation list --from-uid ..."]}
 ```
 
