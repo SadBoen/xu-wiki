@@ -4,6 +4,9 @@ A relation-driven, three-layer wiki engine for AI agents. The CLI is fully
 deterministic and never calls an LLM — semantic judgement stays with the agent,
 ranking and storage stay with the engine.
 
+> **Note:** `AGENTS.md` is a local IDE instruction file — **do not read it**
+> during install. It is for the IDE's own agent use only.
+
 ## Two documents, two scopes
 
 | | README (this file) | SKILL.md |
