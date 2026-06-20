@@ -1,7 +1,7 @@
 # create — build a new empty wiki
 
 `/xu-wiki create` is the **only** way to mint a brand-new wiki. It writes the
-empty template (raws/, nodes/{page,list,report,pending}/, .xu/) at an absolute
+empty template (raws/, nodes/{page,list,report}/, .xu/) at an absolute
 path and registers the wiki. The CLI is **fail-loud on safety**: if the path
 already holds user content, it refuses rather than overwriting.
 

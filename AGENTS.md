@@ -7,8 +7,8 @@ Relation-driven three-layer wiki engine for AI agents. Python CLI, fully determi
 ## Developer Commands
 
 ```bash
-.venv/bin/python tests/test_core.py       # unit tests
-bash tests/e2e_verify.sh                 # end-to-end M1->M5 run
+python3 -m pytest tests/              # unit tests (pyenv 3.14.5)
+bash tests/e2e_verify.sh              # end-to-end M1->M5 run
 ```
 
 ## Architecture
@@ -17,31 +17,30 @@ bash tests/e2e_verify.sh                 # end-to-end M1->M5 run
 - Entry point: `xu` command (via `xu.cli:main`)
 - 4-key JSON envelope on every command: `{status, data, message, hints}`
 - L1 nodes are **immutable** — revisions go through `patches` table
-- Ingest is **two-phase**: `ingest-file` (parse, output to `nodes/pending/`) → `ingest-commit` (write)
+- Ingest is **two-phase**: `ingest-file` (parse → system temp dir) → `ingest-commit` (atomic write, only write entry)
 
 ## Skill Deployment
 
 ```bash
-xu deploy skill --target <agent>   # auto, hermes, trae, claude, cursor
+xu deploy skill --target <agent>   # hermes, trae, claude, cursor, auto
 ```
 
 ## Key Constraints
 
 - `rg` (ripgrep) must be on PATH; pure-Python fallback used if absent
-- Debian/Ubuntu: `sudo apt install -y python3-venv` required before pipx/venv
-- Wiki data default: `~/Documents/xu-wikis/<wiki-name>/`
+- Wiki data is **NEVER deleted** by uninstall under any circumstances — hard invariant (BAN-UNINST-1)
 - Never commit: `.venv/`, `test-wikis/`, `CREDENTIALS*.md`
 
-## Uninstall is a 3-surface operation
+## Uninstall is a 2-surface operation
 
-Uninstall handles three surfaces. **Never do any of these manually:**
+**Wiki data is NEVER deleted. No flag, no branch, no surface ever touches it.**
 
-- **Program** (pipx/pip-managed): `xu uninstall --execute` handles this internally — do NOT run `pipx uninstall` separately.
-- **Skill bundle** (`~/.hermes/skills/xu-wiki/`, etc.): `xu uninstall` reads the manifest at `~/.local/share/xu-wiki/manifest.json` and removes each deployed target — do NOT delete skill directories manually.
-- **Config / wiki data**: `~/.xu-wiki/` is removed by default (`--preserve-config` to keep it). Wiki data is **NEVER deleted** under any circumstances — this is a hard invariant.
+| Surface | Owner | How |
+|---|---|---|
+| Skill bundle (`~/.local/share/xu-wiki/skills/<target>/`) | **xu CLI** | `xu uninstall --execute` reads manifest and removes each deployed target |
+| Program body (`xu` binary + venv) + `~/.xu-wiki/` config | **xu CLI** | `xu uninstall --execute` handles pip/pipx + config dir |
 
 **Forbidden**:
 - ❌ Running `pipx uninstall xu-wiki` as a separate step
-- ❌ Manually deleting `~/.hermes/skills/xu-wiki/`
+- ❌ Manually deleting skill bundle directories
 - ❌ Any flow that deletes wiki data, even with `--purge-wikis`
-

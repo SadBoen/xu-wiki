@@ -152,7 +152,7 @@ Wiki data
 具体到**软件生命周期**：
 
 - **install / upgrade / version 查询**：用户在人话里说"装 / 升 / 查版本"，Agent 用自己的 **bash 工具**跑 pip 命令。这条路径**不经过 xu CLI**——`xu` 不重复造 pip 的轮子（[CONST-SOP-3] 上半段）。
-- **uninstall**：用户说"卸载 xu-wiki"，Agent **两步走**：① 用自己的 skill 管理器删 skill bundle（不需要询问）；② 调用 `xu uninstall --execute` 卸程序本体。Wiki 数据（知识库）是用户的，不是 Agent 有权删的——这条路径**禁止**出现删除 wiki 数据的选项。
+- **uninstall**：用户说"卸载 xu-wiki"，Agent 调用 `xu uninstall --execute` 即可——CLI 自己处理 skill bundle 清理（读 manifest 反向删除）、pip/pipx 卸载、config 目录清理。Wiki 数据（知识库）永远不动——这条路径**禁止**出现删除 wiki 数据的选项。
 
 由此推导的设计约束：
 
@@ -233,13 +233,13 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | 操作 | 谁负责 | 为什么 |
 |---|---|---|
 | **install** | `pip install xu-wiki[parse,nlp,vision]` | pip 一行就能装上；不需要 CLI 包装。User 或任何 Agent 用 bash tool 调一次 pip 即可。 |
-| **uninstall** | Agent 自删 skill bundle + `xu uninstall` 卸程序 | 见下。 |
+| **uninstall** | `xu uninstall` 全包（skill bundle + 程序本体 + config） | 见下。 | |
 
 **为什么 uninstall 必须有 CLI 命令**（不能也走 pip）：
 
 1. **xu-wiki 是 GitHub 项目，不是预装品牌**。User 在真实场景中是把 **GitHub URL** 给 Agent，Agent 从 URL 读 `SKILL.md` 才知道 xu-wiki 是什么。没有 `/xu-wiki` slash 命令、没有 SKILL.md，Agent 不知道 xu-wiki 这个项目存在，更不知道如何卸载。
 2. **可发现性原则**：为了让 Agent 能帮助 User 卸载，必须有一个**在 SKILL.md 里可见的、agent 可调用的入口**——这个入口就是 `xu uninstall`。如果只有 `pip uninstall xu-wiki`，SKILL.md 里不会写"卸载靠 pip"——因为 pip 不属于 xu-wiki 项目，SKILL.md 是 xu-wiki 自己的文档。
-3. **不对称原则**：skill bundle 是 Agent 的资源，由 Agent 自删；程序本体由 `xu uninstall` 处理；**wiki 数据（用户的知识）永远不删**。
+3. **不对称原则**：`xu uninstall` 读 manifest 自己删 skill bundle；程序本体由 `xu uninstall` 处理；**wiki 数据（用户的知识）永远不删**。
 
 **为什么 install 不需要 CLI 命令**（保持简单）：
 
