@@ -12,15 +12,13 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import yaml
-
 from ..utils import db
 from ..utils.config import (
     load_registry,
     registry_find,
     save_registry,
 )
-from ..utils.constants import WIKI_FORMAT_VERSION, default_wiki_config
+from ..utils.constants import WIKI_FORMAT_VERSION
 from ..utils.paths import now_ts
 from ..utils.response import error, success, warning
 from ..utils.wiki import is_wiki_root

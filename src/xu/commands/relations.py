@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from ..ingest.relations_lru import add_relation, list_relations
 from ..utils.config import cfg_get
-from ..utils.paths import now_ts
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
 

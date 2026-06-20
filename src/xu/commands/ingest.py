@@ -27,14 +27,11 @@ from ..utils.constants import (
     FM_CREATED,
     FM_LAYER,
     FM_NODE_PATH,
-    FM_RAW_PATH,
     FM_SOURCE_HASH,
     FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
     IDF_CONSTANT,
-    REQUIRED_FM_FIELDS,
-    LAYERS,
     CONTENT_TYPES,
 )
 from ..utils.paths import (
