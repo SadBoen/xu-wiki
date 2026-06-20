@@ -94,6 +94,20 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 
 ## Hard rules the agent MUST respect
 
+0. **You are the only legitimate caller of `xu`.** The user communicates
+   with you through your UI (chat / voice / IM). They never run CLI
+   commands themselves (PRIN-SOP-8 / BAN-SOP-5). Three consequences:
+   - Translate the user's natural-language intent into CLI calls
+     yourself; never tell the user "please run `xu <verb>` in a
+     terminal" — they shouldn't be anywhere near a shell.
+   - The 4-key JSON you get back is for you to parse and reason about,
+     then translate into a human-readable reply for the user.
+     `data.error_class` is your routing hint; the user should never see
+     raw CLI output.
+   - When the user pushes back ("that's wrong", "I didn't say create",
+     "try a different way"), re-interpret their intent through the SOP
+     and pick a new CLI — they will not retype a corrected command
+     for you.
 1. **Never edit L1 markdown body** — it is immutable (PRIN-ARCH-2/3).
    UIDs are retired on delete, never reused (BAN-ARCH-2).
 2. **Report needs evidence** — `--references` must list ≥ 1 existing UIDs

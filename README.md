@@ -4,6 +4,11 @@ A relation-driven, three-layer wiki engine for AI agents. The CLI is fully
 deterministic and never calls an LLM — semantic judgement stays with the agent,
 ranking and storage stay with the engine.
 
+> **Who reads this README**: an AI agent loading `SKILL.md` to invoke `xu`
+> subcommands. **Not** the end user. The end user talks to the agent through
+> a chat UI; the agent does the calling. See [PRIN-SOP-8] in
+> `design-docs/08-sop-architecture.md` for the full rationale.
+
 ## Concept
 
 Knowledge is organized in three layers plus a relation graph:

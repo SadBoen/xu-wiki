@@ -101,7 +101,7 @@ L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
 
 ---
 
-## 跨文档核心原则（17 条）
+## 跨文档核心原则（18 条）
 
 ### 1. 图书馆哲学（[PRIN-ARCH-2]）
 
@@ -205,6 +205,30 @@ Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散
 `reference/` 的空占位文件是**结构信号**——告诉 Agent "这一类内容有家"。散文件（`error1.md` / `bug-2026-06-20.md`）违反这个信号，导致同主题内容散落、无法跨 entry 比较、无法被 install/uninstall 一致管理。
 
 如果新类型的内容**没有对应的占位文件**：先建占位（带引导头），再写内容。永远不要建 `notes-<date>.md` 之类的临时散文件。详见 [09-skill-architecture.md](09-skill-architecture.md) [BAN-SKILL-3]。
+
+### 18. 用户永不直接调用 CLI——Agent 是 CLI 的唯一调用方（[PRIN-SOP-8]）
+
+调用链只有 3 个角色：
+
+```
+User（自然语言意图）→ Agent UI → Agent（LLM + SKILL.md）
+                → subprocess.run(["xu", ...]) → CLI（确定性引擎）
+```
+
+User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、IM）。User 永远不直接调 CLI——CLI 看不到 User、只看到 Agent；User 看不到 CLI、只看到 Agent。
+
+由此推导的设计约束：
+
+1. **CLI 输出（4-key JSON）是给 Agent 解析的，不是给 User 看的**。任何「给 User 看的人话输出」必须由 Agent 在 SOP 层把 JSON 翻译成自然语言。
+2. **CLI 错误信息也是给 Agent 的**：`data.error_class` 是给 Agent 路由用的——Agent 拿到 error 之后才能决定「该问 User」「该换 CLI」「该直接拒绝」。
+3. **User 反馈必须经 Agent 重新理解**：User 的「不对」「我没说创建」「换一种问法」必须经 Agent 再决定调什么 CLI——User 不直接调 CLI。
+4. **测试 / 开发者本机跑 CLI 是合理反例**：开发者**临时扮演 Agent** 在 shell 跑 `xu query ...` 验证逻辑是允许的；自动化测试脚本也是「扮演 Agent」。但这不是 User 的常态。
+5. **README / SKILL.md / SOP 的示例都是给 Agent 看的**，不是给 User 看的教程。把 Quick start 误读成「User 的使用教程」会让 User 绕开 Agent 的意图判断，违反 [PRIN-SAFETY]。
+6. **CLI 参数命名以 Agent 解析清晰度为先**，不以「User 好记」为先。
+
+理由：把 User 排除在 CLI 调用链外，才能把「意图判断」交给 Agent（[PRIN-QRY-1] / [PRIN-SAFETY]）；如果 User 直接调 CLI，CLI 必须同时承担「意图判断」和「执行」两个职责，反而破坏「CLI 不调 LLM、确定性到底」的 [PRIN-QRY-3]。分层就是为这个分工服务的。
+
+详见 [08-sop-architecture.md](08-sop-architecture.md) [PRIN-SOP-8] / [BAN-SOP-5]。
 
 ---
 

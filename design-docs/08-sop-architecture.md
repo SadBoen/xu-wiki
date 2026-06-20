@@ -10,6 +10,16 @@
 
 SOP 层是 xu-wiki skill 暴露给 Agent 的**5 个意图动词**（create / ingest / query / doctor / config），每个动词在内部编排一组 CLI 原子命令完成工作流。Agent 与 SOP 交互，**不与 CLI 子命令直接交互**——slash command `/xu-wiki <verb>` 是 SOP 入口，**不是** `xu-wiki <subcmd>` 的别名。
 
+调用链的三个角色：
+
+| 角色 | 看到什么 | 输出什么 |
+|---|---|---|
+| **User** | Agent UI（聊天框 / 语音） | 自然语言意图 |
+| **Agent**（LLM + SKILL.md） | User 自然语言 + 4-key JSON | CLI 调用 |
+| **CLI**（确定性引擎） | Agent 的调用 | 文件 / DB 变更 |
+
+User 永远不直接调 CLI——CLI 的唯一调用方是 Agent（详见 [PRIN-SOP-8]）。
+
 ---
 
 ## 二、原则
@@ -109,6 +119,38 @@ SOP recipe 必须覆盖**意图 → CLI** 的映射，不仅列 CLI 步骤。本
 
 理由：如果 SOP 不显式拒绝，Agent 会**强行调一个不相关的 CLI**凑合（这是上一轮 `/xu-wiki config` 仿真时 Agent 调 `create --alias` 幂等分支凑合的根因）。
 
+### [PRIN-SOP-8] 用户永不直接调用 CLI——Agent 是 CLI 的唯一调用方
+
+完整调用链：
+
+```
+User (通过 Agent UI / 自然语言)
+    ↓ chat / 语音 / 文字
+Agent (LLM + SKILL.md + SOP 编排)
+    ↓ subprocess.run(["xu", ...])
+CLI (确定性引擎)
+    ↓ 文件 / DB
+Wiki data
+```
+
+**用户**与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、IM 客户端……），用户的输入永远是自然语言意图，不是 shell 命令。**Agent** 是 CLI 的**唯一合法调用方**——CLI 看不到 User、只看到 Agent；User 看不到 CLI、只看到 Agent。
+
+由此推导的设计约束：
+
+1. **CLI 的人类可读性是次要的**：CLI 的输出（4-key JSON）是给 Agent 解析的，不是给用户看的。文档不应假设「用户直接跑 `xu query ...`」。任何「给用户看的输出」必须由 Agent 在 SOP 层把 JSON 翻译成自然语言。
+2. **CLI 错误信息也要给 Agent 看，不是给用户看**：`data.error_class` 是给 Agent 路由用的；Agent 拿到 error 之后才能决定「该问用户」「该换个 CLI」「该直接拒绝」。
+3. **User 看不到 CLI，但 SOP 错误要让 User 能理解**：Agent 是 User 的翻译官；User 的反馈（「不对」「我没说创建」「换一种问法」）必须经 Agent 重新理解后再决定调什么 CLI——User 永远不直接调 CLI。
+4. **测试可以由开发者直接跑 CLI**：[BAN-TEST-1] 反例——开发者在自己的 shell 里跑 `xu query --wiki kb ...` 验证逻辑是合理的，因为开发者**临时扮演 Agent**。但这不是 User 的常态；自动化测试脚本也不算 User。
+5. **README 的「Quick start」示例是给 Agent 看的**：不是给 User 看的——User 通过 `/xu-wiki <verb>` 进入 SOP，Agent 在 SOP 内调这些 CLI。把 Quick start 误读成「给 User 的使用教程」会让 User 误以为需要手动敲命令，从而绕过 Agent 的意图判断（违反 [PRIN-SAFETY]）。
+6. **CLI 必须对 Agent 友好，不对 User 友好**：参数命名以 Agent 解析的清晰度为先，不以「用户好记」为先（User 反正不直接调）。
+
+理由：把 User 排除在 CLI 调用链外，才能把「意图判断」交给 Agent（[PRIN-QRY-1] / [PRIN-SAFETY]）；如果 User 直接调 CLI，CLI 必须同时承担「意图判断」和「执行」两个职责，反而破坏了「CLI 不调 LLM、确定性到底」的 [PRIN-QRY-3]。分层就是为这个分工服务的。
+
+反例（要禁止的）：
+- 「让 User 在终端手动跑 `xu create ...`」——绕开 Agent 的「先问用户再执行」环节（[PRIN-SAFETY]），可能用错 `--name` / `--path` 污染数据。
+- 「CLI 输出做成人话格式给 User 看」——既增加 CLI 复杂度（要判断 LLM 是否在场），又打破分层；正确做法是 Agent 翻译。
+- 「文档教 User 用 CLI」——把 Skill 的 SOP 编排能力废弃了，User 永远不会知道某个 CLI 已经 deprecated。
+
 ---
 
 ## 三、禁令
@@ -130,6 +172,24 @@ SOP 编排必须基于**已实现**的 CLI 子命令。如果某个 SOP 需要�
 ### [BAN-SOP-4] SOP 不许隐式触发副作用
 
 每一步的副作用必须可在 SOP 文档里看到。如果某个步骤「顺带」改了状态（不是其主功能的一部分），属于隐式副作用——要么写进文档，要么剥离到独立 CLI。
+
+### [BAN-SOP-5] 文档不许教 User 直接跑 CLI
+
+README / SOP / SKILL.md 不应出现「用户直接运行 `xu <verb> ...`」的指引——CLI 的用户是 Agent，不是 User。任何 CLI 调用示例必须明确标注「这是 Agent 内部调用的示例」（[PRIN-SOP-8]）。允许的例外：
+
+- **开发者临时扮演 Agent**：在本机 shell 跑 `xu query ...` 验证逻辑；这是 [PRIN-SOP-8] 第 4 条的反例豁免，不算 User。
+- **CI / 自动化测试脚本**：`tests/` 下的 `e2e_verify.sh` 等可直跑 CLI，因为脚本**扮演 Agent**，且其输出会被测试框架解析。
+
+但 README 的 Quick start、SOP 的「Workflow」、SKILL.md 的「Quick start for the agent」——**这些文档的读者都不是 User**：
+
+| 文档 | 读者 |
+|---|---|
+| README Quick start | **Agent**（读 SKILL.md 的 Agent 上下文） |
+| SKILL.md Quick start | **Agent**（被加载到 Agent 的 system prompt） |
+| SOP 的 Workflow 段 | **Agent**（被加载到 Agent 的上下文） |
+| 设计文档（design-docs/） | **开发者**（本机 shell 跑 CLI 验证逻辑） |
+
+User 不读这些文档；User 通过 `/xu-wiki <verb>` 进入 SOP，然后 Agent 在 SOP 内自己查这些文档。
 
 ---
 
