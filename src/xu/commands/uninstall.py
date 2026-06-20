@@ -20,12 +20,12 @@ always running dry-run first, asking the user, then re-running with
 
 Side effects (only when --execute is set):
 
-1. `--preserve-config` skips removal of `~/.xu/` (default: remove it).
+ 1. `--preserve-config` skips removal of `~/.xu-wiki/` (default: remove it).
 2. `--purge-wikis` is ignored — wiki data is NEVER deleted.
 3. `--keep-pip` skips the `pip uninstall xu-wiki -y` step (test escape
    hatch — the test suite uses this to verify the CLI without actually
    removing itself).
-4. Default (no flags except --execute): removes pip package + `~/.xu/`
+4. Default (no flags except --execute): removes pip package + `~/.xu-wiki/`
    config. Wiki data is preserved — always.
 
 Audit: the uninstall itself is logged to the GLOBAL audit log (no wiki
@@ -182,7 +182,7 @@ def _purge_wikis(strict_wiki_check: bool = True) -> dict:
 
 
 def _purge_global_dir() -> dict:
-    """Remove ~/.xu/ and report enough audit detail for the agent to
+    """Remove ~/.xu-wiki/ and report enough audit detail for the agent to
     cross-check the action (P0: agent review fix).
 
     Returns a dict with:
@@ -428,7 +428,7 @@ def cmd_uninstall(args) -> dict:
         result["config_dir"] = _purge_global_dir()
     else:
         result["config_dir"] = {"skipped": True,
-                                "reason": "--preserve-config set; ~/.xu/ preserved"}
+                                "reason": "--preserve-config set; ~/.xu-wiki/ preserved"}
 
     # 4) pip/pipx uninstall (skip if --keep-pip)
     if plan["pip_uninstall"]:

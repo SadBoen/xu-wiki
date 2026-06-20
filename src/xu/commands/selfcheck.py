@@ -4,7 +4,7 @@
 no agent-friendly command to verify the install is healthy. Agents had
 to assemble checks manually:
 
-    which xu, xu --version, xu skills path, ls ~/.xu/, pip show ...
+    which xu, xu --version, xu skills path, ls ~/.xu-wiki/, pip show ...
 
 `xu selfcheck` consolidates all of those into a single 4-key JSON
 response, with per-check `ok: true/false` + actionable `hint` strings.
@@ -14,7 +14,7 @@ Checks performed:
  1. **cli_on_path** — is `xu` reachable on `$PATH`?
  2. **python_version** — is `sys.version_info` >= 3.10?
  3. **skill_bundle_readable** — can we resolve the 8 skill files?
- 4. **global_dir_writable** — can we create `~/.xu/`?
+  4. **global_dir_writable** — can we create `~/.xu-wiki/`?
  5. **global_config_chmod** — if mineru.api_key present, is mode 600?
  6. **optional_extras** — are `markitdown` / `jieba` / `Pillow` installed?
  7. **ripgrep** — is `rg` on PATH (or fallback scanner is fine)?
@@ -300,7 +300,7 @@ def cmd_selfcheck(_args) -> dict:
         )
     if not checks["global_dir_writable"]["ok"]:
         next_actions.append(
-            "fix XU_HOME / HOME permissions so ~/.xu/ is writable "
+            "fix XU_HOME / HOME permissions so ~/.xu-wiki/ is writable "
             "(see checks.global_dir_writable.hint)"
         )
     if failed_noncritical:

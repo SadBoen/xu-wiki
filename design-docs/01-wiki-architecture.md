@@ -262,7 +262,7 @@ DB 是索引层，**可重建**。Markdown 永远是 ground truth。
 |---|---|---|---|---|
 | **内容层** content | 节点正文 + frontmatter | `nodes/<...>/<UID>.md` + `nodes + raws 表` | `ingest-*` / `ingest-album` 命令 | 人类 + Agent（最终消费者） |
 | **修订层** revision | 内容随时间的演化 | SQLite `patches 表`（叠加 patch 还原当前视图） | `revise` / `ingest-revise` / doctor 自动 patch | 人类（看历史） |
-| **过程层** process | CLI 与 LLM 的对话、SOP 是否正常执行 | `<wiki>/.xu/audit.jsonl`（或 `~/.xu/global_audit.jsonl`） | CLI 入口自动埋点 | 程序（用来优化 CLI / 排查 SOP 问题） |
+| **过程层** process | CLI 与 LLM 的对话、SOP 是否正常执行 | `<wiki>/.xu/audit.jsonl`（或 `~/.xu-wiki/global_audit.jsonl`） | CLI 入口自动埋点 | 程序（用来优化 CLI / 排查 SOP 问题） |
 
 **三层的边界**（这是过去踩过坑的地方）：
 
@@ -520,7 +520,7 @@ Node_Report 必须能追溯到 L1 / L2 的证据——没有证据链的 Report 
 
 每条命令调用 append 一行 JSONL,**双路写入**:
 - 命令能解析 `--wiki` → 写到 `<wiki>/.xu/audit.jsonl`
-- 命令无 wiki 上下文 / wiki 解析失败 → 写到 `~/.xu/global_audit.jsonl`
+- 命令无 wiki 上下文 / wiki 解析失败 → 写到 `~/.xu-wiki/global_audit.jsonl`
 
 每行至少含: `ts` / `command` / `wiki` / `status` / `elapsed_ms`;失败再加 `error_class`。
 

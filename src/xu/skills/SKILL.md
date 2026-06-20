@@ -98,7 +98,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 - **FS** holds raw material pool (`raws/`), L1 markdown (`nodes/page/`), L2 (`nodes/list/`), L3 (`nodes/report/`).
 - **CLI is offline-first** (CONST-ARCH-1 / PRIN-ARCH-11/12). MinerU is an optional
   parser in the fallback chain; the key is loaded from `MINERU_API_KEY` env or
-  `~/.xu/config.yaml` (`XU_HOME` overrides the dir).
+  `~/.xu-wiki/config.yaml` (`XU_HOME` overrides the dir).
 
 ## Hard rules the agent MUST respect
 
@@ -126,7 +126,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     | Surface | Owner | How |
     |---|---|---|
     | Skill bundle (`~/.hermes/skills/xu-wiki/`) | **the agent** (self) | Agent uses its own skill manager to delete this dir |
-    | Program body (`xu` binary + venv) + `~/.xu/` config | **xu CLI** | `xu uninstall --execute` |
+    | Program body (`xu` binary + venv) + `~/.xu-wiki/` config | **xu CLI** | `xu uninstall --execute` |
 
     **Wiki data (`<wiki>` dirs) is the user's knowledge — it is NEVER
     deleted. No flag, no option, no branch of any flow ever touches it.
@@ -142,7 +142,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
        `~/.hermes/skills/xu-wiki/`. This is the Agent's own resource,
        not the user's knowledge.
     2. **Run `xu uninstall --execute`** (no dry-run needed — `--execute`
-       is the safety gate). This removes the program body AND `~/.xu/`
+       is the safety gate). This removes the program body AND `~/.xu-wiki/`
        config directory. Wiki data (`<wiki>` dirs) is NEVER touched.
        Read `data.installer` (∈ {`pipx`, `pip`, `unknown`}):
        - `pipx` → after `xu uninstall --execute`, run
@@ -153,7 +153,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     4. **Never run `pip uninstall` or `pipx uninstall` directly via
        your bash tool** — always go through `xu uninstall`.
     5. **Independent verification**: after `--execute`, verify
-       `command -v xu` fails (program removed) and `~/.xu/` is gone
+       `command -v xu` fails (program removed) and `~/.xu-wiki/` is gone
        (config directory cleaned). Do not trust the JSON alone — check it.
     6. **Wiki data is NEVER touched, no exceptions.** There is no flag,
        no option, no branch that ever deletes wiki data. Do NOT add
@@ -188,7 +188,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 4. **Offline-first** — only MinerU parse may hit the network. Everything else
    must be local. If MinerU fails (401 / network / ZIP error), the chain falls
    back to `markitdown` → `text` → `image` silently (CONST-ING-1).
-5. **No secret in code or git** — MinerU key lives in `~/.xu/config.yaml`
+5. **No secret in code or git** — MinerU key lives in `~/.xu-wiki/config.yaml`
    (outside this repo) or `MINERU_API_KEY` env. Never hardcode.
 6. **All commands return 4-key JSON** — `{status, data, message, hints}`.
    `status ∈ {success, warning, error}` (warning = partial, e.g. SHA256 dup;
@@ -277,7 +277,7 @@ agent does NOT need to (and must NOT) call any logging command explicitly:
 
 - Commands with a resolvable `--wiki` write to `<wiki>/.xu/audit.jsonl`
 - Commands without `--wiki` (or unresolvable) write to
-  `~/.xu/global_audit.jsonl`
+  `~/.xu-wiki/global_audit.jsonl`
 
 Each line carries `ts` / `command` / `wiki` / `status` / `elapsed_ms`;
 failures add `error_class`. This log exists for SOP / CLI health diagnosis

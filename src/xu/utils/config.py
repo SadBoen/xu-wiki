@@ -1,6 +1,6 @@
 """Global + wiki-internal config and the system registry.
 
-Global config: ~/.xu/config.yaml  (wikis registry + api keys segment)
+Global config: ~/.xu-wiki/config.yaml  (wikis registry + api keys segment)
 Wiki config:   <wiki>/.xu/config.yaml
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ def _global_dir() -> Path:
     override = os.environ.get("XU_HOME")
     if override:
         return Path(override).expanduser()
-    return Path(os.path.expanduser("~/.xu"))
+    return Path(os.path.expanduser("~/.xu-wiki"))
 
 
 GLOBAL_DIR = _global_dir()

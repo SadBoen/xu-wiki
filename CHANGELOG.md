@@ -15,7 +15,7 @@
 
 - **Uninstall is a single command**: `xu uninstall --target <agent> --execute` now handles
   all three surfaces internally — pip/pipx package, skill bundle (per manifest),
-  and `~/.xu/` config. The old two-step README flow (manual `pipx uninstall` as
+  and `~/.xu-wiki/` config. The old two-step README flow (manual `pipx uninstall` as
   separate step) is retired.
 
 - **pipx uninstall automated**: `xu uninstall --execute` inside a pipx-managed venv now

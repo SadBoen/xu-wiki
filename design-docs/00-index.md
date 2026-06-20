@@ -177,7 +177,7 @@ Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散
 
 - **内容层** = 节点正文 + frontmatter（`nodes` 表 + `.md` 文件），给人类 / Agent 看
 - **修订层** = `patches 表`，给读者追溯历史
-- **过程层** = `<wiki>/.xu/audit.jsonl`（无 wiki 时退到 `~/.xu/global_audit.jsonl`），**只**给程序诊断 SOP 健康
+- **过程层** = `<wiki>/.xu/audit.jsonl`（无 wiki 时退到 `~/.xu-wiki/global_audit.jsonl`），**只**给程序诊断 SOP 健康
 
 **核心铁律**：
 

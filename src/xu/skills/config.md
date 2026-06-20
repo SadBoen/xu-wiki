@@ -33,14 +33,14 @@ xu skills list                                 # list files in the xu-wiki skill
 
 # Software lifecycle — uninstall xu-wiki itself (PRIN-UNINST-*)
 xu uninstall                                    # DRY-RUN by default; --execute to apply
-xu uninstall --execute                         # actually run pip uninstall (keeps wiki data + ~/.xu/)
+xu uninstall --execute                         # actually run pip uninstall (keeps wiki data + ~/.xu-wiki/)
 xu uninstall --execute --purge-wikis           # also remove every registered wiki dir
-xu uninstall --execute --purge-config          # also remove ~/.xu/ global dir
+xu uninstall --execute --purge-config          # also remove ~/.xu-wiki/ global dir
 xu uninstall --execute --purge-wikis --purge-config   # nuclear: everything gone
 xu uninstall --execute --keep-pip              # test escape hatch; do NOT call pip uninstall
 ```
 
-| Command | Touches wiki data? | Touches pip pkg? | Touches ~/.xu/? | Reversible? |
+| Command | Touches wiki data? | Touches pip pkg? | Touches ~/.xu-wiki/? | Reversible? |
 |---|---|---|---|---|
 | `wikis` | no (read-only) | no | no | n/a |
 | `alias set/unset/show` | no (registry only) | no | yes (registry) | yes |
@@ -76,9 +76,9 @@ language**. The user picks one of three scopes:
 
 | Scope | Flags | What gets removed |
 |---|---|---|
-| (a) Package only | `--execute` | `pip uninstall xu-wiki` — wiki data + `~/.xu/` PRESERVED |
+| (a) Package only | `--execute` | `pip uninstall xu-wiki` — wiki data + `~/.xu-wiki/` PRESERVED |
 | (b) Package + wikis | `--execute --purge-wikis` | pip + every registered wiki dir + unregister |
-| (c) Nuclear | `--execute --purge-wikis --purge-config` | pip + every wiki + `~/.xu/` + registry |
+| (c) Nuclear | `--execute --purge-wikis --purge-config` | pip + every wiki + `~/.xu-wiki/` + registry |
 
 ### Step 2 — confirm with the user
 
@@ -132,7 +132,7 @@ and no `pip upgrade` wrapper.
 - **`create` to register an existing dir** — refused by BAN-CRT-1. Use
   `register` instead.
 - **Hardcoding the MinerU key** — never write the key into the repo, the
-  SKILL.md, or any code. Use `MINERU_API_KEY` env or `~/.xu/config.yaml`.
+  SKILL.md, or any code. Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml`.
 - **`xu install`** — does not exist; returns `ArgParseError`. Install
   is `pip install`. Uninstall is `xu uninstall`.
 - **Calling `xu uninstall` without `--execute`** — that's the dry-run
@@ -161,7 +161,7 @@ and no `pip upgrade` wrapper.
    export MINERU_API_KEY="..."   # safer than passing --key
    xu config set-mineru-key
    ```
-   Or write it directly to `~/.xu/config.yaml` (outside this repo).
+   Or write it directly to `~/.xu-wiki/config.yaml` (outside this repo).
 2. **Inspect the global state**:
    ```bash
    xu config path    # show where config / global dir lives
@@ -204,7 +204,7 @@ The wiki directory is **untouched**. To bring it back: `register` again.
 - **`create` to register an existing dir** — refused by BAN-CRT-1. Use
   `register` instead.
 - **Hardcoding the MinerU key** — never write the key into the repo, the
-  SKILL.md, or any code. Use `MINERU_API_KEY` env or `~/.xu/config.yaml`.
+  SKILL.md, or any code. Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml`.
 
 ## Cross-references
 

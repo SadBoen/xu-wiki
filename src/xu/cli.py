@@ -206,7 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
                        default=None,
                        help="actually perform the uninstall")
     sp.add_argument("--preserve-config", action="store_true",
-                    help="keep ~/.xu/ config dir after uninstall (default: remove it)")
+                    help="keep ~/.xu-wiki/ config dir after uninstall (default: remove it)")
     sp.add_argument("--purge-wikis", action="store_true",
                     help="[DEPRECATED/IGNORED] wiki data is NEVER deleted")
     sp.add_argument("--keep-pip", action="store_true",
@@ -221,7 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- M8: post-install health check (坑 6 fix) ----
     sub.add_parser("selfcheck",
-                   help="verify xu-wiki install (CLI / Python / skills / ~/.xu/ / extras); "
+                   help="verify xu-wiki install (CLI / Python / skills / ~/.xu-wiki/ / extras); "
                         "agent-callable, returns 4-key JSON").set_defaults(func="selfcheck")
 
     # ---- M9: skill deployment helper (agent-callable, replaces manual cp -r) ----

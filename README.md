@@ -62,19 +62,9 @@ xu deploy skill --target hermes --target claude --target cursor
 
 ## Uninstall
 
-**Default scope — never touches wiki data or `~/.xu/` config.**
+**Default scope — never touches wiki data or `~/.xu-wiki/` config.**
 
-```bash
-xu uninstall --target hermes --execute        # program + skill bundle
-```
-
-**Default removes**: pip/pipx package + skill bundle at target. Wiki data and `~/.xu/` are **never touched**.
-
-Escalate (each is explicit opt-in):
-
-```bash
-xu uninstall --target hermes --execute --preserve-config  # also keep ~/.xu/
-```
+**Default removes**: pip/pipx package + skill bundle at target. Wiki data and `~/.xu-wiki/` are **never touched**.
 
 Multiple targets in one call:
 

@@ -38,7 +38,7 @@ Uninstall handles three surfaces. **Never do any of these manually:**
 
 - **Program** (pipx/pip-managed): `xu uninstall --execute` handles this internally — do NOT run `pipx uninstall` separately.
 - **Skill bundle** (`~/.hermes/skills/xu-wiki/`, etc.): `xu uninstall` reads the manifest at `~/.local/share/xu-wiki/manifest.json` and removes each deployed target — do NOT delete skill directories manually.
-- **Config / wiki data**: `~/.xu/` is removed by default (`--preserve-config` to keep it). Wiki data is **NEVER deleted** under any circumstances — this is a hard invariant.
+- **Config / wiki data**: `~/.xu-wiki/` is removed by default (`--preserve-config` to keep it). Wiki data is **NEVER deleted** under any circumstances — this is a hard invariant.
 
 **Forbidden**:
 - ❌ Running `pipx uninstall xu-wiki` as a separate step
