@@ -21,6 +21,7 @@ to ingest.
 > | PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` | Auto-fill `--content-type` from `CONTENT_TYPE_MAP` (`.xlsx/.csv`→`table`, images→`gallery`, rest→`article`); do not ask |
 > | N images, one theme | `ingest-album` | Ask "vision per-photo? (yes/no)" before calling (PRIN-SOP-7) |
 > | code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article`; do not ask |
+> | After commit: verify integrity | `ingest-verify` | 5 read-only checks (DB / nodes/ / hash / raw / format); run before declaring task done |
 >
 > After `ingest-file` succeeds, the Agent reads the temp file and synthesizes ALL
 > intermediate values **without asking the user**: title, node_path, relations,
@@ -195,6 +196,17 @@ xu ingest-album --wiki research \
   --files ~/uploads/001.jpg,~/uploads/002.jpg,~/uploads/003.jpg \
   --vision
 # → {"status": "success", "data": {"uid": "...", "rows": 3}, ...}
+
+### Verify
+
+After commit, verify the node integrity (read-only, non-destructive):
+
+```bash
+xu ingest-verify --wiki research --uid <uid from commit response>
+# → {"status": "success", "data": {"passed": ["DB record", "nodes_file", ...], "failed": [], "checks": [...]}, ...}
+```
+
+5 checks: DB record, nodes/ frontmatter completeness, content_hash match, raw file exists (non-native), content_type ↔ body format match.
 ```
 
 ## Common pitfalls
@@ -215,6 +227,9 @@ xu ingest-album --wiki research \
   `raws/` is empty, PRIN-ING-6 was bypassed (usually from using `--native`
   on a document). `data.created[].raw_path` in the response would be null.
   Fix: delete the L1 and re-ingest via `--pending` path.
+- **Skip ingest-verify after commit** — run `xu ingest-verify <wiki> <uid>` to
+  confirm DB / nodes/ / content_hash / raw file / body format are all consistent;
+  do not treat `ingest-commit` returning success as sufficient proof of integrity.
 - **Phase 1 temp file not deleted after commit** — if `ingest-commit` succeeded
    but the temp file at `data.pending` still exists on disk, that is a bug.
    Re-running `ingest-commit` with the same temp file will reject as duplicate
@@ -223,6 +238,6 @@ xu ingest-album --wiki research \
 ## Cross-references
 
 - Cross-cutting rules (immutability, JSON, paths, missing-args) → `SKILL.md §Hard rules`
-- The `query` and `read` CLIs (for verifying the ingest) → `SKILL.md §SOP map` (query SOP)
+- The `query` and `read` CLIs (for reading the ingest result) → `SKILL.md §SOP map` (query SOP); use `ingest-verify` for integrity checks
 - The 50-edge LRU semantics → `SKILL.md §Architecture in 30 seconds`
 - Full ingest architecture → `design-docs/05-ingest.md`

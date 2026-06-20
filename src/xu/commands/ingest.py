@@ -43,8 +43,8 @@ from ..utils.paths import (
     sha256_file,
     sha256_text,
 )
-from ..utils.response import error, success, warning
-from ..utils.wiki import resolve_wiki
+from ..utils.response import error, success, warning, make_response
+from ..utils.wiki import resolve_wiki, find_node_md
 
 
 def cmd_ingest_file(args) -> dict:
@@ -398,3 +398,101 @@ def cmd_ingest_commit(args) -> dict:
 def _update_idf(conn, body: str) -> None:
     """Thin wrapper for backwards-compat; logic now lives in utils.db.idf_increment."""
     idf_increment(conn, body, extract_nouns_fn=extract_nouns, constant=IDF_CONSTANT)
+
+
+def cmd_ingest_verify(args) -> dict:
+    """Verify a committed L1 node's on-disk integrity.
+
+    Checks (all read-only, non-destructive):
+    1. DB record exists for the uid
+    2. nodes/ markdown file exists and frontmatter has all required fields
+    3. content_hash in DB matches SHA256(body) in the file
+    4. raw_path file exists (if node has a source file, i.e. not --native)
+    5. content_type matches body format (article/table/gallery)
+    """
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    conn = ctx.connect()
+
+    # 1. DB record
+    row = conn.execute(
+        "SELECT uid, layer, content_type, title, node_path, raw_path, "
+        "content_hash, author, active FROM nodes WHERE uid=?",
+        (args.uid,),
+    ).fetchone()
+    if not row:
+        return error(f"uid {args.uid} not found in DB", "NodeNotFound")
+
+    checks = []
+    passed = []
+    failed = []
+
+    def check(name: str, condition: bool, detail: str = "") -> None:
+        checks.append({"check": name, "status": "pass" if condition else "fail", "detail": detail})
+        if condition:
+            passed.append(name)
+        else:
+            failed.append(name)
+
+    # 2. nodes/ file exists + frontmatter
+    from ..utils.frontmatter import parse as fm_parse
+    md_path = ctx.root / "nodes" / "page" / f"{args.uid}.md"
+    if not md_path.exists():
+        # try with slug-based path
+        md_path = find_node_md(ctx, args.uid)
+
+    check("nodes_file_exists", md_path is not None and md_path.exists(),
+          str(md_path) if md_path else "")
+
+    frontmatter, body = {}, ""
+    if md_path and md_path.exists():
+        text = md_path.read_text(encoding="utf-8")
+        frontmatter, body = fm_parse(text)
+        required = ["uid", "title", "layer", "content_type", "active", "created_at", "content_hash"]
+        missing = [f for f in required if f not in frontmatter]
+        check("frontmatter_complete", len(missing) == 0,
+              f"missing: {missing}" if missing else "")
+    else:
+        checks.append({"check": "frontmatter_complete", "status": "fail", "detail": "nodes file missing"})
+        failed.append("frontmatter_complete")
+
+    # 3. content_hash match
+    if body:
+        actual_hash = sha256_text(body)
+        stored_hash = row["content_hash"]
+        match = actual_hash == stored_hash
+        check("content_hash_match", match,
+              f"stored={stored_hash[:8]}... actual={actual_hash[:8]}...")
+
+    # 4. raw_path file exists (only for non-native ingests)
+    raw_path_str = row["raw_path"]
+    if raw_path_str:
+        raw_file = ctx.root / raw_path_str
+        check("raw_file_exists", raw_file.exists(), str(raw_file))
+    else:
+        checks.append({"check": "raw_file_exists", "status": "skip", "detail": "native ingest (no source file)"})
+
+    # 5. content_type ↔ body format
+    ct = row["content_type"] or frontmatter.get("content_type", "article")
+    if body:
+        fmt_err = _validate_body_format(body, ct)
+        check("content_type_body_match", fmt_err is None, fmt_err or "")
+    else:
+        checks.append({"check": "content_type_body_match", "status": "skip", "detail": "empty body"})
+
+    conn.close()
+
+    status = "success" if not failed else "error"
+    msgs = {
+        "uid": args.uid,
+        "wiki": args.wiki,
+        "passed": passed,
+        "failed": failed,
+        "checks": checks,
+    }
+    detail = f"{len(passed)}/{len(checks)} checks passed"
+    if failed:
+        detail += f"; FAILED: {failed}"
+    return make_response(status, msgs, detail)

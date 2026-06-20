@@ -83,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_album")
 
+    sp = sub.add_parser("ingest-verify",
+                        help="Verify a committed L1 node's integrity (DB / nodes/ / raws/ / body format)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True, help="uid of the node to verify")
+    sp.set_defaults(func="ingest_verify")
+
     sp = sub.add_parser("query", help="three-layer retrieval (L1 locate + L2/L3 hints)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--core", default="", help="comma-separated core keywords")
@@ -264,6 +270,9 @@ def _dispatch(args) -> dict:
     if func == "ingest_album":
         from .commands.album import cmd_ingest_album
         return cmd_ingest_album(args)
+    if func == "ingest_verify":
+        from .commands.ingest import cmd_ingest_verify
+        return cmd_ingest_verify(args)
     if func == "query":
         from .commands.query import cmd_query
         return cmd_query(args)
