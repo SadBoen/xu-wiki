@@ -130,7 +130,7 @@ Agent (LLM + SKILL.md + SOP 编排)
     ↓ 多个工具，按意图路由：
     ├─ subprocess.run(["xu", ...])  →  xu CLI
     │      - 5 SOP（create / ingest / query / doctor / config）
-    │      - 卸载 xu-wiki（`xu uninstall`，dry-run 默认）
+    │      - 卸载 xu-wiki（`xu uninstall --execute`，只卸程序本体）
     └─ bash / shell 工具             →  pip install / pip upgrade / pip show
                                           （install 类不经过 xu CLI）
 CLI (确定性引擎)
@@ -152,10 +152,7 @@ Wiki data
 具体到**软件生命周期**：
 
 - **install / upgrade / version 查询**：用户在人话里说"装 / 升 / 查版本"，Agent 用自己的 **bash 工具**跑 pip 命令。这条路径**不经过 xu CLI**——`xu` 不重复造 pip 的轮子（[CONST-SOP-3] 上半段）。
-- **uninstall**：用户说"卸载 xu-wiki"，Agent **走 xu CLI**（`xu uninstall`）。这条路径**必须经过 xu CLI**，因为：
-  - 卸载需要 dry-run + 确认 + 副作用范围选择（pip / wikis / global config）——CLI 编排
-  - User 在真实场景把 GitHub URL 给 Agent，Agent 通过 SKILL.md 才知道 xu-wiki 是什么——必须有 SKILL.md 可见的入口
-  - 这条路径**禁止**走 bash tool 直接调 `pip uninstall`（[CONST-SOP-3]）
+- **uninstall**：用户说"卸载 xu-wiki"，Agent **两步走**：① 用自己的 skill 管理器删 skill bundle（不需要询问）；② 调用 `xu uninstall --execute` 卸程序本体。Wiki 数据（知识库）是用户的，不是 Agent 有权删的——这条路径**禁止**出现删除 wiki 数据的选项。
 
 由此推导的设计约束：
 
@@ -229,21 +226,20 @@ User 不读这些文档；User 通过 `/xu-wiki <verb>` 进入 SOP，然后 Agen
 
 SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任一 CLI 命令必须能反向查到至少一个 SOP（无主孤儿命令）。
 
-### [CONST-SOP-3] install 与 uninstall **不对称**：install 走 pip；uninstall 走 `xu` CLI
+### [CONST-SOP-3] install 与 uninstall **不对称**：install 走 pip；uninstall = skill bundle（Agent 自删）+ program body（`xu` CLI）
 
 **这是非对称设计**：
 
 | 操作 | 谁负责 | 为什么 |
 |---|---|---|
 | **install** | `pip install xu-wiki[parse,nlp,vision]` | pip 一行就能装上；不需要 CLI 包装。User 或任何 Agent 用 bash tool 调一次 pip 即可。 |
-| **uninstall** | `xu uninstall`（CLI 命令） | 见下。 |
+| **uninstall** | Agent 自删 skill bundle + `xu uninstall` 卸程序 | 见下。 |
 
 **为什么 uninstall 必须有 CLI 命令**（不能也走 pip）：
 
 1. **xu-wiki 是 GitHub 项目，不是预装品牌**。User 在真实场景中是把 **GitHub URL** 给 Agent，Agent 从 URL 读 `SKILL.md` 才知道 xu-wiki 是什么。没有 `/xu-wiki` slash 命令、没有 SKILL.md，Agent 不知道 xu-wiki 这个项目存在，更不知道如何卸载。
 2. **可发现性原则**：为了让 Agent 能帮助 User 卸载，必须有一个**在 SKILL.md 里可见的、agent 可调用的入口**——这个入口就是 `xu uninstall`。如果只有 `pip uninstall xu-wiki`，SKILL.md 里不会写"卸载靠 pip"——因为 pip 不属于 xu-wiki 项目，SKILL.md 是 xu-wiki 自己的文档。
-3. **副作用编排需要**：卸载不只是删一个包——还要处理 wiki 数据（`--purge-wikis`）、全局配置（`--purge-config`）、dry-run 默认值、确认流程。这些编排放在 CLI 里由一个命令管，比让 Agent 串行调 bash + rm + pip 干净得多。
-4. **dry-run 安全契约**：破坏性操作默认 dry-run（PRIN-UNINST-6）——Agent 必须 dry-run 一次→User 确认→再加 `--execute`。这条契约需要在 CLI 层强制，不能依赖 Agent 的"自觉"。
+3. **不对称原则**：skill bundle 是 Agent 的资源，由 Agent 自删；程序本体由 `xu uninstall` 处理；**wiki 数据（用户的知识）永远不删**。
 
 **为什么 install 不需要 CLI 命令**（保持简单）：
 
@@ -255,21 +251,22 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **调用入口**：
 
 - **install** — Agent 用自己的 bash / shell 工具（不是 `xu` CLI）执行 `pip install`。`xu` CLI **不参与 install**。
-- **uninstall** — Agent 用 `xu uninstall`（默认 dry-run → 询问 User → `--execute`），**不走 bash tool 直接调 pip**。即使 bash tool 调 pip 技术上可行，也**禁止**——因为会绕过 SKILL.md 的可发现性和 dry-run 契约。
+- **uninstall** — Agent 用自己的 skill 管理器删除 skill bundle；然后调用 `xu uninstall --execute`（不走 bash tool 直接调 pip）。
 
 **User 输入到工具的完整路由**：
 
 | User 输入 | 意图 | Slash 命令 | Agent 的工具 |
 |---|---|---|---|
 | 任何 wiki 数据请求 | 5 SOP 之一 | `/xu-wiki <verb>` | `xu` CLI（subprocess.run） |
-| `把 xu-wiki 卸了` / `uninstall xu-wiki` / `remove xu-wiki` | 卸载软件 | `/xu-wiki config`（uninstall 入口） | `xu` CLI（`xu uninstall`） |
+| `把 xu-wiki 卸了` / `uninstall xu-wiki` / `remove xu-wiki` | 卸载软件 | `/xu-wiki config`（uninstall 入口） | Agent 自删 skill bundle + `xu` CLI（`xu uninstall --execute`） |
 | `装一下 xu-wiki` / `install xu-wiki` | 装软件 | （**没有 slash 命令**） | bash tool（`pip install`） |
 | `升级 xu-wiki` / `upgrade xu-wiki` | 升软件 | （**没有 slash 命令**） | bash tool（`pip install --upgrade`） |
 | `xu-wiki 是不是最新版` / `version of xu-wiki` | 查版本 | （**没有 slash 命令**） | bash tool（`pip show xu-wiki`） |
 
 **关键约束**：
-- Agent **绝不**直接调 `pip uninstall`——绕过 SKILL.md 可发现性 + dry-run 契约。一律走 `xu uninstall`。
+- Agent **绝不**直接调 `pip uninstall`——绕过 SKILL.md 可发现性。一律走 `xu uninstall --execute`。
 - Agent **绝不**自己发明 `/xu-wiki install` / `/xu-wiki uninstall` / `/xu-wiki upgrade` slash 命令——它们都不存在，install/upgrade 由 bash tool 负责，uninstall 由 `/xu-wiki config` 内部的 `xu uninstall` 负责。
+- Agent **绝不**在 uninstall 时提出或执行删除 wiki 数据的操作——wiki 数据是用户的知识，不属于任何软件。
 - User **绝不**直接调 `pip` 任何命令——PRIN-SOP-8：User 永远不接触 CLI / shell，Agent 是唯一合法执行者。
 
 ### [CONST-SOP-4] 5 SOP 数量固定，不轻易增减
@@ -471,7 +468,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 ## 七、与 pip 的边界（install / uninstall 由 pip 处理）
 
-`pip install xu-wiki[parse,nlp,vision]` 与 `pip uninstall xu-wiki` 是软件本体的安装 / 卸载入口，由 pip 负责；xu CLI 不重复造轮子。CLI 的职责边界：只动 wiki 数据（节点、patches、relations、IDF、evidence、list_members、config、registry）；不动 venv / symlink / 任何「让 CLI 自身能跑起来」的东西。
+`pip install xu-wiki[parse,nlp,vision]` 是安装入口；程序本体的卸载通过 `xu uninstall --execute`（不走 pip）。CLI 的职责边界：管理 wiki 数据（通过 5 SOP）；程序本体的卸载（`xu uninstall --execute`）；不动 venv / symlink / 任何「让 CLI 自身能跑起来」的东西。**注意**：wiki 数据（用户的知识）是用户自己的，Agent 在 uninstall 时不得提出或执行删除 wiki 数据的操作。
 
 ---
 
@@ -481,7 +478,8 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 |---|---|
 | 01-wiki-architecture.md | SOP 层建立在三层节点 + 50 条关系架构之上 |
 | 02-create.md | 是 SOP-create 的 CLI 实现文档 |
-| (已删除) 03-install.md / 04-uninstall.md | install / uninstall 由 pip 处理，不再有独立设计文档 |
+| 03-install.md | install 由 pip 处理（见该文档） |
+| 04-uninstall.md | uninstall 原则见本文 [CONST-SOP-3]；程序本体由 `xu uninstall` 卸，skill bundle 由 Agent 自删，wiki 数据永不删除 |
 | 05-ingest.md | 是 SOP-ingest 的 CLI 实现文档 |
 | 06-query.md | 是 SOP-query 的 CLI 实现文档 |
 | 07-doctor.md | 是 SOP-doctor 的 CLI 实现文档 |

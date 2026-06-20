@@ -117,102 +117,57 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
      and pick a new CLI — they will not retype a corrected command
      for you.
 
-0a. **Uninstall goes through the `/xu-wiki config` SOP, then `xu uninstall`.**
+0a. **Uninstall: Agent removes skill bundle itself; `xu uninstall` handles program body only.**
+
     Install is documented in README, not here (see rule 0b / CONST-INST-6).
-    Uninstall is non-trivial cleanup so it needs a CLI
-    command — but it lives in the **config** SOP because it's a
-    system-level action, not a wiki-data operation.
 
-    Uninstall has **three independent surfaces** with **three owners**.
-    The CLI owns one of them; the user (via agent) owns the other two:
+    Uninstall has **two** independent surfaces — NOT three:
 
-    | Surface | Owner | Why |
+    | Surface | Owner | How |
     |---|---|---|
-    | Program body (`xu` binary + venv) | `pipx uninstall xu-wiki` (or `pip uninstall`) | pipx/pip track their own installs |
-    | Skill bundle (`~/.hermes/skills/xu-wiki/`) | the agent's skill manager | xu and pipx don't know about it |
-    | Wiki data (`~/.xu/` + `<wiki>` dirs) | `xu uninstall --execute --purge-*` | pipx/pip don't know about it |
+    | Skill bundle (`~/.hermes/skills/xu-wiki/`) | **the agent** (self) | Agent uses its own skill manager to delete this dir |
+    | Program body (`xu` binary + venv) | **xu CLI** | `xu uninstall --execute` |
+
+    **Wiki data (`<wiki>` dirs + `~/.xu/`) is knowledge — it is NEVER
+    deleted by the Agent, and NO option to delete it is ever presented
+    to the user. The Agent must not ask about this, must not propose
+    it, must not implement it.**
 
     When the user says anything about uninstalling / removing xu-wiki
     ("把 xu-wiki 卸了", "uninstall xu-wiki", "remove xu-wiki from
-    this machine", "I don't need xu-wiki anymore", etc.):
+    this machine", etc.):
 
-    1. **Enter `/xu-wiki config` SOP** — that's where uninstall lives.
-       Do NOT invent a `/xu-wiki uninstall` slash command; it does not
-       exist.
-    2. **Always dry-run first**: `xu uninstall` (no `--execute`).
-       Read `data.plan` AND `data.installer` (∈ {`pipx`, `pip`,
-       `unknown`}). The installer field tells you who owns the
-       program body.
-    3. **Confirm with the user** — list the wikis that would be deleted
-       (if `--purge-wikis`), whether the global `~/.xu/` config would
-       be wiped (if `--purge-config`), and whether pip would remove the
-       package. Wait for explicit "yes" / "确认" / "proceed".
-    4. **Re-run with the user's chosen flags + `--execute`**. The
-       program-body step depends on `data.installer`:
-       - `pipx` → `xu uninstall` cleans data only; agent then runs
-         `pipx uninstall xu-wiki` to remove the program.
-       - `pip` → `xu uninstall --execute` handles everything (program
-         body + data); no separate pip call needed.
-       The skill bundle is always removed separately via the agent's
-        skill manager (NOT `xu uninstall`).
-    5. **Translate the 4-key JSON result** back to natural language.
+    1. **Remove the skill bundle immediately** (no confirmation needed):
+       use the agent's own skill manager to delete
+       `~/.hermes/skills/xu-wiki/`. This is the Agent's own resource,
+       not the user's knowledge.
+    2. **Run `xu uninstall --execute`** (dry-run is not required for the
+       program-body step — the CLI's own `--execute` flag IS the safety
+       gate). Read `data.installer` (∈ {`pipx`, `pip`, `unknown`}):
+       - `pipx` → `xu uninstall --execute` cleans data only;
+         then run `pipx uninstall xu-wiki` to remove the program.
+       - `pip` / `unknown` → `xu uninstall --execute` handles everything.
+    3. **Translate the 4-key JSON result** back to natural language.
        Don't paste raw JSON at the user.
-    6. **Never run `pip uninstall` or `pipx uninstall` directly via
-       your bash tool**. Even though it would technically work, it
-       bypasses SKILL.md discoverability and the dry-run safety
-       contract. Always:
-       - For program body: `xu uninstall` handles it (and reports
-         `data.installer` so you know which tool owns it). If
-         installer is `pipx`, the response will include
-         `result.pip.next_action = "pipx uninstall xu-wiki"` — at
-         that point you call `pipx uninstall xu-wiki` (NOT
-         `pip uninstall`).
-       - For wiki data: `xu uninstall --execute --purge-*`.
-       - For skill bundle: the agent's own skill manager.
-    7. **Independent verification (P0)**: after any `--execute`, you
-       MUST independently verify the claim before telling the user
-       "done". Do not trust the CLI's word:
-       - After pip uninstall: `which xu` should return empty; or
-         `command -v xu` should fail.
-       - After `--purge-wikis`: each `result.wikis.removed[i].path`
-         must NOT exist (run `test -e <path>` in your bash tool).
-       - After `--purge-config`: `result.config_dir.existed_before`
-         was True and `files_removed_count > 0`, and now
-         `test -e ~/.xu` returns false.
-       If any independent check contradicts the CLI's report, tell
-       the user — do not silently report success.
-    8. **Watch for semantic contradictions in the 4-key JSON**. If you
-       see `plan.mode == "dry-run"` together with `execute == true`,
-       or `result.config_dir.ok == true` together with the path still
-       on disk, surface the inconsistency to the user in plain
-       language ("注意：CLI 返回了 X 但 Y 没发生，建议手工检查").
-    9. **Fold equivalent options before asking the user**. If
-       `plan.wikis_found == []`, then scope (a) and (b) are identical
-       (both preserve wikis because there are no wikis to purge). Do
-       not list three options when one is a no-op for the user's data.
-       Show only "a (no wikis to worry about) or c (full clean)".
-    10. **Use `xu deploy skill --target <agent>`** instead of writing
-        hand-rolled `cp -r` commands. The deploy command handles three
-        things the manual flow gets wrong: subdir preservation
-        (`reference/` files), Python-artifact filter (no
-        `__init__.py` or `__pycache__/` leaking into the agent's
-        discovery dir), and target→discovery-dir mapping. If `xu` is
-        not yet on PATH (e.g. just installed), run the absolute path
-        (`~/.local/bin/xu deploy skill ...`) — do NOT fall back to
-        `cp -r` unless `xu` truly doesn't exist (very rare).
-    11. **Inspect `data.deployment_status` and `data.next_actions`**
+    4. **Never run `pip uninstall` or `pipx uninstall` directly via
+       your bash tool** (rule 6 above applies to install too).
+    5. **Independent verification**: after `--execute`, verify
+       `command -v xu` fails (program removed). Do not trust the JSON
+       alone — check it.
+    6. **Wiki data is never touched.** The `xu uninstall --execute`
+       default preserves wiki data. Do NOT add `--purge-wikis` or
+       `--purge-config` flags. The user's knowledge is not yours to delete.
+    7. **Watch for contradictions**: if `result.config_dir.ok == false`
+       but the path still exists, tell the user and suggest manual
+       inspection.
+
+    8. **Use `xu deploy skill --target <agent>`** instead of writing
+        hand-rolled `cp -r` commands.
+    9. **Inspect `data.deployment_status` and `data.next_actions`**
         from `xu selfcheck` before declaring "install complete". Empty
         `next_actions` list = nothing left. Any entry means the user
         (and you) must do more. This catches the case where pip
         install succeeded but the skill wasn't deployed.
-
-    This rule exists because **xu-wiki is a GitHub project, not a
-    pre-installed brand**. The user discovers it by reading SKILL.md
-    from the GitHub URL; you (the agent) only know about xu-wiki after
-    loading SKILL.md. Without a CLI uninstall command, you have no
-    documented entry point and cannot help. The CLI is the
-    **discoverable, SKILL.md-visible, agent-callable** uninstall entry.
-    See [PRIN-SOP-8] / [CONST-SOP-3] / design-docs/08-sop-architecture.md.
 
 0b. **Install/deploy is documented in README, not here.** By the time
     you load this skill, xu-wiki is already installed — so this bundle
