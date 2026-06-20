@@ -14,22 +14,22 @@ specific to doctor are stated here.
 
 ```bash
 # Run all 6 checks (default: report only)
-xu-wiki doctor-all --wiki <w> [--fix]
+xu doctor-all --wiki <w> [--fix]
 
 # Per-check subcommands (each supports --fix for safe auto-repair)
-xu-wiki doctor-fields         --wiki <w> [--fix]   # DB / markdown frontmatter consistency
-xu-wiki doctor-files          --wiki <w> [--fix]   # raws/ / nodes/ filesystem consistency
-xu-wiki doctor-relations      --wiki <w> [--fix]   # 50-edge LRU invariants
-xu-wiki doctor-l1-immutable   --wiki <w> [--fix]   # L1 markdown body never modified
-xu-wiki doctor-report-evidence --wiki <w> [--fix]  # L3 reports have ≥ 1 evidence ref
-xu-wiki doctor-idf            --wiki <w> [--fix]   # IDF table consistency
+xu doctor-fields         --wiki <w> [--fix]   # DB / markdown frontmatter consistency
+xu doctor-files          --wiki <w> [--fix]   # raws/ / nodes/ filesystem consistency
+xu doctor-relations      --wiki <w> [--fix]   # 50-edge LRU invariants
+xu doctor-l1-immutable   --wiki <w> [--fix]   # L1 markdown body never modified
+xu doctor-report-evidence --wiki <w> [--fix]  # L3 reports have ≥ 1 evidence ref
+xu doctor-idf            --wiki <w> [--fix]   # IDF table consistency
 
 # Destructive ops (NEVER auto-invoked — explicit command, not a flag)
-xu-wiki delete-node --wiki <w> --uid <uid> [--force]
-xu-wiki rebuild    --wiki <w> --granularity keep-l1|keep-l1-l2|full
+xu delete-node --wiki <w> --uid <uid> [--force]
+xu rebuild    --wiki <w> --granularity keep-l1|keep-l1-l2|full
 
 # Discovery (used to look up dangling UIDs)
-xu-wiki nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
+xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 ```
 
 | Command | Default | With `--fix` | Truly destructive? |
@@ -92,12 +92,12 @@ xu-wiki nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 ## Example — health check
 
 ```bash
-xu-wiki doctor-all --wiki research
+xu doctor-all --wiki research
 # → {"status": "warning", "data": {"findings": [
 #      {"check": "fields", "severity": "warn", "uid": "...", "msg": "..."}
 #    ]}, ...}
 
-xu-wiki doctor-relations --wiki research --fix
+xu doctor-relations --wiki research --fix
 # → {"status": "success", "data": {"repaired": 3, "skipped": 0}, ...}
 ```
 
@@ -105,11 +105,11 @@ xu-wiki doctor-relations --wiki research --fix
 
 ```bash
 # Step 1: dry check (no --force)
-xu-wiki delete-node --wiki research --uid 2026-WXYZ5678
+xu delete-node --wiki research --uid 2026-WXYZ5678
 # → {"status": "error", "data": {"error_class": "ReferencedByList", "refs": ["..."]}, ...}
 
 # Step 2: user accepts orphan refs → re-run with --force
-xu-wiki delete-node --wiki research --uid 2026-WXYZ5678 --force
+xu delete-node --wiki research --uid 2026-WXYZ5678 --force
 # → {"status": "success", "data": {"uid": "...", "deleted": true}, ...}
 ```
 

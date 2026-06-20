@@ -12,7 +12,7 @@ in `SKILL.md` and are referenced when needed, not duplicated here.
 ## CLI palette
 
 ```bash
-xu-wiki create --name <n> --path <abs> [--alias <a>]
+xu create --name <n> --path <abs> [--alias <a>]
 ```
 
 | Flag | Required | Purpose |
@@ -39,7 +39,7 @@ xu-wiki create --name <n> --path <abs> [--alias <a>]
 ## Example
 
 ```bash
-xu-wiki create --name research --path /Users/agent/Wikis/research --alias r
+xu create --name research --path /Users/agent/Wikis/research --alias r
 # → {"status": "success", "data": {"name": "research", "path": "...", "alias": "r"}, ...}
 ```
 

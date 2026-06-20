@@ -147,9 +147,9 @@ SOP 编排必须基于**已实现**的 CLI 子命令。如果某个 SOP 需要�
 
 SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任一 CLI 命令必须能反向查到至少一个 SOP（无主孤儿命令）。
 
-### [CONST-SOP-3] install / uninstall 不属于 5 SOP
+### [CONST-SOP-3] install / uninstall 由 pip 处理，不属于本 CLI
 
-`xu-wiki install` 与 `xu-wiki uninstall` 是软件生命周期的前置 / 反向前置，**不属于** 5 SOP。它们动的是**软件本体**（venv / CLI symlink / SKILL deploy），不是 wiki 数据。
+`pip install xu-wiki[parse,nlp,vision]` 与 `pip uninstall xu-wiki` 由 pip 处理，不在 xu CLI 范围内。xu-wiki CLI 只动 wiki 数据，不动软件本体的安装 / 卸载。
 
 ### [CONST-SOP-4] 5 SOP 数量固定，不轻易增减
 
@@ -164,10 +164,10 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **意图**：用户说「我要建一个知识库」。
 
 **调用步骤**：
-1. （隐含前置）机器上已 `xu-wiki install` 过一次（[PRIN-CRT-1]）
+1. （隐含前置）机器上已 `pip install xu-wiki[parse,nlp,vision]`（[PRIN-CRT-1]）
 2. Agent 必须先问齐 `--name` 与 `--path`（hard rule 8）
-3. 调用 `xu-wiki create --name <n> --path <abs> [--alias <a>]`
-4. （可选）调用 `xu-wiki wikis` 验证注册成功
+3. 调用 `xu create --name <n> --path <abs> [--alias <a>]`
+4. （可选）调用 `xu wikis` 验证注册成功
 
 **失败模式**：
 - `--name` 缺失 / 不合法 → `MissingName` / `InvalidName`（[BAN-CRT-3] / [CONST-CRT-4]）
@@ -340,8 +340,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | | `config set-mineru-key / show / path` | 全局配置读写 |
 | | `nodes` | 看 DB 内容（config 也可检视 DB） |
 | | `delete-node` | 未来若 SOP-config 加「清空数据」子意图，可嵌入 |
-| **不属于 SOP** | `install` | 软件生命周期前置 |
-| | `uninstall` | 软件生命周期反向前置 |
+| **不属于 SOP** | (none — install/uninstall 由 pip 处理) | pip 包管理，不属于 CLI 范畴 |
 
 > **约束 [CONST-SOP-2]**：上表每一个 CLI 命令都必须能反向查到至少一个 SOP。无主命令 = 设计漏洞。
 >
@@ -349,14 +348,9 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 ---
 
-## 七、与 install / uninstall 的边界
+## 七、与 pip 的边界（install / uninstall 由 pip 处理）
 
-| 命令 | 性质 | 归属 |
-|---|---|---|
-| `xu-wiki install` | 装软件本体（venv + CLI symlink + SKILL deploy） | **不属于 5 SOP**（[CONST-SOP-3]） |
-| `xu-wiki uninstall` | 卸软件本体（默认 dry-run，[PRIN-UNINST-6]） | **不属于 5 SOP** |
-
-理由：install / uninstall 动的是**软件本体**，不是 wiki 数据。install 是 SOP-create 的强前置（[PRIN-CRT-1]），但本身属于「软件生命周期」而非「知识库工作流」。
+`pip install xu-wiki[parse,nlp,vision]` 与 `pip uninstall xu-wiki` 是软件本体的安装 / 卸载入口，由 pip 负责；xu CLI 不重复造轮子。CLI 的职责边界：只动 wiki 数据（节点、patches、relations、IDF、evidence、list_members、config、registry）；不动 venv / symlink / 任何「让 CLI 自身能跑起来」的东西。
 
 ---
 
@@ -366,8 +360,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 |---|---|
 | 01-wiki-architecture.md | SOP 层建立在三层节点 + 50 条关系架构之上 |
 | 02-create.md | 是 SOP-create 的 CLI 实现文档 |
-| 03-install.md | 是 install 命令的设计文档（不在 5 SOP 内） |
-| 04-uninstall.md | 是 uninstall 命令的设计文档（不在 5 SOP 内） |
+| (已删除) 03-install.md / 04-uninstall.md | install / uninstall 由 pip 处理，不再有独立设计文档 |
 | 05-ingest.md | 是 SOP-ingest 的 CLI 实现文档 |
 | 06-query.md | 是 SOP-query 的 CLI 实现文档 |
 | 07-doctor.md | 是 SOP-doctor 的 CLI 实现文档 |
@@ -397,7 +390,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **约束**：
 - [ ] SOP 在 SKILL.md 完整文档化（[CONST-SOP-1]）
 - [ ] SOP → CLI 映射显式且唯一反向可查（[CONST-SOP-2]）
-- [ ] install / uninstall 不属 5 SOP（[CONST-SOP-3]）
+- [ ] install / uninstall 由 pip 处理，不属 5 SOP（[CONST-SOP-3]）
 - [ ] 5 SOP 数量固定（[CONST-SOP-4]）
 
 ---

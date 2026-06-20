@@ -19,7 +19,7 @@ to ingest.
 > Each form has a fixed CLI route:
 >
 > - **table / album** (multiple images, one themed page) →
->   `xu-wiki ingest-album` (single-shot, PRIN-ING-14). Body is a markdown
+>   `xu ingest-album` (single-shot, PRIN-ING-14). Body is a markdown
 >   table with one row per photo (Filename / Path / Resolution / GPS /
 >   Captured / Description). The album theme IS the L1 title.
 > - **prose** (PDF / DOCX / MD / text / single image) →
@@ -41,22 +41,22 @@ to ingest.
 
 ```bash
 # Two-phase prose flow (PRIN-ING-1)
-xu-wiki ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
-xu-wiki ingest-commit --wiki <w> [--pending <f>] [--title <t>] [--node-path <p>] \
+xu ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
+xu ingest-commit --wiki <w> [--pending <f>] [--title <t>] [--node-path <p>] \
                       [--template article|table|gallery] [--digest <d>] \
                       [--relations '<json>'] [--native '<md>'] [--author <a>]
 
 # Album single-shot flow (PRIN-ING-14)
-xu-wiki ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
+xu ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
                       [--node-path <p>] [--layout table|list] [--vision] \
                       [--captions '<json>'] [--digest <d>] [--author <a>]
 
 # Optional follow-up (still in the ingest SOP — wiring happens here)
-xu-wiki query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
+xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
                             --relation-name <r> [--comment <c>]
-xu-wiki list create --wiki <w> --title <t> --members <uid,uid,...> \
+xu list create --wiki <w> --title <t> --members <uid,uid,...> \
                     [--dimension <d>] [--node-path <p>]
-xu-wiki report create --wiki <w> --title <t> --body <md> \
+xu report create --wiki <w> --title <t> --body <md> \
                       --references <uid,uid,...> [--node-path <p>]
 ```
 
@@ -146,9 +146,9 @@ opposite default type.
 ## Example — prose
 
 ```bash
-xu-wiki ingest-file   --wiki research --file ~/Downloads/bert.pdf
+xu ingest-file   --wiki research --file ~/Downloads/bert.pdf
 # → {"status": "success", "data": {"pending": ".../pending/2026-ABCD.json"}, ...}
-xu-wiki ingest-commit --wiki research \
+xu ingest-commit --wiki research \
   --title "BERT: Pre-training of Deep Bidirectional Transformers" \
   --template article --digest "Masked LM + NSP pre-training achieves SOTA on 11 NLP tasks."
 # → {"status": "success", "data": {"uid": "2026-WXYZ5678", "title": "BERT: ..."}, ...}
@@ -157,7 +157,7 @@ xu-wiki ingest-commit --wiki research \
 ## Example — album
 
 ```bash
-xu-wiki ingest-album --wiki research \
+xu ingest-album --wiki research \
   --title "SGW001 #1 完工照片" \
   --files ~/uploads/001.jpg,~/uploads/002.jpg,~/uploads/003.jpg \
   --vision

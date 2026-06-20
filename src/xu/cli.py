@@ -1,6 +1,10 @@
-"""xu-wiki CLI entrypoint — argparse dispatcher.
+"""xu CLI entrypoint — argparse dispatcher.
 
 Every command prints a 4-key JSON response (CONST-ARCH-1) and logs to audit.
+
+Install / uninstall: handled by pip, NOT by this CLI. See README.
+Skills: NOT handled by this CLI. The agent uses its own skill manager and
+copies the source markdown files (location: `xu skills path`).
 """
 from __future__ import annotations
 
@@ -13,16 +17,18 @@ from .utils.response import emit, error
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="xu-wiki", description="Relation-driven three-layer wiki engine")
+    p = argparse.ArgumentParser(
+        prog="xu",
+        description="Relation-driven three-layer wiki engine (xu-wiki)",
+    )
     sub = p.add_subparsers(dest="command", required=True)
 
-    # ---- M1: install / create ----
-    sp = sub.add_parser("install", help="install the software (capabilities, not data)")
-    sp.set_defaults(func="install")
-
-    sp = sub.add_parser("uninstall", help="uninstall software (default dry-run)")
-    sp.add_argument("--execute", action="store_true", help="actually remove (default is dry-run)")
-    sp.set_defaults(func="uninstall")
+    # ---- M1: skills / create ----
+    sp = sub.add_parser("skills", help="skill bundle location (for agents to cp)")
+    ssub = sp.add_subparsers(dest="skills_action", required=True)
+    ssub.add_parser("path", help="print source dir of the xu-wiki skill bundle").set_defaults(func="skills_path")
+    ssub.add_parser("list", help="list files in the xu-wiki skill bundle").set_defaults(func="skills_list")
+    sp.set_defaults(func="skills_default")
 
     sp = sub.add_parser("create", help="create a new empty wiki instance")
     sp.add_argument("--name", required=False, help="wiki name (required, explicit)")
@@ -186,12 +192,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _dispatch(args) -> dict:
     func = args.func
-    if func == "install":
-        from .commands.install import cmd_install
-        return cmd_install(args)
-    if func == "uninstall":
-        from .commands.install import cmd_uninstall
-        return cmd_uninstall(args)
+    if func in ("skills_path", "skills_list", "skills_default"):
+        from .commands.skills import cmd_skills
+        return cmd_skills(args)
     if func == "create":
         from .commands.create import cmd_create
         return cmd_create(args)
@@ -288,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         response = error(
             e.message,
             "ArgParseError",
-            hints=["check the command name + flags; see `xu-wiki <subcommand> --help`"],
+            hints=["check the command name + flags; see `xu <subcommand> --help`"],
         )
         try:
             from .utils.config import GLOBAL_AUDIT_LOG

@@ -27,7 +27,6 @@ when the list is full.
 - Every command returns a 4-key JSON envelope: `{status, data, message, hints}`
   where `status ∈ {success, warning, error}`.
 - A Report with zero evidence is rejected — no naked conclusions.
-- `uninstall` is the inverse of `install`; it never touches knowledge bases.
 
 ## Requirements
 
@@ -43,45 +42,31 @@ when the list is full.
 
 ## Install
 
-Two equivalent flows — pick whichever fits your workflow.
-
-### Flow A — local checkout (recommended for dev / VPS)
-
 ```bash
-git clone <repo-url> xu-wiki && cd xu-wiki
-
-# 1. one-shot: project-local venv + pip install + CLI symlink + skill deploy
-xu-wiki install
-#    ↳ installs xu-wiki[parse,nlp,vision] into .venv, registers ~/.xu/bin/xu-wiki,
-#      deploys SKILL.md + 5 SOP files to <project>/.trae/skills/xu-wiki/
-
-# 2. (optional) put xu-wiki on PATH for this shell
-export PATH="$HOME/.xu/bin:$PATH"
-
-# 3. verify
-xu-wiki wikis     # lists registered wikis (empty at first)
+pip install "xu-wiki[parse,nlp,vision]"
 ```
 
-### Flow B — global pip install (no project checkout)
+That single command installs:
+
+- the `xu` CLI binary (placed on `PATH` by pip, like any Python tool)
+- the bundled skill source (8 files under `<site-packages>/xu/skills/`)
+- the 3 optional parser groups
+
+To **uninstall**:
 
 ```bash
-# 1. install the package globally (pip puts xu-wiki on PATH automatically)
-python3 -m pip install "xu-wiki[parse,nlp,vision]"
-
-# 2. create a project directory for the skill bundle and config
-mkdir -p ~/xu-wiki && cd ~/xu-wiki
-
-# 3. (one-time) still need install for the skill deploy + global config skeleton
-xu-wiki install
+pip uninstall xu-wiki
 ```
 
-After either flow, `~/.xu/install.json` records the installed package version,
-project root, venv path, and CLI symlink target. Set `XU_HOME` to relocate the
-global config / registry directory (defaults to `~/.xu`).
+That's it — no `xu install`, no `xu uninstall`, no separate `install.sh`,
+no venv management, no symlink config. Pip handles all of it.
 
-> **What `install` does NOT touch**: any wiki instance. `install` only sets up
-> capabilities (PRIN-INST-1: install capabilities, not data). All wiki data
-> lives outside the source tree.
+Set `XU_HOME` to relocate the global config / registry directory (defaults to
+`~/.xu`).
+
+> **What the CLI does NOT do**: install / uninstall the package itself. The
+> CLI only manages wiki data — it never touches venv / symlink / system PATH.
+> All wiki data lives outside the source tree.
 
 ## Configuring MinerU (optional)
 
@@ -98,7 +83,6 @@ MinerU is the first parser tried for PDF/DOCX/PPTX in `ingest-file`. It is
 export MINERU_API_KEY="<your-key>"
 
 # or persist in the global config (file is OUTSIDE the project, not git-tracked)
-xu-wiki install                                  # creates ~/.xu/config.yaml skeleton
 python3 -c "
 import os
 from xu.utils.config import load_global_config, save_global_config
@@ -119,36 +103,33 @@ the next parser in the chain takes over.
 
 ```bash
 # 1. create an empty wiki
-xu-wiki create --name mykb --path ./mykb --alias kb
+xu create --name mykb --path /abs/path/to/mykb --alias kb
 
 # 2. ingest a document — two phases
-xu-wiki ingest-file   --wiki kb --file paper.pdf --node-path papers/ml
-xu-wiki ingest-commit --wiki kb --pending ./mykb/nodes/pending/papers__ml__paper-pre.md \
+xu ingest-file   --wiki kb --file /abs/path/to/paper.pdf --node-path papers/ml
+xu ingest-commit --wiki kb --pending /abs/path/to/mykb/nodes/pending/papers__ml__paper-pre.md \
                       --title "Some Paper" --node-path papers/ml --template article
 
 # 3. retrieve (deterministic ranking; agent supplies graded keywords)
-xu-wiki query --wiki kb --core "network,learning" --expansion "training" --top-k 5
-xu-wiki query --wiki kb --core "network" --neighbors      # include 1-hop relations
+xu query --wiki kb --core "network,learning" --expansion "training" --top-k 5
+xu query --wiki kb --core "network" --neighbors      # include 1-hop relations
 
 # 4. read one node's full body
-xu-wiki read --wiki kb --uid 2026-ABCD1234
+xu read --wiki kb --uid 2026-ABCD1234
 
 # 5. relations (50-edge LRU)
-xu-wiki query-relation add  --wiki kb --from-uid <u1> --to-uid <u2> --relation-name compares_to
-xu-wiki query-relation list --wiki kb --from-uid <u1>
+xu query-relation add  --wiki kb --from-uid <u1> --to-uid <u2> --relation-name compares_to
+xu query-relation list --wiki kb --from-uid <u1>
 
 # 6. upper layers
-xu-wiki list create   --wiki kb --title "ML papers" --members <u1>,<u2> --dimension architecture
-xu-wiki report create --wiki kb --title "Trend" --body "..." --references <u1>,<list_uid>
+xu list create   --wiki kb --title "ML papers" --members <u1>,<u2> --dimension architecture
+xu report create --wiki kb --title "Trend" --body "..." --references <u1>,<list_uid>
 
 # 7. health & maintenance
-xu-wiki doctor --wiki kb                 # read-only; runs all checks
-xu-wiki doctor-idf --wiki kb --fix       # mechanical fixes only
-xu-wiki rebuild --wiki kb --granularity keep-l1   # rebuild derived layers from L1
-xu-wiki delete-node --wiki kb --uid <u> # ref-safe; --force to cascade
-
-# 8. uninstall (default dry-run; --execute to apply)
-xu-wiki uninstall
+xu doctor --wiki kb                 # read-only; runs all checks
+xu doctor-idf --wiki kb --fix       # mechanical fixes only
+xu rebuild --wiki kb --granularity keep-l1   # rebuild derived layers from L1
+xu delete-node --wiki kb --uid <u> # ref-safe; --force to cascade
 ```
 
 ## VPS / clean-machine deployment notes
@@ -158,17 +139,14 @@ as root or a normal user):
 
 ```bash
 # 1. system packages (Debian/Ubuntu only)
-sudo apt update && sudo apt install -y python3 python3-venv python3-pip ripgrep git
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip ripgrep
 
-# 2. clone + install
-git clone <repo-url> ~/xu-wiki && cd ~/xu-wiki
-~/xu-wiki/install.sh           # or: python3 -m venv .venv && .venv/bin/pip install -e .[parse,nlp,vision] && .venv/bin/xu-wiki install
+# 2. install (recommended: project-local venv to avoid PEP 668)
+python3 -m venv .venv
+.venv/bin/pip install "xu-wiki[parse,nlp,vision]"
 
-# 3. PATH (one-time)
-echo 'export PATH="$HOME/.xu/bin:$PATH"' >> ~/.bashrc
-
-# 4. verify the Agent can see the skill
-ls ~/xu-wiki/.trae/skills/xu-wiki/SKILL.md   # must exist
+# 3. verify
+.venv/bin/xu wikis     # lists registered wikis (empty at first)
 ```
 
 Failure modes and what to check:
@@ -176,9 +154,9 @@ Failure modes and what to check:
 | symptom | likely cause |
 |---|---|
 | `python3 -m venv` complains about ensurepip | missing `python3-venv` (Debian/Ubuntu) |
-| `install` returns `PipInstallFailed` | no network to PyPI, or pip is too old → `pip install --upgrade pip` |
-| `xu-wiki` not found after install | `~/.xu/bin` not on PATH (run `hash -r` or reopen shell) |
-| Agent can't find the skill | skill bundle not deployed → re-run `xu-wiki install`; check `~/.xu/install.json` |
+| `pip install` fails with PEP 668 "externally-managed-environment" | use a venv (`python3 -m venv .venv`) |
+| `xu` not found after install | shell PATH missing — run `hash -r` or reopen shell; for venv installs, use `.venv/bin/xu` |
+| Agent can't find the skill | skill bundle not deployed by the agent's skill manager → the agent runs `xu skills path` to locate the source dir, then copies the 8 files into its own skill discovery dir |
 | `/tmp` writes fail with EPERM | running inside a sandboxed shell that disallows writes outside the project tree — run from a real shell |
 
 The CLI is **deterministic** — it never invokes an LLM or hits the network
@@ -241,7 +219,6 @@ bash tests/e2e_verify.sh                # full M1->M5 run against sample files
 
 | Command | Purpose |
 |---------|---------|
-| `install` / `uninstall` | software lifecycle (no data) |
 | `create` | new empty wiki instance |
 | `wikis` / `nodes` | read-only registry / node listing |
 | `ingest-file` / `ingest-commit` | two-phase L1 creation |
@@ -252,3 +229,7 @@ bash tests/e2e_verify.sh                # full M1->M5 run against sample files
 | `doctor*` | health checks (`--fix` for mechanical repairs) |
 | `delete-node` | ref-safe physical delete |
 | `rebuild` | rebuild derived layers from L1 |
+| `skills path\|list` | locate the bundled skill source dir (for the agent's skill manager) |
+| `alias set\|unset\|show` | wiki registry alias management |
+| `register` / `unregister` | wiki registry management |
+| `config set-mineru-key\|show\|path` | global config management |

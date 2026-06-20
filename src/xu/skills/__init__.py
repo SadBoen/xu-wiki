@@ -3,8 +3,12 @@
 The skill is split per design-docs/09-skill-architecture.md (PRIN-SKILL-1~6,
 BAN-SKILL-1/2): one self-contained `.md` per SOP, plus SKILL.md as the only
 index. They ship as package data so the authoritative source travels with
-`pip install`; `install` deploys copies into the Agent's discovery dir
-(`.trae/skills/`) per PRIN-INST-3.
+`pip install xu-wiki`.
+
+The CLI does NOT deploy skills to any agent. The agent uses its own skill
+manager (Hermes / Trae / Claude Desktop / Cursor / etc.) to create an empty
+skill, then copies the files listed in `ALL_SKILL_FILES` into it. Use
+`xu skills path` to discover the on-disk location.
 """
 from __future__ import annotations
 

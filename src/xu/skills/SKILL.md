@@ -9,6 +9,20 @@ xu-wiki is a **relation-driven three-layer knowledge base** designed for AI
 agents. It exposes a deterministic offline-first CLI; this skill is the
 authoritative invocation guide for the agent side.
 
+## Naming conventions
+
+Three distinct names — DO NOT mix them up:
+
+| Name | What it is | Where you see it |
+|---|---|---|
+| `xu-wiki` | The skill bundle / project name | This file's YAML frontmatter; PyPI package name (`pip install xu-wiki`) |
+| `/xu-wiki` | Slash command (Trae convention) | Enters the matching SOP |
+| `xu` | The CLI binary | All `xu <verb>` shell invocations after install |
+
+After `pip install xu-wiki`, the CLI command is `xu`, not `xu-wiki`. The
+slash command `/xu-wiki` (Trae) is the agent's UX entry into a SOP and is
+not a CLI invocation.
+
 ## File layout
 
 This skill is split into 6 files per the principles in
@@ -25,7 +39,8 @@ This skill is split into 6 files per the principles in
 
 **No file links to another SOP file** (BAN-SKILL-1). If an SOP file needs to
 mention a CLI from another SOP, it says "see SKILL.md §X" — never links
-directly. The deployer puts all 6 files in the Agent's discovery dir.
+directly. The agent places all 6 files in its own skill discovery dir
+(via its platform's skill manager — Hermes / Trae / Claude / Cursor).
 
 ## When to use this skill
 
@@ -50,10 +65,6 @@ more CLI subcommands. The five SOPs cover the full wiki lifecycle:
   wiki alias, register / unregister existing directories, manage the
   MinerU API key, inspect the registered wikis.
 
-Software-lifecycle commands (`install` / `uninstall`) are **not** SOPs —
-they manage the CLI itself, not wiki data (CONST-SOP-3). They live in
-`config.md` since they share the software-lifecycle scope.
-
 ## SOP map (slash command ↔ CLI orchestration)
 
 A slash command `/xu-wiki <verb>` enters a SOP — **not** a CLI subcommand.
@@ -65,10 +76,8 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)** with PRIMARY bias toward `list create` (Report only on contradiction) |
 | `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint; **post-query reflection (PRIN-CR-1)** with PRIMARY bias toward `report create` (List only on missing axis) |
 | `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
-| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `install` / `uninstall` for software lifecycle |
+| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `skills path / list` for the bundled skill source dir |
 
-`xu-wiki install` and `xu-wiki uninstall` are **not** SOPs — they manage
-the software itself, not wiki data (CONST-SOP-3, design-docs/08).
 Full SOP semantics: design-docs/08-sop-architecture.md.
 
 ## Architecture in 30 seconds
@@ -106,7 +115,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
    command whose required flag (`--name`, `--path`, `--file`, `--title`,
    `--references`, `--members`, etc.) is missing from the request,
    **ask the user explicitly before invoking**. The CLI never auto-picks
-   a name (`xu-wiki create` without `--name` returns `MissingName` per
+   a name (`xu create` without `--name` returns `MissingName` per
    BAN-CRT-3) and never auto-picks a path (a guessed path that already
    holds user content is refused by BAN-CRT-1 — protecting data beats
    saving a round trip). The wrong-name-then-silent-new-wiki failure
@@ -121,19 +130,22 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
    location before invoking.
 10. **Slash command is a SOP entry, NOT a CLI subcommand (BAN-SOP-1).**
     `/xu-wiki <verb>` enters the `<verb>` SOP, which orchestrates one or
-    more CLI subcommands. It does **not** translate to `xu-wiki <verb>`.
-    Specifically:
+    more CLI subcommands. It does **not** translate to `xu <verb>` —
+    `xu` is the binary name but `/xu-wiki` is the agent's slash command
+    for entering a SOP. Specifically:
     - `/xu-wiki config` does **not** call a CLI subcommand literally
       named `config` with no sub-subcommand; it enters the config SOP,
       which calls `alias set/unset/show` / `register` / `unregister` /
-      `wikis` / `config set-mineru-key|show|path` / `install` /
-      `uninstall`. (`config` itself is a subcommand that **requires**
-      one of `set-mineru-key | show | path`.)
+      `wikis` / `config set-mineru-key|show|path` / `skills path|list`.
+      (`config` itself is a subcommand that **requires** one of
+      `set-mineru-key | show | path`.)
     - `/xu-wiki ingest` does **not** call a CLI named `ingest`; it
       calls `ingest-file` then `ingest-commit` (PRIN-ING-1).
     Before invoking anything, read the SOP map above and identify which
     CLI subcommands the SOP needs. If the user's `<verb>` is not in the
     five-SOP list, **stop and ask** — do not guess the nearest CLI name.
+    Also note: there is NO `xu install` or `xu uninstall` command —
+    install is `pip install xu-wiki` (see Quick start).
 11. **Within a SOP, match user natural-language intent to CLI (PRIN-SOP-7).**
     After entering a SOP, the agent's job is to interpret the user's
     actual intent (often natural language, not a verb-noun command)
@@ -204,33 +216,40 @@ act on its own (PRIN-QRY-1).
 ## Quick start for the agent
 
 ```bash
-# 1. one-time install (per machine)
-xu-wiki install
+# 1. one-time install (per machine) — same as any Python tool
+pip install "xu-wiki[parse,nlp,vision]"
+#    ↳ installs the xu CLI binary, the skill bundle source (site-packages/xu/skills/),
+#      and the 3 optional parser groups
 
-# 2. create a wiki
-xu-wiki create --name research --path /abs/path/to/wiki
+# 2. discover the skill source path (for the agent's own skill manager)
+xu skills path
+#    ↳ prints the on-disk dir of the 8 skill files; the agent copies them into
+#      its own skill discovery dir per the agent platform's convention
 
-# 3. ingest L1 — two phases (PRIN-ING-1)
-xu-wiki ingest-file   --wiki research --file /abs/path/to/source.pdf   # → pending
-xu-wiki ingest-commit --wiki research --title "BERT" --template article # → L1 entry
+# 3. create a wiki
+xu create --name research --path /abs/path/to/wiki
 
-# 4. query (Agent grades the keywords into core vs expansion)
-xu-wiki query --wiki research --core "transformer,attention" \
+# 4. ingest L1 — two phases (PRIN-ING-1)
+xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → pending
+xu ingest-commit --wiki research --title "BERT" --template article # → L1 entry
+
+# 5. query (Agent grades the keywords into core vs expansion)
+xu query --wiki research --core "transformer,attention" \
   --expansion "self-attention,encoder" --top-k 5
 
-# 5. wire relations
-xu-wiki query-relation add --wiki research \
+# 6. wire relations
+xu query-relation add --wiki research \
   --from-uid <uid-A> --to-uid <uid-B> --relation-name cites --comment "section 3.2"
 
-# 6. L2 / L3
-xu-wiki list   create --wiki research --title "top 10 models" \
+# 7. L2 / L3
+xu list   create --wiki research --title "top 10 models" \
   --members <uid1>,<uid2>,... --dimension "by-parameter-count"
-xu-wiki report create --wiki research --title "transformer survey" \
+xu report create --wiki research --title "transformer survey" \
   --references <uid1>,<uid2>,<uid3> --body "## findings ..."
 
-# 7. health
-xu-wiki doctor-all --wiki research
-xu-wiki rebuild    --wiki research --granularity keep-l1
+# 8. health
+xu doctor-all --wiki research
+xu rebuild    --wiki research --granularity keep-l1
 ```
 
 ## See also

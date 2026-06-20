@@ -14,26 +14,26 @@ rule is restated here because it is the dominant failure mode of this SOP.
 
 ```bash
 # Main search
-xu-wiki query --wiki <w> --core <kw,kw> [--expansion <kw,kw>] [--top-k N] \
+xu query --wiki <w> --core <kw,kw> [--expansion <kw,kw>] [--top-k N] \
               [--neighbors] [--include-inactive]
 
 # Read individual node (L1 markdown body)
-xu-wiki read  --wiki <w> --uid <uid>
+xu read  --wiki <w> --uid <uid>
 
 # List nodes in a layer (debug / discovery)
-xu-wiki nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
+xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 
 # Follow a relation edge
-xu-wiki query-relation list --wiki <w> --from-uid <uid>
-xu-wiki query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
+xu query-relation list --wiki <w> --from-uid <uid>
+xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
                             --relation-name <r> [--comment <c>]
 
 # Follow L2 / L3 hints
-xu-wiki list   show --wiki <w> --uid <uid>
-xu-wiki list   create --wiki <w> --title <t> --members <uid,uid,...> \
+xu list   show --wiki <w> --uid <uid>
+xu list   create --wiki <w> --title <t> --members <uid,uid,...> \
                     [--dimension <d>] [--node-path <p>]
-xu-wiki report show --wiki <w> --uid <uid>
-xu-wiki report create --wiki <w> --title <t> --body <md> \
+xu report show --wiki <w> --uid <uid>
+xu report create --wiki <w> --title <t> --body <md> \
                       --references <uid,uid,...> [--node-path <p>]
 ```
 
@@ -99,14 +99,14 @@ xu-wiki report create --wiki <w> --title <t> --body <md> \
 ## Example
 
 ```bash
-xu-wiki query --wiki research --core "BERT,transformer" \
+xu query --wiki research --core "BERT,transformer" \
   --expansion "pre-training,encoder,attention" --top-k 5
 # → {"status": "success", "data": {"hits": [{"uid": "...", "score": 0.92}, ...]}, ...}
 
-xu-wiki read --wiki research --uid 2026-WXYZ5678
+xu read --wiki research --uid 2026-WXYZ5678
 # → {"status": "success", "data": {"uid": "...", "body": "## BERT\n..."}, ...}
 
-xu-wiki query-relation add --wiki research \
+xu query-relation add --wiki research \
   --from-uid 2026-WXYZ5678 --to-uid 2026-ABCD1234 \
   --relation-name cites --comment "section 3.2"
 # → {"status": "success", "data": {"from": "...", "to": "...", "relation": "cites"}, ...}

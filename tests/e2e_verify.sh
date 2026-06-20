@@ -9,11 +9,10 @@ if [ ! -d "$SAMPLES" ]; then
   echo "set XU_SAMPLES to the directory holding PDF/ DOCX/ etc. sample files" >&2
   exit 1
 fi
-XU=".venv/bin/xu-wiki"
+XU=".venv/bin/xu"
 
 rm -rf /tmp/xw_e2e /tmp/xw_e2e_home
-echo "################ M1: install + create ################"
-$XU install 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('install:',d['status'])"
+echo "################ M1: create ################"
 $XU create --name demo --path $WIKI --alias d 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('create:',d['status'],d['data']['path'])"
 
 echo
@@ -63,8 +62,5 @@ $XU rebuild --wiki demo --granularity keep-l1 2>/dev/null | python3 -c "import s
 $XU delete-node --wiki demo --uid $FIRST 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('  delete (referenced):',d['status'],d['data'].get('error_class'))"
 $XU doctor --wiki demo 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('  doctor recheck:',d['status'],'issues',d['data']['total_issues'])"
 
-echo
-echo "################ uninstall (dry-run, preserves data) ################"
-$XU uninstall 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('  uninstall dry-run:',d['status']);print('  preserved:',d['data']['preserved'][0])"
 echo
 echo "ALL MILESTONES VERIFIED END-TO-END."

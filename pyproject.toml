@@ -26,7 +26,6 @@ vision = [
 ]
 
 [project.scripts]
-xu-wiki = "xu.cli:main"
 xu = "xu.cli:main"
 
 [tool.setuptools.packages.find]
