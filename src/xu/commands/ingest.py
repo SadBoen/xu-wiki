@@ -238,7 +238,8 @@ def cmd_ingest_commit(args) -> dict:
             # copy raw into raws/ mirrored by node_path (PRIN-ING-6, PRIN-ARCH-25)
             rel_raw = None
             if raw_src_path and Path(raw_src_path).is_file() and idx == 0:
-                rel_raw = Path("raws") / node_path / Path(raw_src_path).name
+                rel_raw = (Path("raws") / node_path / Path(raw_src_path).name
+                            ) if node_path else Path("raws") / Path(raw_src_path).name
                 raw_dst = ctx.root / rel_raw
                 raw_dst.parent.mkdir(parents=True, exist_ok=True)
                 if not raw_dst.exists():
