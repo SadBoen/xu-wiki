@@ -122,7 +122,7 @@ def test_deploy_copies_files_to_destination(monkeypatch, tmp_path):
             assert (dest / rel).is_file(), f"missing: {rel}"
     # result dict shape
     assert r["data"]["skill_md_at_dest"] is True
-    assert r["data"]["file_count"] >= 9
+    assert r["data"]["file_count"] >= 8
     assert "next_action" in r["data"]
 
 

@@ -32,7 +32,6 @@ def xu_home(monkeypatch, tmp_path):
     """Point global config dir at tmp_path."""
     monkeypatch.setattr(cfg_mod, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(cfg_mod, "GLOBAL_CONFIG", tmp_path / "config.yaml")
-    monkeypatch.setattr(cfg_mod, "REGISTRY_FILE", tmp_path / "registry.yaml")
     return tmp_path
 
 

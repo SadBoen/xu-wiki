@@ -115,6 +115,18 @@ install 只装软件本身——不创建任何 wiki 实例的内部组件(`raws
 
 纯确定性逻辑：路径判断、文件操作、调用其他系统 CLI。无 LLM 调用。
 
+### [CONST-INST-6] 安装文档的唯一权威源是 README
+
+安装 / 部署的步骤说明**只写在仓库根目录的 `README.md`**——因为 README 在 `pip install` 之前就能在 GitHub 上读到，是用户/Agent 拿到项目时的第一入口。
+
+约束：
+
+- 安装命令、PATH 配置、`xu deploy skill`、selfcheck 验证流程——**全部以 README 为准**，单点维护。
+- skill bundle（`src/xu/skills/`）**不**包含任何安装内容（见 `09-skill-architecture.md` [BAN-SKILL-3a]）——bundle 是装后资源，写安装说明是时序悖论。
+- 其他文档（SKILL.md、各 SOP）提到安装时，**只写一句指向 README**，绝不复述步骤——复述就是漂移的根。
+
+理由：安装说明在多个文件各写一份，必然随时间漂移、互相矛盾。唯一权威源 + 一句话指路，是杜绝漂移的唯一办法。
+
 ## 五、自检清单（开发时勾选）
 
 **原则**：
@@ -133,12 +145,13 @@ install 只装软件本身——不创建任何 wiki 实例的内部组件(`raws
 - [ ] 不自动做超出安装的事（[BAN-INST-5]）
 
 **约束**：
-- [ ] venv 项目本地（[CONST-INST-1]）
+- [ ] venv 隔离（pipx 推荐 / 项目本地备选）（[CONST-INST-1]）
 - [ ] CLI 软链（[CONST-INST-2]）
 - [ ] 项目标识校验（[CONST-INST-3]）
 - [ ] install 不创建 wiki 内部结构（[CONST-INST-3a]）
 - [ ] 4 键 JSON（[CONST-INST-4]）
 - [ ] 不调 LLM（[CONST-INST-5]）
+- [ ] 安装文档唯一权威源 = README（[CONST-INST-6]）
 
 ---
 

@@ -36,7 +36,6 @@ def xu_home(monkeypatch, tmp_path):
     """Point global config dir at tmp_path for isolated registry + log."""
     monkeypatch.setattr(cfg_mod, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(cfg_mod, "GLOBAL_CONFIG", tmp_path / "config.yaml")
-    monkeypatch.setattr(cfg_mod, "REGISTRY_FILE", tmp_path / "registry.yaml")
     monkeypatch.setattr(cfg_mod, "GLOBAL_AUDIT_LOG", tmp_path / "global_audit.jsonl")
     return tmp_path
 

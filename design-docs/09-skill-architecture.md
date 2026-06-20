@@ -140,6 +140,19 @@ SKILL.md 是 Agent 的**唯一导航枢纽**。所有 SOP 间的跳转都通过�
 
 **重复胜于污染**。
 
+### [BAN-SKILL-3a] 禁止把安装 / 部署内容放进 skill bundle
+
+skill bundle（`src/xu/skills/` 下随包分发、由 Agent 加载的文件）**只能**包含「装好之后怎么操作」的内容——5 个 SOP、跨切 hard rules、response 格式、卸载（卸载是装后行为）。
+
+**绝不**包含安装 / 部署步骤（`pip install` / `pipx install` / `xu deploy skill` / PATH 配置 / selfcheck 安装验证清单等）。
+
+理由——**时序悖论**：skill bundle 是 Agent **装好 xu-wiki 之后**才被加载的资源。把"怎么安装"写进 bundle，等于把"开门的钥匙"锁在"门里面"——Agent 读到安装说明时，安装早已完成，这份说明永远不可能在它真正有用的时刻被读到。
+
+推论：
+- 安装 / 部署的**唯一权威源是 README**（仓库根目录，`pip install` 之前就能在 GitHub 上读到）。详见 `03-install.md` [CONST-INST-6]。
+- SKILL.md / 各 SOP 文件提到安装时，**只写一句指路**「安装见 README」，不复述步骤。
+- 不存在 `INSTALL.md` 之类的"安装清单"进 bundle——它违反本禁令，也违反第 17-28 行的文件结构图。
+
 ### [BAN-SKILL-3] 禁止在 `reference/` 之外创建参考性 / 踩坑 / 错误收集类文件
 
 所有「同类内容累积型」的文件——`error-catalog` / `pitfalls` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `reference/<type>.md`。
@@ -261,6 +274,7 @@ ingest.md       # 该任务需要的全部内容内联
 - [ ] 没有「省字数」抽 reference 的痕迹（BAN-SKILL-2）
 - [ ] SKILL.md 是所有任务文件的唯一入口（PRIN-SKILL-6）
 - [ ] 没有散文件（`error1.md` / `notes-<date>.md` / `bug-<id>.md`）—— 累积型内容全进 `reference/<type>.md`（BAN-SKILL-3）
+- [ ] bundle 内无安装 / 部署内容（无 `INSTALL.md`，SKILL.md / SOP 提安装只一句指向 README）（BAN-SKILL-3a）
 
 ---
 

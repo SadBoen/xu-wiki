@@ -3,8 +3,8 @@ agent's discovery directory in one step.
 
 Why this command exists:
 
-The CLI ships 9 markdown files (SKILL.md + 5 SOPs + 2 reference +
-INSTALL.md) as `package_data` under `<site-packages>/xu/skills/`.
+The CLI ships 8 markdown files (SKILL.md + 5 SOPs + 2 reference)
+as `package_data` under `<site-packages>/xu/skills/`.
 The CLI does NOT deploy them to any agent — that's an agent concern
 because only the agent knows its own discovery directory layout.
 

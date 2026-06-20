@@ -24,13 +24,12 @@ def xu_home(monkeypatch, tmp_path):
     """Point xu.utils.config.GLOBAL_DIR at tmp_path."""
     monkeypatch.setattr(cfg_mod, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(cfg_mod, "GLOBAL_CONFIG", tmp_path / "config.yaml")
-    monkeypatch.setattr(cfg_mod, "REGISTRY_FILE", tmp_path / "registry.yaml")
     monkeypatch.setattr(cmd_mod, "GLOBAL_DIR", tmp_path)
     return tmp_path
 
 
 def _seed_wiki(xu_home, name, *, alias=None, path=None):
-    """Write a registry.yaml with one wiki entry."""
+    """Write a config.yaml with one wiki entry."""
     if path is None:
         path = str(xu_home / "wikis" / name)
     registry = {"wikis": {name: {"path": path, "alias": alias, "created_at": now_ts()}}}

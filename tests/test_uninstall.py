@@ -28,7 +28,6 @@ def xu_home(monkeypatch, tmp_path):
     """Point xu.utils.config.GLOBAL_DIR at tmp_path (and same in uninstall module)."""
     monkeypatch.setattr(cfg_mod, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(cfg_mod, "GLOBAL_CONFIG", tmp_path / "config.yaml")
-    monkeypatch.setattr(cfg_mod, "REGISTRY_FILE", tmp_path / "registry.yaml")
     monkeypatch.setattr(cmd_mod, "GLOBAL_DIR", tmp_path)
     return tmp_path
 

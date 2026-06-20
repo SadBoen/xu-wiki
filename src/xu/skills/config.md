@@ -123,9 +123,9 @@ the user what happened. The JSON is NOT shown to the user.
 
 ### Install is NOT in this SOP
 
-Install is just `pip install "xu-wiki[parse,nlp,vision]"` — see
-SKILL.md rule 0b. There is no `xu install` command, no
-`/xu-wiki install` slash command, and no `pip upgrade` wrapper.
+Install is documented in README §Install (single authoritative source).
+There is no `xu install` command, no `/xu-wiki install` slash command,
+and no `pip upgrade` wrapper.
 
 ## Common pitfalls
 
@@ -151,19 +151,18 @@ SKILL.md rule 0b. There is no `xu install` command, no
 
 ## Workflow — first-time setup
 
-1. **Install the package once per machine**:
-   ```bash
-   pip install "xu-wiki[parse,nlp,vision]"
-   xu skills path    # discover the bundled skill source dir
-   ```
-2. **Set the MinerU API key** (optional — only needed if the offline
+> This section covers runtime configuration only. For install steps
+> (pipx / pip / venv) see **README §Install** — install is not in this
+> bundle (CONST-INST-6 / BAN-SKILL-3a).
+
+1. **Set the MinerU API key** (optional — only needed if the offline
    fallback chain hits a PDF and `markitdown` is not enough):
    ```bash
    export MINERU_API_KEY="..."   # safer than passing --key
    xu config set-mineru-key
    ```
    Or write it directly to `~/.xu/config.yaml` (outside this repo).
-3. **Inspect the global state**:
+2. **Inspect the global state**:
    ```bash
    xu config path    # show where config / global dir lives
    xu wikis          # show registered wikis (empty at first install)

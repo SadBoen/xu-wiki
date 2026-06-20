@@ -1,9 +1,13 @@
-"""Packaged agent-facing resources (SKILL.md + 5 SOP task files + INSTALL.md).
+"""Packaged agent-facing resources (SKILL.md + 5 SOP task files + reference/).
 
 The skill is split per design-docs/09-skill-architecture.md (PRIN-SKILL-1~6,
 BAN-SKILL-1/2): one self-contained `.md` per SOP, plus SKILL.md as the only
 index. They ship as package data so the authoritative source travels with
 `pip install xu-wiki`.
+
+Install/deploy docs are NOT part of the bundle (BAN-SKILL-3a / CONST-INST-6):
+the bundle is a post-install resource, so README (readable before install) is
+the single authority for how to install and deploy.
 
 The CLI does NOT deploy skills to any agent. The agent uses its own skill
 manager (Hermes / Trae / Claude Desktop / Cursor / etc.) to create an empty
@@ -27,9 +31,4 @@ REFERENCE_FILES = (
     "reference/error-catalog.md",
     "reference/pitfalls.md",
 )
-# Post-install checklist for the agent. Loaded by the Agent alongside
-# the other 8 files when it first meets xu-wiki, so it knows the
-# install/verify/deploy sequence instead of guessing.
-INSTALL_FILES = ("INSTALL.md",)
-ALL_SKILL_FILES = (("SKILL.md",) + SOP_TASK_FILES
-                   + REFERENCE_FILES + INSTALL_FILES)
+ALL_SKILL_FILES = (("SKILL.md",) + SOP_TASK_FILES + REFERENCE_FILES)

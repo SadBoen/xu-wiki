@@ -276,7 +276,7 @@ def cmd_config_show(args):
         },
         "paths": {
             "global_dir": str(GLOBAL_DIR),
-            "registry": str(GLOBAL_DIR / "registry.yaml"),
+            "registry": str(GLOBAL_DIR / "config.yaml"),
             "global_config": str(GLOBAL_DIR / "config.yaml"),
         },
     }
@@ -287,7 +287,7 @@ def cmd_config_path(args):
     return success(
         {
             "global_dir": str(GLOBAL_DIR),
-            "registry": str(GLOBAL_DIR / "registry.yaml"),
+            "registry": str(GLOBAL_DIR / "config.yaml"),
             "global_config": str(GLOBAL_DIR / "config.yaml"),
         },
         "global config locations",

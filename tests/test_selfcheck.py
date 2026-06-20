@@ -303,14 +303,16 @@ def test_non_critical_failure_returns_warning(xu_home, monkeypatch):
 
 
 # ----------------------------------------------------------------------
-# 9. ALL_SKILL_FILES now includes INSTALL.md
+# 9. ALL_SKILL_FILES excludes install docs (BAN-SKILL-3a / CONST-INST-6)
 # ----------------------------------------------------------------------
 
-def test_all_skill_files_includes_install_md():
-    """INSTALL.md ships in the bundle so agents get the post-install checklist."""
+def test_all_skill_files_excludes_install_docs():
+    """Install docs live in README, NOT the bundle — the bundle is a
+    post-install resource (BAN-SKILL-3a). Bundle = SKILL.md + 5 SOPs +
+    2 reference placeholders = 8 files."""
     from xu.skills import ALL_SKILL_FILES
-    assert "INSTALL.md" in ALL_SKILL_FILES
-    assert len(ALL_SKILL_FILES) == 9
+    assert "INSTALL.md" not in ALL_SKILL_FILES
+    assert len(ALL_SKILL_FILES) == 8
 
 
 # ----------------------------------------------------------------------

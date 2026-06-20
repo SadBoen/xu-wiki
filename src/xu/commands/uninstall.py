@@ -40,7 +40,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..utils.config import GLOBAL_DIR, REGISTRY_FILE, load_registry, save_registry
+from ..utils.config import GLOBAL_DIR, load_registry, save_registry
 from ..utils.response import error, success, warning
 from ..utils.wiki import is_wiki_root
 

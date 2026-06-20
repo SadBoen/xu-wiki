@@ -23,19 +23,23 @@ def _global_dir() -> Path:
 
 GLOBAL_DIR = _global_dir()
 GLOBAL_CONFIG = GLOBAL_DIR / "config.yaml"
-REGISTRY_FILE = GLOBAL_DIR / "registry.yaml"
 # PRIN-LOG-1: global process-layer audit log for commands without a wiki
 # context (create / wikis / register / unregister / config / skills).
 # Commands WITH a resolvable --wiki write to
 # <wiki>/.xu/audit.jsonl instead.
 GLOBAL_AUDIT_LOG = GLOBAL_DIR / "global_audit.jsonl"
 
+_CONFIG_TEMPLATE = {
+    "mineru": {"api_key": ""},
+    "wikis": {},
+}
+
 
 def load_global_config() -> dict:
     if GLOBAL_CONFIG.exists():
         with open(GLOBAL_CONFIG, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
-    return {}
+    return dict(_CONFIG_TEMPLATE)
 
 
 def save_global_config(cfg: dict) -> None:
@@ -78,15 +82,26 @@ def _contains_secret(cfg: dict) -> bool:
 
 
 def load_registry() -> dict:
-    """Registry: {wikis: {name: {path, alias, created_at}}}."""
-    if REGISTRY_FILE.exists():
-        with open(REGISTRY_FILE, encoding="utf-8") as f:
-            return yaml.safe_load(f) or {"wikis": {}}
+    """Registry: {wikis: {name: {path, alias, created_at}}} — stored in GLOBAL_CONFIG."""
+    if GLOBAL_CONFIG.exists():
+        with open(GLOBAL_CONFIG, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+            return {"wikis": cfg.get("wikis", {})}
     return {"wikis": {}}
 
 
 def save_registry(reg: dict) -> None:
-    atomic_write_text(REGISTRY_FILE, yaml.safe_dump(reg, allow_unicode=True, sort_keys=False))
+    cfg = {}
+    if GLOBAL_CONFIG.exists():
+        with open(GLOBAL_CONFIG, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    cfg["wikis"] = reg.get("wikis", {})
+    atomic_write_text(GLOBAL_CONFIG, yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    if _contains_secret(cfg):
+        try:
+            os.chmod(GLOBAL_CONFIG, 0o600)
+        except OSError:
+            pass
 
 
 def registry_find(name_or_alias: str) -> tuple[str, dict] | None:

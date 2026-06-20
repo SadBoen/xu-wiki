@@ -15,18 +15,18 @@ Three distinct names — DO NOT mix them up:
 
 | Name | What it is | Where you see it |
 |---|---|---|
-| `xu-wiki` | The skill bundle / project name | This file's YAML frontmatter; PyPI package name (`pip install xu-wiki`) |
+| `xu-wiki` | The skill bundle / project name | This file's YAML frontmatter |
 | `/xu-wiki` | Slash command (Trae convention) | Enters the matching SOP |
-| `xu` | The CLI binary | All `xu <verb>` shell invocations after install |
+| `xu` | The CLI binary | All `xu <verb>` shell invocations |
 
-After `pip install xu-wiki`, the CLI command is `xu`, not `xu-wiki`. The
+The
 slash command `/xu-wiki` (Trae) is the agent's UX entry into a SOP and is
 not a CLI invocation.
 
 ## File layout
 
-This skill is split into 6 files per the principles in
-`design-docs/09-skill-architecture.md` (PRIN-SKILL-1~6, BAN-SKILL-1/2):
+This skill is split into 8 files per the principles in
+`design-docs/09-skill-architecture.md` (PRIN-SKILL-1~7, BAN-SKILL-1/2/3/3a):
 
 | File | Purpose | When to load |
 |---|---|---|
@@ -36,11 +36,17 @@ This skill is split into 6 files per the principles in
 | `query.md` | `/xu-wiki query` SOP — full self-contained | When entering query SOP |
 | `doctor.md` | `/xu-wiki doctor` SOP — full self-contained | When entering doctor SOP |
 | `config.md` | `/xu-wiki config` SOP — full self-contained | When entering config SOP |
-| `INSTALL.md` | post-install checklist for `pipx install` + `xu deploy skill` flow | When the user first asks for xu-wiki |
+| `reference/error-catalog.md` | placeholder — future error_class catalog | On demand |
+| `reference/pitfalls.md` | placeholder — future pitfalls log | On demand |
+
+**Install/deploy docs are NOT in this bundle** (BAN-SKILL-3a / CONST-INST-6):
+the bundle is loaded *after* xu-wiki is installed, so how-to-install lives in
+the repo `README.md` (readable on GitHub before install). See README §Install
+and §Agent skill deployment.
 
 **No file links to another SOP file** (BAN-SKILL-1). If an SOP file needs to
 mention a CLI from another SOP, it says "see SKILL.md §X" — never links
-directly. The agent places all 6 files in its own skill discovery dir
+directly. The agent places all 8 files in its own skill discovery dir
 (via its platform's skill manager — Hermes / Trae / Claude / Cursor).
 
 ## When to use this skill
@@ -112,8 +118,8 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
      for you.
 
 0a. **Uninstall goes through the `/xu-wiki config` SOP, then `xu uninstall`.**
-    Install is intentionally a plain `pip install` (or `pipx install`,
-    see rule 0b). Uninstall is non-trivial cleanup so it needs a CLI
+    Install is documented in README, not here (see rule 0b / CONST-INST-6).
+    Uninstall is non-trivial cleanup so it needs a CLI
     command — but it lives in the **config** SOP because it's a
     system-level action, not a wiki-data operation.
 
@@ -208,24 +214,14 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     **discoverable, SKILL.md-visible, agent-callable** uninstall entry.
     See [PRIN-SOP-8] / [CONST-SOP-3] / design-docs/08-sop-architecture.md.
 
-0b. **Install is `pipx install` (preferred) or `pip install` (alternative)** —
-    no CLI command, no special installer. The user can run it
-    themselves, or you can run it via your bash tool. The recommended
-    one-liner is:
-
-    ```bash
-    pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
-    ```
-
-    pipx handles PEP 668, the venv, and the `~/.local/bin/xu` symlink
-    in one step. Use `pip install "xu-wiki[parse,nlp,vision]"` inside
-    a venv if pipx is unavailable.
-
-    NOTE: use the PEP 508 syntax `name[extra] @ git+URL` — the older
-    `git+URL#egg=name[extra]` form is rejected by modern pip.
-
-    (No `/xu-wiki install` slash command exists, and you must not
-    invent one.)
+0b. **Install/deploy is documented in README, not here.** By the time
+    you load this skill, xu-wiki is already installed — so this bundle
+    deliberately carries no install steps (BAN-SKILL-3a / CONST-INST-6).
+    If you need to (re)install, deploy the skill, or fix a PATH issue,
+    read the repo `README.md` (§Install, §Agent skill deployment) — it
+    is the single authority and is readable on GitHub before install.
+    There is no `xu install` command and no `/xu-wiki install` slash
+    command; do not invent one.
 1. **Never edit L1 markdown body** — it is immutable (PRIN-ARCH-2/3).
    UIDs are retired on delete, never reused (BAN-ARCH-2).
 2. **Report needs evidence** — `--references` must list ≥ 1 existing UIDs
@@ -277,7 +273,8 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     CLI subcommands the SOP needs. If the user's `<verb>` is not in the
     five-SOP list, **stop and ask** — do not guess the nearest CLI name.
     Also note: there is NO `xu install` or `xu uninstall` command —
-    install is `pip install xu-wiki` (see Quick start).
+    install is documented in README (see rule 0b), uninstall goes
+    through `xu uninstall` (see rule 0a).
 11. **Within a SOP, match user natural-language intent to CLI (PRIN-SOP-7).**
     After entering a SOP, the agent's job is to interpret the user's
     actual intent (often natural language, not a verb-noun command)
@@ -347,42 +344,33 @@ act on its own (PRIN-QRY-1).
 
 ## Quick start for the agent
 
+> Already installed? This bundle is loaded post-install. For install /
+> deploy steps see README (§Install, §Agent skill deployment) — not here
+> (CONST-INST-6). The flow below assumes `xu` is already on PATH.
+
 ```bash
-# 1. one-time install (per machine)
-#    xu-wiki is NOT on PyPI — use pipx with the git URL (PEP 508 syntax):
-pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
-#    pipx handles PEP 668, venv, and ~/.local/bin symlink in one step.
-#    (Alternative: python3 -m venv .venv && .venv/bin/pip install "xu-wiki[parse,nlp,vision]")
-#    ↳ installs the xu CLI binary, the skill bundle source (site-packages/xu/skills/),
-#      and the 3 optional parser groups
-
-# 2. discover the skill source path (for the agent's own skill manager)
-xu skills path
-#    ↳ prints the on-disk dir of the 8 skill files; the agent copies them into
-#      its own skill discovery dir per the agent platform's convention
-
-# 3. create a wiki
+# 1. create a wiki
 xu create --name research --path /abs/path/to/wiki
 
-# 4. ingest L1 — two phases (PRIN-ING-1)
+# 2. ingest L1 — two phases (PRIN-ING-1)
 xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → pending
 xu ingest-commit --wiki research --title "BERT" --template article # → L1 entry
 
-# 5. query (Agent grades the keywords into core vs expansion)
+# 3. query (Agent grades the keywords into core vs expansion)
 xu query --wiki research --core "transformer,attention" \
   --expansion "self-attention,encoder" --top-k 5
 
-# 6. wire relations
+# 4. wire relations
 xu query-relation add --wiki research \
   --from-uid <uid-A> --to-uid <uid-B> --relation-name cites --comment "section 3.2"
 
-# 7. L2 / L3
+# 5. L2 / L3
 xu list   create --wiki research --title "top 10 models" \
   --members <uid1>,<uid2>,... --dimension "by-parameter-count"
 xu report create --wiki research --title "transformer survey" \
   --references <uid1>,<uid2>,<uid3> --body "## findings ..."
 
-# 8. health
+# 6. health
 xu doctor-all --wiki research
 xu rebuild    --wiki research --granularity keep-l1
 ```
