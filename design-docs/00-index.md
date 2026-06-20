@@ -256,7 +256,7 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 │   ├── page/        # Node_Page（按 node_path 分区）
 │   ├── list/        # Node_List（.md: frontmatter + 对比表）
 │   ├── report/      # Node_Report（.md: frontmatter + 正文）
-│   └── pending/     # ingest 暂存
+│   └── pending/     # (已废弃: Phase 1 临时文件曾存于此; 现使用系统 temp 目录)
 └── .xu/
     ├── 主 SQLite DB           # SQLite（JSONB）
     ├── config.yaml

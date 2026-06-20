@@ -64,11 +64,11 @@ CLI 接收**已分级的关键词列表**，按权重比处理。CLI 内部不�
 搜索范围 = 全库 `.md` 文件的 body + frontmatter 的关键字段。
 
 不查：
-- `暂存子目录`（暂存是中间态）
+- Phase 1 临时文件（系统 temp 目录，尚未 commit 的节点）
 - 〈状态字段〉标记为 inactive 的节点（除非显式 `--include-inactive`）
 - DB 的内容字段（DB 只有元数据，没存正文）
 
-理由：暂存和 inactive 节点不应该被搜到；DB 不存正文（single source of truth 是 .md）。
+理由：Phase 1 临时文件尚未 commit，不是正式节点；inactive 节点已被删除；DB 不存正文（single source of truth 是 .md）。
 
 ### [PRIN-QRY-5] 评分公式硬编码——确定性原则
 
@@ -205,7 +205,7 @@ Round 1 只返回 snippet map（path/line/col/match/context），**不**返回�
 
 不写索引层、不在搜索时跳过——直接**根本不搜**这些文件。
 
-理由：pending 是中间态、inactive 是被删的——它们出现在结果里 = bug。
+理由：Phase 1 临时文件尚未 commit（不是正式节点）、inactive 已被删除——它们出现在结果里 = bug。
 
 ### [BAN-QRY-5] 不绕过 IDF 表用通用权重
 

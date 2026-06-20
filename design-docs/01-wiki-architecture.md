@@ -351,7 +351,7 @@ UID 永不重用（即使节点被硬删，UID 也不回收给新节点）。
 │   ├── page/    # Node_Page（按 node_path 分区）
 │   ├── list/    # Node_List（.md: frontmatter + 对比表）
 │   └── report/  # Node_Report（.md: frontmatter + 正文）
-│   └── pending/ # ingest 中间态
+│   └── pending/ # (已废弃: Phase 1 曾存于此; 现用系统 temp 目录)
 └── .xu/
     ├── 主 SQLite DB           # SQLite（JSONB 支持）
     ├── config.yaml
