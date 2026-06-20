@@ -15,11 +15,14 @@ FM_ACTIVE = "active"        # bool (not 0/1)
 FM_CREATED = "created_at"
 FM_CONTENT_HASH = "content_hash"
 FM_NODE_PATH = "node_path"
+FM_RAW_PATH = "raw_path"
 FM_SOURCE_HASH = "source_hash"
 
 REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_CONTENT_TYPE, FM_ACTIVE, FM_CREATED, FM_CONTENT_HASH]
 
 CONTENT_TYPES = {"article", "table", "gallery"}
+
+LAYERS = {"Page", "List", "Report"}
 
 # Extension → content_type routing (PRIN-ING-13).
 # LLM uses this to auto-fill --content-type; CLI validates against CONTENT_TYPES.
