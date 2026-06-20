@@ -10,7 +10,7 @@ WIKI_FORMAT_VERSION = "1.0.0"
 FM_UID = "uid"
 FM_TITLE = "title"
 FM_LAYER = "layer"          # ∈ {Page, List, Report}
-FM_TEMPLATE = "template"    # ∈ {article, table, gallery, ...}
+FM_CONTENT_TYPE = "content_type"  # ∈ {article, table, gallery, ...}
 FM_ACTIVE = "active"        # bool (not 0/1)
 FM_CREATED = "created_at"
 FM_CONTENT_HASH = "content_hash"
@@ -18,10 +18,21 @@ FM_NODE_PATH = "node_path"
 FM_RAW_PATH = "raw_path"
 FM_SOURCE_HASH = "source_hash"
 
-REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_TEMPLATE, FM_ACTIVE, FM_CREATED, FM_CONTENT_HASH]
+REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_CONTENT_TYPE, FM_ACTIVE, FM_CREATED, FM_CONTENT_HASH]
 
 LAYERS = {"Page", "List", "Report"}
-TEMPLATES = {"article", "table", "gallery"}
+CONTENT_TYPES = {"article", "table", "gallery"}
+
+# Extension → content_type routing (PRIN-ING-13).
+# LLM uses this to auto-fill --content-type; CLI validates against CONTENT_TYPES.
+# Content-aware override (markdown pipe/img detection) happens in the LLM,
+# not here — this map covers unambiguous file types only.
+CONTENT_TYPE_MAP: dict[str, str] = {
+    ".xlsx": "table",   ".xls": "table",   ".csv": "table",
+    ".png": "gallery",   ".jpg": "gallery",  ".jpeg": "gallery",
+    ".webp": "gallery", ".gif": "gallery",  ".bmp": "gallery",
+    # article (default): .pdf .docx .pptx .md .txt .yaml .json and all others
+}
 
 # Ingest (PRIN-ING-4)
 PAGE_SPLIT_LINES = 300
@@ -51,6 +62,14 @@ COMPRESS_OVER_BYTES = 2 * 1024 * 1024
 QUERY_TIMEOUT_SECONDS = 10    # CONST-QRY-9
 
 REBUILD_GRANULARITY = ["keep-l1", "keep-l1-l2", "full"]
+
+
+def content_type_from_ext(ext: str) -> str:
+    """Return content_type for a file extension (lowercase, with dot).
+
+    Returns 'article' for unknown extensions (the default).
+    """
+    return CONTENT_TYPE_MAP.get(ext.lower(), "article")
 
 
 def default_wiki_config(name: str) -> dict:

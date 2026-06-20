@@ -11,6 +11,8 @@ import importlib
 import json
 import shutil
 import tempfile
+
+import yaml
 from pathlib import Path
 
 from ..ingest.relations_lru import add_relation
@@ -27,13 +29,13 @@ from ..utils.constants import (
     FM_NODE_PATH,
     FM_RAW_PATH,
     FM_SOURCE_HASH,
-    FM_TEMPLATE,
+    FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
     IDF_CONSTANT,
     REQUIRED_FM_FIELDS,
     LAYERS,
-    TEMPLATES,
+    CONTENT_TYPES,
 )
 from ..utils.paths import (
     atomic_write_text,
@@ -137,6 +139,39 @@ def _parse_pending_header(text: str) -> tuple[dict, str]:
     return meta, body
 
 
+def _validate_body_format(body: str, content_type: str) -> str | None:
+    """Check body matches content_type format.
+
+    Returns None if valid, or an error message string if invalid.
+    """
+    if content_type == "article":
+        return None
+    if content_type not in ("table", "gallery"):
+        return f"unknown content_type: {content_type}"
+
+    if not body.strip():
+        return None  # empty body is allowed (can be filled later via revise)
+
+    try:
+        parsed = yaml.safe_load(body)
+    except yaml.YAMLError:
+        return (
+            f"content_type={content_type} requires YAML list in body, "
+            f"but parsing failed"
+        )
+
+    if not isinstance(parsed, list):
+        return f"content_type={content_type} requires body to be a YAML list, got {type(parsed).__name__}"
+
+    for i, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            return f"content_type={content_type} body item {i} is not a dict: {type(item).__name__}"
+        if content_type == "gallery" and "filename" not in item:
+            return f"content_type={content_type} body item {i} missing required 'filename' field"
+
+    return None
+
+
 def _strip_frontmatter(text: str) -> str:
     """Strip leading YAML frontmatter (---...---) from markdown text."""
     if text.startswith("---"):
@@ -196,8 +231,8 @@ def cmd_ingest_commit(args) -> dict:
     if not args.title:
         return error("ingest-commit requires --title (CONST-ING-4)", "MissingTitle",
                      data={"missing": ["title"]})
-    if args.template not in TEMPLATES:
-        return error(f"invalid template: {args.template}", "InvalidTemplate")
+    if args.content_type not in CONTENT_TYPES:
+        return error(f"invalid content-type: {args.content_type}", "InvalidContentType")
 
     # relations parsing (CONST-ING-5): must be JSON array
     relations = []
@@ -239,6 +274,12 @@ def cmd_ingest_commit(args) -> dict:
         multi = len(pages) > 1
         for idx, page_body in enumerate(pages):
             page_body = page_body.rstrip()  # normalize to match fm.render storage
+
+            # body format must match content_type (PRIN-ING-13)
+            body_err = _validate_body_format(page_body, args.content_type)
+            if body_err:
+                return error(body_err, "BodyFormatMismatch")
+
             content_hash = sha256_text(page_body)
             # Level-1 dedup: body hash (CONST-ING-3)
             dup = conn.execute(
@@ -259,12 +300,11 @@ def cmd_ingest_commit(args) -> dict:
                 FM_UID: uid,
                 FM_TITLE: title,
                 FM_LAYER: "Page",
-                FM_TEMPLATE: args.template,
+                FM_CONTENT_TYPE: args.content_type,
                 FM_ACTIVE: True,           # bool, not 0/1 (CONST-ARCH-2)
                 FM_CREATED: ts,
                 FM_CONTENT_HASH: content_hash,
                 FM_NODE_PATH: node_path,
-                "digest": args.digest,
             }
             if source_hash:
                 frontmatter[FM_SOURCE_HASH] = source_hash
@@ -289,13 +329,13 @@ def cmd_ingest_commit(args) -> dict:
 
             # DB row
             conn.execute(
-                "INSERT INTO nodes(uid, layer, template, title, node_path, slug, "
-                "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
+                "INSERT INTO nodes(uid, layer, content_type, title, node_path, slug, "
+                "rel_md_path, raw_path, content_hash, source_hash, active, "
                 "attrs, created_at, updated_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
-                (uid, "Page", args.template, title, node_path, slug,
+                "VALUES(?,?,?,?,?,?,?,?,?,?,1,?,?,?)",
+                (uid, "Page", args.content_type, title, node_path, slug,
                  str(rel_md), str(rel_raw) if rel_raw else None, content_hash,
-                 source_hash, args.digest, "{}", ts, ts),
+                 source_hash, "{}", ts, ts),
             )
             # patches v1 (PRIN-ING-10, CONST-ING-7)
             conn.execute(

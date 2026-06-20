@@ -2,7 +2,7 @@
 
 `/xu-wiki ingest` adds content to a wiki as **L1 Node_Page** (immutable). It
 is the most complex SOP because L1 body style **must match the content
-type** (PRIN-ING-13). The `template` frontmatter key stores the body form
+type** (PRIN-ING-13). The `content_type` frontmatter key stores the body form
 (`article` for prose, `table` for tabular, `gallery` for album).
 
 This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
@@ -10,43 +10,46 @@ This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
 `SKILL.md`; the body-form decision tree lives here because it only applies
 to ingest.
 
-## Hard rule for this SOP (PRIN-ING-13)
+## Hard rule for this SOP (PRIN-ING-2, PRIN-ING-13)
 
-> **Ask only what only the user can decide.**
+> **Route by content form first; Phase 1↔2 intermediate values are LLM-generated.**
 >
-> The **only** thing the Agent must ask upfront is the **title** (hard rule 8
-> in `SKILL.md`: `--title` is required; guessing is forbidden).
-> Everything else the Agent can infer from context:
+> Content form routing (before Phase 1 — only this step requires a user question):
 >
-> | File type | Body form | `template` | Agent action |
-> |---|---|---|---|
-> | PDF / DOCX / XLSX / MD / text / image | prose | `article` | Infer automatically; do not ask |
-> | N images (one theme) | album | `table` or `list` | Ask "vision per-photo? (yes/no)" before calling |
-> | code block / terminal output | snippet | `article` | `--native` path; infer automatically |
+> | User says | Route to | Agent action |
+> |---|---|---|
+> | PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` | Auto-fill `--content-type` from `CONTENT_TYPE_MAP` (`.xlsx/.csv`→`table`, images→`gallery`, rest→`article`); do not ask |
+> | N images, one theme | `ingest-album` | Ask "vision per-photo? (yes/no)" before calling (PRIN-SOP-7) |
+> | code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article`; do not ask |
 >
-> - **album** (`ingest-album`): ask "vision per-photo? (yes/no)"
->   BEFORE calling — if the user wants per-photo captions and the build has no
->   vision backend, set `--vision` so the intent is recorded (PRIN-SOP-7).
->   Never decide for the user.
+> After `ingest-file` succeeds, the Agent reads the temp file and synthesizes ALL
+> intermediate values **without asking the user**: title, node_path, relations,
+> content_type — these are LLM-generated decisions (PRIN-ING-2). The user never
+> sees or approves these values.
+>
+> **content_type body validation** (PRIN-ING-13): the CLI validates body format
+> before write — `article` accepts free text; `table` requires YAML list of dicts;
+> `gallery` requires YAML list of dicts each with a `filename` field. Mismatch
+> returns `BodyFormatMismatch` error and blocks commit.
 >
 > **Never split a single album into N parallel `ingest-file` + `ingest-commit`
 > cycles** — that breaks the body-form rule and leaves N disjoint L1 pages
-> with no album structure. The L1 body style MUST match the content type;
-> `template` is just a frontmatter label, the body is the file content.
+> with no album structure.
 
 ## CLI palette
 
 ```bash
 # Two-phase prose flow (PRIN-ING-1)
 xu ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
-xu ingest-commit --wiki <w> [--pending <f>] [--title <t>] [--node-path <p>] \
-                      [--template article|table|gallery] [--digest <d>] \
-                      [--relations '<json>'] [--native '<md>'] [--author <a>]
+xu ingest-commit --wiki <w> --pending <f> --title <t> \
+                      [--content-type article|table|gallery] \
+                      [--node-path <p>] [--relations '<json>'] \
+                      [--native '<md>'] [--author <a>]
 
 # Album single-shot flow (PRIN-ING-14)
 xu ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
                       [--node-path <p>] [--layout table|list] [--vision] \
-                      [--captions '<json>'] [--digest <d>] [--author <a>]
+                      [--captions '<json>'] [--author <a>]
 
 # Optional follow-up (still in the ingest SOP — wiring happens here)
 xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
@@ -62,11 +65,10 @@ xu report create --wiki <w> --title <t> --body <md> \
 | `--wiki` | yes | Wiki name or alias |
 | `--title` | yes | Album theme = L1 page title |
 | `--files` | yes | Comma-separated absolute paths to images |
-| `--node-path` | no | Where in the wiki tree to place the page; user-specified preferred, else LLM judges |
+| `--node-path` | no | Where in the wiki tree to place the page |
 | `--layout` | no | `table` (default) or `list` |
 | `--vision` | no | Flag that user wants per-photo captions; sets intent even if backend absent (PRIN-SOP-7) |
 | `--captions` | no | Pre-computed captions as JSON; if absent, vision backend runs at view time |
-| `--digest` | no | One-paragraph summary for the L1 page frontmatter |
 | `--author` | no | L1 frontmatter author field |
 
 ## Workflow — prose / document (PDF / DOCX / MD / image)
@@ -76,11 +78,9 @@ xu report create --wiki <w> --title <t> --body <md> \
    fallback chain (MinerU → markitdown → text → image, CONST-ING-1) and
    writes a temp file to the system temp directory. Returns the temp file path
    in `data.pending`. No node is created at this stage.
-3. **Phase 1 quality gate — character count**: after `ingest-file` succeeds,
-   read the temp file and check its character count. If chars < 100 (likely a
-   scanned PDF with no extractable text), tell the user: "这份 PDF 是扫描件，
-   markitdown 拿不到文字。要用 MinerU OCR 重新解析吗？" — do NOT proceed to
-   Phase 2 with empty content.
+3. **Agent synthesizes all metadata** from the temp file (PRIN-ING-2):
+   title, node_path, relations, content_type — all LLM-generated, never asked
+   of the user. `--title` is required by CLI but the value comes from the LLM.
 4. **取证副本 (PRIN-ING-6)**: after `ingest-commit` succeeds, the CLI copies
    the source file to `raws/<node_path>/<original_name>` (first page only).
    **This is mandatory for all document types** — `.md / .pdf / .docx / .pptx`
@@ -89,22 +89,16 @@ xu report create --wiki <w> --title <t> --body <md> \
    > **Exception**: `--native` mode has no source file (agent-synthesized text),
    > so `raw_path` is null by design. But `--native` still requires `--source`
    > (a reference path) for dedup. Use `--pending` for any external document.
-5. **Agent reviews parsed content** (Phase 1 ↔ Phase 2 boundary): read the temp
-   file at `data.pending`. The Agent makes all semantic decisions here:
-   - **title** — ask the user (hard rule 8: `--title` is required; never guess)
-   - **template** — infer from file type: PDF/DOCX/XLSX/MD → `article`; never ask
-   - **node_path** — infer from wiki structure; ask user only if genuinely unclear
-   - **digest / author** — the Agent can draft these without asking
-6. **Phase 2 — `ingest-commit`**: promotes temp file to L1. Required: `--title`.
-   Optional: `--template` (infer from file type), `--node-path`, `--relations`,
-   `--digest`, `--author`.
-7. **Page splitting notice**: if `data.page_count > 1`, tell the user
+5. **Phase 2 — `ingest-commit --pending <f> --title <t>`**: promotes temp file
+   to L1. All intermediate values (content_type, node_path, relations, author)
+   are synthesized by the LLM and passed as CLI arguments.
+6. **Page splitting notice**: if `data.page_count > 1`, tell the user
    "文档较长，已自动按容量分片为 N 个 L1 节点"。This is normal behavior, not an error.
-8. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
+7. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
    An empty `raws/` directory with populated `nodes/page/` = PRIN-ING-6 was
    bypassed (usually from `--native` on a document).
-9. **(Optional) Wire relations** with `query-relation add`.
-10. **(Optional) Group into L2/L3** with `list create` / `report create`.
+8. **(Optional) Wire relations** with `query-relation add`.
+9. **(Optional) Group into L2/L3** with `list create` / `report create`.
 
 ## Workflow — album (multiple images, one theme)
 
@@ -189,8 +183,7 @@ xu ingest-file   --wiki research --file ~/Downloads/bert.pdf
 # Agent reviews /tmp/bert-pre.md, then:
 xu ingest-commit --wiki research \
   --pending /tmp/bert-pre.md \
-  --title "BERT: Pre-training of Deep Bidirectional Transformers" \
-  --template article --digest "Masked LM + NSP pre-training achieves SOTA on 11 NLP tasks."
+  --title "BERT: Pre-training of Deep Bidirectional Transformers"
 # → {"status": "success", "data": {"uid": "WXYZ5678", "title": "BERT: ..."}, ...}
 ```
 

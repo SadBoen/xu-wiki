@@ -153,7 +153,7 @@ Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Ag
 
 - body 样式错配 = 后期 query 切片、read 还原、人工审阅全部成本上升
 - 表格化内容塞进 prose = 无法按行做交叉查询;prose 内容塞进表格 = 浪费表头且断行
-- **body 形态由内容类型决定,不由模板名(template)决定**——`template` 是 frontmatter 标签,可以由 L2/L3 工具识别;body 形态是文件实际写出去的 markdown 结构,二者正交
+- **body 形态由内容类型决定,不由 content_type 名决定**——`content_type` 是 frontmatter 标签,可以由 L2/L3 工具识别;body 形态是文件实际写出去的 markdown 结构,二者正交
 - Agent 编排 SOP 时,**第一步就是问用户"这些内容是表格化 / 散文 / 代码块"**,而不是默认走散文
 
 #### 强制约束
@@ -219,7 +219,7 @@ xu-wiki ingest-album \
 | 6 | 源文件 copy | 每张图 `shutil.copy2` 到 `raws/<node-path>/<原文件名>` (PRIN-ING-6) |
 | 7 | Level-2 dedup | 对每张图 `SELECT ... WHERE source_hash=?`;任一命中 → warning + 整相册拒绝 (CONST-ING-3 / BAN-ING-4) |
 | 8 | 渲染 body | `_render_body` 生成 markdown 表格或列表;每行包含 # / Filename / Path / Resolution / GPS / Captured / Description 七列 (PRIN-ING-13 表格化形态) |
-| 9 | 一次性写盘 | 1 条 INSERT nodes (template=gallery) + 1 条 INSERT patches v1 + N 条 IDF 增量;**单事务,失败全回滚** (PRIN-ING-1 / PRIN-ING-10 / PRIN-ING-9) |
+| 9 | 一次性写盘 | 1 条 INSERT nodes (content_type=gallery) + 1 条 INSERT patches v1 + N 条 IDF 增量;**单事务,失败全回滚** (PRIN-ING-1 / PRIN-ING-10 / PRIN-ING-9) |
 
 **与两阶段流的差异**:
 

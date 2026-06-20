@@ -13,7 +13,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
     uid           TEXT PRIMARY KEY,
     layer         TEXT NOT NULL CHECK (layer IN ('Page','List','Report')),
-    template      TEXT NOT NULL,
+    content_type  TEXT NOT NULL,
     title         TEXT NOT NULL,
     node_path     TEXT NOT NULL DEFAULT '',
     slug          TEXT,
@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS nodes (
     source_hash   TEXT,                 -- source file SHA256 (Level 2 dedup)
     source_hash_compressed TEXT,        -- post-compression hash for images (PRIN-ING-12)
     active        INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
-    digest        TEXT,
     attrs         TEXT,                 -- JSONB extension attributes
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL

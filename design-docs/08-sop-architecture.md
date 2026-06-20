@@ -307,8 +307,8 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
    - 「表格化 / 相册」(一组图片 / 一组参数) → 走 `ingest-album` 单次
 3. **散文 / 文档**:对每个源文件执行两阶段（[PRIN-ING-1]）：
    - Phase 1：`xu-wiki ingest-file --wiki <w> --file <abs>`
-   - Phase 2：`xu-wiki ingest-commit --wiki <w> --title <t> --template article`
-4. **代码块**:`xu-wiki ingest-commit --wiki <w> --title <t> --template article --native "<code block>"`
+   - Phase 2：`xu-wiki ingest-commit --wiki <w> --title <t> --content-type article`
+4. **代码块**:`xu-wiki ingest-commit --wiki <w> --title <t> --content-type article --native "<code block>"`
 5. **相册 (album) [PRIN-ING-14 单次原则]**:
    - 必问 1:每张图要不要加 vision 描述?(`--vision` 标志,见 [PRIN-SOP-7])
    - 必问 2:主题 title / node-path / layout (table 默认)

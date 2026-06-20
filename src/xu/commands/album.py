@@ -36,7 +36,7 @@ from ..utils.constants import (
     FM_LAYER,
     FM_NODE_PATH,
     FM_SOURCE_HASH,
-    FM_TEMPLATE,
+    FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
     IDF_CONSTANT,
@@ -54,7 +54,7 @@ from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
 
 ALBUM_LAYOUTS = ("table", "list")
-ALBUM_TEMPLATE = "gallery"
+ALBUM_CONTENT_TYPE = "gallery"
 ALBUM_DEDUP_SCOPE = "all"
 
 
@@ -267,12 +267,11 @@ def cmd_ingest_album(args) -> dict:
             FM_UID: uid,
             FM_TITLE: args.title,
             FM_LAYER: "Page",
-            FM_TEMPLATE: ALBUM_TEMPLATE,
+            FM_CONTENT_TYPE: ALBUM_CONTENT_TYPE,
             FM_ACTIVE: True,
             FM_CREATED: ts,
             FM_CONTENT_HASH: content_hash,
             FM_NODE_PATH: node_path,
-            "digest": args.digest,
         }
         if rows:
             frontmatter[FM_SOURCE_HASH] = rows[0]["source_hash"]
@@ -305,14 +304,14 @@ def cmd_ingest_album(args) -> dict:
         }, ensure_ascii=False)
 
         conn.execute(
-            "INSERT INTO nodes(uid, layer, template, title, node_path, slug, "
-            "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
+            "INSERT INTO nodes(uid, layer, content_type, title, node_path, slug, "
+            "rel_md_path, raw_path, content_hash, source_hash, active, "
             "attrs, created_at, updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
-            (uid, "Page", ALBUM_TEMPLATE, args.title, node_path, slug,
+            "VALUES(?,?,?,?,?,?,?,?,?,?,1,?,?,?)",
+            (uid, "Page", ALBUM_CONTENT_TYPE, args.title, node_path, slug,
              str(rel_md).replace("\\", "/"), primary_raw.replace("\\", "/"),
              content_hash, rows[0]["source_hash"] if rows else None,
-             args.digest, attrs, ts, ts),
+             attrs, ts, ts),
         )
         # patches v1 (PRIN-ING-10, CONST-ING-7)
         conn.execute(
@@ -347,7 +346,7 @@ def cmd_ingest_album(args) -> dict:
             )
         return success(
             data,
-            f"album committed: {len(rows)} photos → 1 Node_Page (L1, template={ALBUM_TEMPLATE})",
+            f"album committed: {len(rows)} photos → 1 Node_Page (L1, content_type={ALBUM_CONTENT_TYPE})",
             hints=hints,
         )
     except Exception as e:

@@ -336,7 +336,7 @@ xu create --name research --path /abs/path/to/wiki
 # 2. ingest L1 — two phases (PRIN-ING-1); verify raws/ has copy after (PRIN-ING-6)
 xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → {"data":{"pending":"/tmp/...-pre.md",...}}
 # Agent reviews the temp file content, then:
-xu ingest-commit --wiki research --pending /tmp/...-pre.md --title "BERT" --template article # → L1 entry
+xu ingest-commit --wiki research --pending /tmp/...-pre.md --title "BERT" --content-type article # → L1 entry
 
 # 3. query (Agent grades the keywords into core vs expansion)
 xu query --wiki research --core "transformer,attention" \

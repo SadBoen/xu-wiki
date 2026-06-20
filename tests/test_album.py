@@ -72,7 +72,7 @@ def test_album_happy_table(wiki, tmp_path):
         wiki=name, title="SGW001 第一次岸上系统部署完工",
         files=",".join(files), node_path="船舶/SGW001/照片",
         layout="table", vision=False, captions="",
-        digest="D-album-happy", author="tester",
+        author="tester",
     ))
     assert r["status"] == "success", r
     data = r["data"]
@@ -88,8 +88,7 @@ def test_album_happy_table(wiki, tmp_path):
     front, body = fm.parse(md.read_text(encoding="utf-8"))
     assert front["title"] == "SGW001 第一次岸上系统部署完工"
     assert front["layer"] == "Page"
-    assert front["template"] == "gallery"
-    assert front["digest"] == "D-album-happy"
+    assert front["content_type"] == "gallery"
     assert front["source_hash"]  # first source's hash recorded on the L1
     # body has 7-column table header
     assert "| # | Filename | Path | Resolution | GPS | Captured | Description |" in body
@@ -389,11 +388,11 @@ def test_resolve_wiki_after_album_creation(wiki, tmp_path):
     # Re-resolve and confirm the L1 is queryable via raw SQL
     conn = ctx.connect()
     row = conn.execute(
-        "SELECT uid, title, layer, template FROM nodes WHERE title=?",
+        "SELECT uid, title, layer, content_type FROM nodes WHERE title=?",
         ("resolve test",),
     ).fetchone()
     conn.close()
     assert row is not None
     assert row["title"] == "resolve test"
     assert row["layer"] == "Page"
-    assert row["template"] == "gallery"
+    assert row["content_type"] == "gallery"

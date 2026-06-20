@@ -169,7 +169,7 @@ L1 body 不是「一段 markdown 字符串」——它必须与承载的内容�
 | 散文 (普通文档) | prose 段落、标题、列表 | `ingest-file` → `ingest-commit` |
 | 代码 / 命令块 | fenced code block | `ingest-commit --native` |
 
-Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散文 / 代码块」**。body 形态由内容类型决定,**不**由 template 名决定——template 是 frontmatter 标签,body 形态是文件实际写出去的 markdown 结构,二者正交。相册是这一原则的典型落地场景。
+Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散文 / 代码块」**。body 形态由内容类型决定,**不**由 content_type 名决定——content_type 是 frontmatter 标签,body 形态是文件实际写出去的 markdown 结构,二者正交。相册是这一原则的典型落地场景。
 
 ### 15. 元数据三层各司其职——过程层不污染内容（[PRIN-ARCH-26]）
 

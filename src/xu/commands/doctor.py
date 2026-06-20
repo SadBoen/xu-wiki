@@ -358,13 +358,13 @@ def cmd_rebuild(args) -> dict:
                 if not row:
                     ts = now_ts()
                     conn.execute(
-                        "INSERT INTO nodes(uid,layer,template,title,node_path,slug,rel_md_path,"
-                        "source_hash,content_hash,active,digest,created_at,updated_at) "
+                        "INSERT INTO nodes(uid,layer,content_type,title,node_path,slug,rel_md_path,"
+                        "source_hash,content_hash,active,attrs,created_at,updated_at) "
                         "VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)",
-                        (uid, frontmatter.get("layer", "Page"), frontmatter.get("template", "article"),
+                        (uid, frontmatter.get("layer", "Page"), frontmatter.get("content_type", "article"),
                          frontmatter.get("title", uid), frontmatter.get("node_path", ""),
                          md.stem, rel, frontmatter.get("source_hash"), ch,
-                         frontmatter.get("digest"), ts, ts),
+                         frontmatter.get("attrs", "{}"), ts, ts),
                     )
                     # patches v1 so reconciled rows aren't missing their create record
                     conn.execute(

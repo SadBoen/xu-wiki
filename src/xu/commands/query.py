@@ -269,14 +269,14 @@ def cmd_read(args) -> dict:
                     text = md_path.read_text(encoding="utf-8", errors="replace")
                     _, body = fm.parse(text)
             else:
-                body = node.get("digest") or ""
+                body = ""
             patches = conn.execute(
                 "SELECT version, op, author, created_at FROM patches WHERE page_uid=? ORDER BY version",
                 (args.uid,),
             ).fetchall()
             return success(
                 {"uid": node["uid"], "title": node["title"], "layer": node["layer"],
-                 "template": node["template"], "node_path": node["node_path"],
+                 "content_type": node["content_type"], "node_path": node["node_path"],
                  "active": bool(node["active"]), "body": body,
                  "patch_versions": [dict(p) for p in patches]},
                 f"read {node['layer']} node {args.uid}",
@@ -290,7 +290,7 @@ def cmd_read(args) -> dict:
         fm_dict, body = found
         return success(
             {"uid": fm_dict.get("uid"), "title": fm_dict.get("title"),
-             "layer": fm_dict.get("layer"), "template": "article",
+             "layer": fm_dict.get("layer"), "content_type": fm_dict.get("content_type", "article"),
              "node_path": "", "active": True, "body": body,
              "patch_versions": []},
             f"read {fm_dict.get('layer')} node {args.uid}",
@@ -305,7 +305,7 @@ def cmd_nodes(args) -> dict:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
     conn = ctx.connect()
     try:
-        sql = "SELECT uid, layer, template, title, node_path, active, created_at FROM nodes"
+        sql = "SELECT uid, layer, content_type, title, node_path, active, created_at FROM nodes"
         clauses = []
         params = []
         if args.layer:

@@ -59,8 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--pending", required=False, help="Phase 1 temp file to commit")
     sp.add_argument("--title", required=False, help="title (required unless --native with frontmatter)")
     sp.add_argument("--node-path", default="")
-    sp.add_argument("--template", default="article", choices=["article", "table", "gallery"])
-    sp.add_argument("--digest", default="")
+    sp.add_argument("--content-type", default="article", choices=["article", "table", "gallery"],
+                    help="body form: article (prose) | table | gallery")
     sp.add_argument("--relations", default="", help="JSON array of {to, relation_name, comment?}")
     sp.add_argument("--native", default="", help="raw markdown string (bypass parse, still validate)")
     sp.add_argument("--source", default="", help="abs path to source file (required when --native is used, for PRIN-ING-6 raws copy)")
@@ -80,7 +80,6 @@ def build_parser() -> argparse.ArgumentParser:
                     help="mark vision intent (per-photo captions); SOP should ask user first")
     sp.add_argument("--captions", default="",
                     help='JSON object {filename: description} (optional)')
-    sp.add_argument("--digest", default="")
     sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_album")
 

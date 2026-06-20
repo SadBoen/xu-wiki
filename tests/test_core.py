@@ -87,7 +87,7 @@ def _mkdb():
     conn = db.connect(tmp.name)
     for i in range(60):
         conn.execute(
-            "INSERT INTO nodes(uid,layer,template,title,created_at,updated_at) "
+            "INSERT INTO nodes(uid,layer,content_type,title,created_at,updated_at) "
             "VALUES(?,?,?,?,?,?)",
             (f"2026-N{i:07d}", "Page", "article", f"n{i}", 0, 0),
         )
