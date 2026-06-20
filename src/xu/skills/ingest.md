@@ -207,7 +207,28 @@ xu ingest-verify --wiki research --uid <uid from commit response>
 ```
 
 5 checks: DB record, nodes/ frontmatter completeness, content_hash match, raw file exists (non-native), content_type ↔ body format match.
+
+### Multi-file serial ingest
+
+When ingesting N files, repeat the two-phase cycle **per file** — serial, not parallel ([CONST-ING-9]):
+
+```bash
+# File 1
+xu ingest-file --wiki <w> --file /abs/path/to/a.pdf
+# Agent reads temp file, decides title/node_path/relations, then:
+xu ingest-commit --wiki <w> --pending <temp_a.md> --title a ...
+xu ingest-verify --wiki <w> --uid <uid_from_commit_a>
+# Only proceed if ingest-verify passes; fix and re-commit if it fails
+
+# File 2
+xu ingest-file --wiki <w> --file /abs/path/to/b.pdf
+xu ingest-commit --wiki <w> --pending <temp_b.md> --title b ...
+xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
+
+# ... repeat for each file
 ```
+
+**Rule**: if `ingest-verify` fails for any file, stop and fix that node before moving to the next. Do not skip a failed verify and continue the batch.
 
 ## Common pitfalls
 
