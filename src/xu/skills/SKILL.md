@@ -277,7 +277,7 @@ agent does NOT need to (and must NOT) call any logging command explicitly:
 
 - Commands with a resolvable `--wiki` write to `<wiki>/.xu/audit.jsonl`
 - Commands without `--wiki` (or unresolvable) write to
-  `~/.xu-wiki/global_audit.jsonl`
+  `~/.local/share/xu-wiki/global_audit.jsonl`
 
 Each line carries `ts` / `command` / `wiki` / `status` / `elapsed_ms`;
 failures add `error_class`. This log exists for SOP / CLI health diagnosis

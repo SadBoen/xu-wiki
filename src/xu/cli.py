@@ -366,7 +366,7 @@ def main(argv: list[str] | None = None) -> int:
                 "elapsed_ms": 0,
                 "error_class": "ArgParseError",
             }
-            append_jsonl(GLOBAL_AUDIT_LOG, record)
+            append_jsonl(GLOBAL_AUDIT_LOG, record, mkdir=False)
         except Exception:
             pass
         return emit(response)
@@ -411,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
             err_data = response.get("data") or {}
             if "error_class" in err_data:
                 record["error_class"] = err_data["error_class"]
-        append_jsonl(audit_path, record)
+        append_jsonl(audit_path, record, mkdir=(audit_path != GLOBAL_AUDIT_LOG))
     except Exception:
         pass
     return emit(response)

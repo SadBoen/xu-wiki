@@ -25,9 +25,12 @@ GLOBAL_DIR = _global_dir()
 GLOBAL_CONFIG = GLOBAL_DIR / "config.yaml"
 # PRIN-LOG-1: global process-layer audit log for commands without a wiki
 # context (create / wikis / register / unregister / config / skills).
+# Lives in ~/.local/share/xu-wiki/ (co-located with manifest, separate from
+# GLOBAL_DIR ~/.xu-wiki/ so uninstall rmtree does not recreate config dirs).
 # Commands WITH a resolvable --wiki write to
 # <wiki>/.xu/audit.jsonl instead.
-GLOBAL_AUDIT_LOG = GLOBAL_DIR / "global_audit.jsonl"
+_LOCAL_SHARE = Path(os.path.expanduser("~/.local/share/xu-wiki"))
+GLOBAL_AUDIT_LOG = _LOCAL_SHARE / "global_audit.jsonl"
 
 _CONFIG_TEMPLATE = {
     "mineru": {"api_key": ""},

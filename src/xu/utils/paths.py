@@ -88,11 +88,13 @@ def safe_slug(text: str, maxlen: int = 80) -> str:
     return (s or "untitled")[:maxlen]
 
 
-def append_jsonl(log_path: str | Path, record: dict) -> None:
+def append_jsonl(log_path: str | Path, record: dict, *, mkdir: bool = True) -> None:
     """Append one JSONL line for audit (CONST-ARCH-6)."""
     try:
-        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as f:
+        p = Path(log_path)
+        if mkdir:
+            p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError:
         pass
