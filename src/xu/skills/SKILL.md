@@ -348,8 +348,11 @@ act on its own (PRIN-QRY-1).
 ## Quick start for the agent
 
 ```bash
-# 1. one-time install (per machine) — same as any Python tool
-pip install "xu-wiki[parse,nlp,vision]"
+# 1. one-time install (per machine)
+#    xu-wiki is NOT on PyPI — use pipx with the git URL (PEP 508 syntax):
+pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+#    pipx handles PEP 668, venv, and ~/.local/bin symlink in one step.
+#    (Alternative: python3 -m venv .venv && .venv/bin/pip install "xu-wiki[parse,nlp,vision]")
 #    ↳ installs the xu CLI binary, the skill bundle source (site-packages/xu/skills/),
 #      and the 3 optional parser groups
 

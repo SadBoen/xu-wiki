@@ -131,29 +131,6 @@ In the agent's reply: "Installed xu-wiki X.Y.Z via pipx; deployed
 the skill to <agent>; smoke test passed." Do NOT paste raw JSON;
 translate.
 
-### 7. End-to-end smoke
-
-```bash
-# pipx users:
-xu create --name smoke --path /tmp/xw-smoke --alias s
-xu wikis
-xu unregister --name smoke
-
-# pip+venv users:
-.venv/bin/xu create --name smoke --path /tmp/xw-smoke --alias s
-.venv/bin/xu wikis
-.venv/bin/xu unregister --name smoke
-```
-
-All three should return `status: success`. If any fails, see
-[reference/error-catalog.md](reference/error-catalog.md).
-
-### 8. Tell the user
-
-In the agent's reply: "Installed xu-wiki X.Y.Z via pipx; deployed
-the skill to <agent>; smoke test passed." Do NOT paste raw JSON;
-translate.
-
 ---
 
 ## Uninstall (user says "卸 xu-wiki" / "uninstall xu-wiki")
