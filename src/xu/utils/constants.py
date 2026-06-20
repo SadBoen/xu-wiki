@@ -76,7 +76,6 @@ def default_wiki_config(name: str) -> dict:
     return {
         "version": WIKI_FORMAT_VERSION,
         "name": name,
-        "templates": {},
         "query": {
             "slice": {
                 "soft_limit": SLICE_SOFT_LIMIT,
