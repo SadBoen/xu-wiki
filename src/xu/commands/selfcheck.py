@@ -126,7 +126,9 @@ def _check_global_config_chmod() -> dict:
 def _check_optional_extras() -> dict:
     # (name, import_name) — Pillow's import name is PIL, not Pillow.
     extras = (
-        ("markitdown", "markitdown", "parse (PDF/DOCX/PPTX parsing)"),
+        ("pypdf",      "pypdf",      "pdf (PDF text extraction)"),
+        ("pdfplumber", "pdfplumber", "pdf (PDF table extraction)"),
+        ("markitdown", "markitdown", "parse (DOCX/PPTX parsing)"),
         ("jieba",      "jieba",      "nlp (Chinese noun extraction)"),
         ("Pillow",     "PIL",        "vision (image EXIF for albums)"),
     )
