@@ -15,12 +15,10 @@ FM_ACTIVE = "active"        # bool (not 0/1)
 FM_CREATED = "created_at"
 FM_CONTENT_HASH = "content_hash"
 FM_NODE_PATH = "node_path"
-FM_RAW_PATH = "raw_path"
 FM_SOURCE_HASH = "source_hash"
 
 REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_CONTENT_TYPE, FM_ACTIVE, FM_CREATED, FM_CONTENT_HASH]
 
-LAYERS = {"Page", "List", "Report"}
 CONTENT_TYPES = {"article", "table", "gallery"}
 
 # Extension → content_type routing (PRIN-ING-13).
