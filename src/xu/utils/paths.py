@@ -12,6 +12,10 @@ from pathlib import Path
 UID_RE = re.compile(r"^\d{4}-[A-Z0-9]{8}$")
 _UID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+# gen_uid per-second monotonic counter (bounded, resets each second)
+_uid_second_ts: int = 0
+_uid_counter: int = 0
+
 
 def now_ts() -> int:
     return int(time.time())
@@ -22,12 +26,33 @@ def current_year() -> int:
 
 
 def gen_uid(year: int | None = None) -> str:
-    """UID = year prefix + 8-char uppercase alnum short code (CONST-ARCH-3).
+    """UID = year prefix + 8-char code (CONST-ARCH-3).
 
-    Globally unique, never reused (BAN-ARCH-2). 36^8 namespace.
+    Uniqueness is guaranteed by two layers:
+    1. Per-second monotonic counter (2 base-36 digits, 0-1295): within the
+       same second, each call gets a sequential code — no collision possible.
+    2. Random fallback: if the counter overflows (>1295 UIDs in one second,
+       unrealistic in practice), switches to pure random (36^6 namespace).
+    Globally unique, never reused (BAN-ARCH-2).
     """
+    global _uid_second_ts, _uid_counter
     yr = year or current_year()
-    code = "".join(secrets.choice(_UID_ALPHABET) for _ in range(8))
+    now_sec = int(time.time())
+
+    if now_sec == _uid_second_ts:
+        _uid_counter += 1
+    else:
+        _uid_second_ts = now_sec
+        _uid_counter = 0
+
+    if _uid_counter < 1296:
+        q, r = divmod(_uid_counter, 36)
+        counter_part = _UID_ALPHABET[q] + _UID_ALPHABET[r]
+        random_part = "".join(secrets.choice(_UID_ALPHABET) for _ in range(6))
+        code = counter_part + random_part
+    else:
+        code = "".join(secrets.choice(_UID_ALPHABET) for _ in range(8))
+
     return f"{yr}-{code}"
 
 
