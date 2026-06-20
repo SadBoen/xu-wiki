@@ -260,39 +260,29 @@ def _parse_pending_meta(text: str) -> dict:
 
 
 def _check_pending(ctx, conn, fix) -> dict:
-    """Pending leftover: files in nodes/pending/ should not exist after successful commit (PRIN-ING-7)."""
+    """Nodes with node_path='' are pending (path not yet assigned).
+
+    A formal node is created by ingest-file with node_path=''.
+    Ingest-commit then assigns the actual path.
+    Any node with node_path='' after creation = pending assignment.
+    """
     issues = []
     fixed = []
-    pending_dir = ctx.pending_dir
-    if not pending_dir.is_dir():
-        return {"issue_count": 0, "issues": [], "fixed": []}
-    for pf in pending_dir.glob("*-pre.md"):
-        content = pf.read_text(encoding="utf-8", errors="replace")
-        meta = _parse_pending_meta(content)
-        source_hash = meta.get("source_hash")
-        source_name = meta.get("source", pf.name)
-        # Check if there's a corresponding L1 with this source_hash
-        has_l1 = False
-        if source_hash:
-            row = conn.execute(
-                "SELECT uid FROM nodes WHERE source_hash=? LIMIT 1", (source_hash,)
-            ).fetchone()
-            has_l1 = row is not None
-        # orphan = no L1 found; leftover = L1 exists (commit succeeded but pending not cleaned)
-        status = "leftover" if has_l1 else "orphan"
-        fixable = True  # both orphan and leftover are safe to delete
+    rows = conn.execute(
+        "SELECT uid, title, source_hash, rel_md_path FROM nodes "
+        "WHERE node_path='' AND active=1"
+    ).fetchall()
+    for row in rows:
         issues.append({
-            "pending_file": str(pf.relative_to(ctx.root)),
-            "source": source_name,
-            "source_hash": source_hash,
-            "status": status,
-            "problem": f"pending file not cleaned after commit ({status})",
+            "uid": row["uid"],
+            "title": row["title"],
+            "source_hash": row["source_hash"],
+            "md_path": row["rel_md_path"],
+            "status": "pending_path",
+            "problem": "node has empty node_path (path assignment pending)",
             "layer": "cross",
-            "fixable": fixable,
+            "fixable": False,  # path must be assigned via ingest-commit
         })
-        if fix:
-            pf.unlink()
-            fixed.append({"file": str(pf.relative_to(ctx.root)), "action": "deleted"})
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 

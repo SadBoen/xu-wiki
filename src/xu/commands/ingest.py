@@ -1,8 +1,9 @@
-"""ingest — two-phase L1 Node_Page creation (05-ingest.md).
+"""ingest — L1 Node_Page creation.
 
-Phase 1 (ingest-file): parse → write pending. No node created.
-Phase 2 (ingest-commit): validate → atomic write Page(s) + raws copy + patches v1
-                         + IDF + relations. The ONLY write entry (PRIN-ING-1).
+ingest-file: parse source → create real node (UID, DB, raws/) with node_path="".
+            The node is formal and queryable; only node_path is undetermined.
+ingest-commit: update existing node's node_path (and title/digest/relations).
+              Page splitting happens here (PRIN-ING-4).
 """
 from __future__ import annotations
 
@@ -47,7 +48,11 @@ from ..utils.wiki import resolve_wiki
 
 
 def cmd_ingest_file(args) -> dict:
-    """Phase 1: parse a source file into pending markdown. No node created."""
+    """Parse a source file and create a real node with node_path='' (pending assignment).
+
+    The node is immediately formal: UID, DB record, raws/ copy all created.
+    Only node_path is left empty — assign it via ingest-commit --uid.
+    """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound",
@@ -70,51 +75,83 @@ def cmd_ingest_file(args) -> dict:
                 hints=["pip install xu-wiki[parse] to enable PDF/DOCX/PPTX parsing"],
             )
 
-    # path whitelist (BAN-ING-5): allow anywhere readable for Phase 1 source,
-    # but pending output stays inside the wiki.
     from ..utils.config import load_global_config
     mineru_key = load_global_config().get("mineru", {}).get("api_key", "")
     res = parse_file(src, mineru_key=mineru_key)
     if not res.ok:
         return error(
-            f"all parsers failed for {src.name}; cannot enter Phase 2 (PRIN-ING-5)",
+            f"all parsers failed for {src.name}",
             "ParseFailed",
             data={"file": str(src)},
         )
 
+    # Validate node_path even though it's empty — catch invalid characters early
     try:
-        node_path = safe_node_path(args.node_path)
+        safe_node_path(args.node_path)
     except ValueError as e:
         return error(str(e), "BadNodePath")
-    stem = safe_slug(src.stem)
-    pending_name = f"{node_path.replace('/', '__') + '__' if node_path else ''}{stem}-pre.md"
-    pending_path = ctx.pending_dir / pending_name
-    ctx.pending_dir.mkdir(parents=True, exist_ok=True)
 
-    # Strip YAML frontmatter from source to avoid double-frontmatter in pending.
-    # A source .md with `---title:...---` would produce two frontmatter blocks
-    # in the pending file otherwise.
     text = _strip_frontmatter(res.text)
-    meta_header = (
-        f"<!-- xu-pending source={src} parser={res.parser} "
-        f"source_hash={sha256_file(src)} node_path={node_path} -->\n\n"
-    )
-    atomic_write_text(pending_path, meta_header + text)
+    source_hash = sha256_file(src)
+    uid = gen_uid()
+    ts = now_ts()
+
+    # Slug from filename (title not yet known — will be set in ingest-commit)
+    slug = safe_slug(src.stem)
+    rel_md = Path("nodes/page") / f"{slug}-{uid}.md"
+    md_path = ctx.root / rel_md
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Copy source to raws/ (PRIN-ING-6: every ingested source gets a physical copy)
+    rel_raw = Path("raws") / Path(src.name)
+    raw_dst = ctx.root / rel_raw
+    raw_dst.parent.mkdir(parents=True, exist_ok=True)
+    if not raw_dst.exists():
+        shutil.copy2(src, raw_dst)
+
+    frontmatter = {
+        FM_UID: uid,
+        FM_TITLE: src.stem,  # temporary; ingest-commit will override with real title
+        FM_LAYER: "Page",
+        FM_TEMPLATE: "article",
+        FM_ACTIVE: True,
+        FM_CREATED: ts,
+        FM_CONTENT_HASH: sha256_text(text),
+        FM_NODE_PATH: "",  # empty = pending path assignment
+        FM_SOURCE_HASH: source_hash,
+        "parser": res.parser,
+    }
+    doc = fm.render(frontmatter, text)
+    atomic_write_text(md_path, doc)
+
+    # DB record
+    conn = ctx.connect()
+    try:
+        conn.execute(
+            "INSERT INTO nodes(uid, layer, template, title, node_path, slug, "
+            "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
+            "attrs, created_at, updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
+            (uid, "Page", "article", src.stem, "", slug,
+             str(rel_md), str(rel_raw), sha256_text(text),
+             source_hash, "", "{}", ts, ts),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
     return success(
         {
-            "pending": str(pending_path),
+            "uid": uid,
             "parser": res.parser,
             "source": str(src),
-            "source_hash": sha256_file(src),
-            "node_path": node_path,
+            "source_hash": source_hash,
+            "raw_path": str(rel_raw),
+            "md_path": str(rel_md),
             "chars": len(text),
         },
-        f"parsed via {res.parser} → pending (Phase 1). No node created yet.",
-        hints=[
-            "review pending content, then run ingest-commit with --pending and --title",
-            "Agent decides title/node_path/relations between phases (PRIN-ING-2)",
-        ],
+        f"node {uid} created (node_path=''); assign path via ingest-commit --uid {uid}",
+        hints=[f"ingest-commit --wiki {args.wiki} --uid {uid} --title '<title>' --node-path '<path>'"],
     )
 
 
@@ -143,82 +180,99 @@ def _strip_frontmatter(text: str) -> str:
 
 
 def cmd_ingest_commit(args) -> dict:
+    """Update an existing node's node_path (and title/digest/relations).
+
+    --uid: update existing node (created by ingest-file). Handles page splitting:
+            if content splits into N pages, the original node is deactivated and
+            N new active nodes are created.
+    --pending: legacy migration — read old pending file, create real node, delete pending.
+    --native: deprecated, creates node directly (no pending involved).
+    """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound",
                      hints=["check the name/path; do NOT auto-create (PRIN-SAFETY)"])
 
-    # Determine source content (BAN-ING-3: --native still goes through commit flow)
-    source_hash = None
-    raw_src_path = None
-    parser_used = "native"
-    if args.native:
-        if not args.source:
-            return error(
-                "--native requires --source <abs-path> (PRIN-ING-6: every ingested source must be copyable to raws/)",
-                "MissingSource",
-                hints=["--source must be an absolute path to the source file"],
-            )
-        src_path = Path(args.source).expanduser()
-        if not src_path.is_file():
-            return error(f"source file not found: {src_path}", "FileNotFound")
-        content = args.native
-        raw_src_path = str(src_path)
-        source_hash = sha256_text(args.native)
-        node_path = args.node_path
-    elif args.pending:
-        pending_path = Path(args.pending).expanduser()
-        # whitelist: pending must live inside the wiki (BAN-ING-5)
-        try:
-            pending_path = pending_path.resolve()
-            pending_path.relative_to(ctx.root.resolve())
-        except (ValueError, OSError):
-            return error("pending path must be inside the wiki (BAN-ING-5)", "PathNotWhitelisted")
-        if not pending_path.is_file():
-            return error(f"pending file not found: {pending_path}", "PendingNotFound")
-        raw_text = pending_path.read_text(encoding="utf-8")
-        meta, content = _parse_pending_header(raw_text)
-        source_hash = meta.get("source_hash")
-        parser_used = meta.get("parser", "unknown")
-        raw_src_path = meta.get("source")
-        node_path = (args.node_path or meta.get("node_path", ""))
-    else:
-        return error("ingest-commit requires --pending or --native", "MissingInput")
-
-    try:
-        node_path = safe_node_path(node_path)
-    except ValueError as e:
-        return error(str(e), "BadNodePath")
-
-    if not args.title:
-        return error("ingest-commit requires --title (CONST-ING-4)", "MissingTitle",
-                     data={"missing": ["title"]})
-    if args.template not in TEMPLATES:
-        return error(f"invalid template: {args.template}", "InvalidTemplate")
-
-    # relations parsing (CONST-ING-5): must be JSON array
-    relations = []
-    if args.relations:
-        try:
-            relations = json.loads(args.relations)
-        except json.JSONDecodeError as e:
-            return error(f"--relations must be valid JSON: {e}", "BadRelationsJSON")
-        if not isinstance(relations, list):
-            return error("--relations must be a JSON array (CONST-ING-5)", "BadRelationsType")
-
     conn = ctx.connect()
     try:
-        # split into pages (PRIN-ING-4)
-        max_lines = cfg_get(ctx.config, "ingest.page_split_lines", 300)
-        pages = split_pages(content, max_lines)
-        if not pages:
-            return error("no content to commit after splitting", "EmptyContent")
+        # ---- Three input modes ----
+        if args.uid:
+            # Mode 1: update existing node by UID
+            existing = conn.execute(
+                "SELECT * FROM nodes WHERE uid=? AND active=1 LIMIT 1",
+                (args.uid,),
+            ).fetchone()
+            if not existing:
+                return error(f"node not found or inactive: {args.uid}", "NodeNotFound")
+            existing = dict(existing)
 
-        # Level-2 dedup: source file hash across ALL pages (CONST-ING-3,
-        # PRIN-ING-3). Note: Level-2 is "所有 Page" — NOT filtered by active —
-        # so re-ingesting the same source is caught even against a deactivated
-        # page. (Level-1 below is active-only, per the design's contrast.)
-        if source_hash:
+            # Read content from the existing node's file
+            md_file = ctx.root / existing["rel_md_path"]
+            if not md_file.is_file():
+                return error(f"node file missing: {md_file}", "NodeFileMissing")
+            raw_text = md_file.read_text(encoding="utf-8")
+            meta, content = fm.parse(raw_text)
+            content = content.strip("\n")
+            source_hash = existing.get("source_hash")
+            parser_used = meta.get("parser", existing.get("template", "unknown"))
+            raw_src_path = existing.get("raw_path")
+            if raw_src_path:
+                raw_src_path = str(ctx.root / raw_src_path)
+
+            node_path_arg = args.node_path if args.node_path else ""
+            title_arg = args.title if args.title else meta.get(FM_TITLE, existing["title"])
+
+        elif args.pending:
+            # Mode 2: legacy migration — old pending file → real node
+            pending_path = Path(args.pending).expanduser()
+            try:
+                pending_path = pending_path.resolve()
+                pending_path.relative_to(ctx.root.resolve())
+            except (ValueError, OSError):
+                return error("pending path must be inside the wiki (BAN-ING-5)", "PathNotWhitelisted")
+            if not pending_path.is_file():
+                return error(f"pending file not found: {pending_path}", "PendingNotFound")
+            raw_text = pending_path.read_text(encoding="utf-8")
+            meta, content = _parse_pending_header(raw_text)
+            source_hash = meta.get("source_hash")
+            parser_used = meta.get("parser", "unknown")
+            raw_src_path = meta.get("source")
+            node_path_arg = args.node_path if args.node_path else meta.get("node_path", "")
+            title_arg = args.title if args.title else ""
+
+            # Level-2 dedup for legacy migration
+            if source_hash:
+                dup = conn.execute(
+                    "SELECT uid, title, active FROM nodes WHERE source_hash=? LIMIT 1",
+                    (source_hash,),
+                ).fetchone()
+                if dup:
+                    return warning(
+                        {"existing_uid": dup["uid"], "existing_title": dup["title"],
+                         "existing_active": bool(dup["active"]), "source_hash": source_hash},
+                        f"source already ingested as {dup['uid']} (BAN-ING-4)",
+                        hints=["use 'revise' to update; ingest never overwrites"],
+                    )
+
+        elif args.native:
+            # Mode 3: --native (deprecated direct markdown)
+            if not args.source:
+                return error(
+                    "--native requires --source <abs-path>",
+                    "MissingSource",
+                    hints=["--source must be an absolute path to the source file"],
+                )
+            src_path = Path(args.source).expanduser()
+            if not src_path.is_file():
+                return error(f"source file not found: {src_path}", "FileNotFound")
+            content = args.native
+            source_hash = sha256_text(args.native)
+            parser_used = "native"
+            raw_src_path = str(src_path)
+            node_path_arg = args.node_path if args.node_path else ""
+            title_arg = args.title if args.title else ""
+
+            # Level-2 dedup for --native
             dup = conn.execute(
                 "SELECT uid, title, active FROM nodes WHERE source_hash=? LIMIT 1",
                 (source_hash,),
@@ -227,15 +281,45 @@ def cmd_ingest_commit(args) -> dict:
                 return warning(
                     {"existing_uid": dup["uid"], "existing_title": dup["title"],
                      "existing_active": bool(dup["active"]), "source_hash": source_hash},
-                    f"source already ingested as {dup['uid']} (BAN-ING-4); not re-created",
-                    hints=["use 'revise' to update; ingest never overwrites (PRIN-ING-3)"],
+                    f"source already ingested as {dup['uid']} (BAN-ING-4)",
+                    hints=["use 'revise' to update; ingest never overwrites"],
                 )
+        else:
+            return error("ingest-commit requires --uid, --pending, or --native", "MissingInput")
+
+        if not title_arg:
+            return error("ingest-commit requires --title", "MissingTitle",
+                         data={"missing": ["title"]})
+        if args.template not in TEMPLATES:
+            return error(f"invalid template: {args.template}", "InvalidTemplate")
+
+        try:
+            node_path = safe_node_path(node_path_arg)
+        except ValueError as e:
+            return error(str(e), "BadNodePath")
+
+        # relations parsing
+        relations = []
+        if args.relations:
+            try:
+                relations = json.loads(args.relations)
+            except json.JSONDecodeError as e:
+                return error(f"--relations must be valid JSON: {e}", "BadRelationsJSON")
+            if not isinstance(relations, list):
+                return error("--relations must be a JSON array", "BadRelationsType")
+
+        # Page splitting (PRIN-ING-4)
+        max_lines = cfg_get(ctx.config, "ingest.page_split_lines", 300)
+        pages = split_pages(content, max_lines)
+        if not pages:
+            return error("no content to commit after splitting", "EmptyContent")
 
         created = []
         dup_pages = []
         multi = len(pages) > 1
+
         for idx, page_body in enumerate(pages):
-            page_body = page_body.rstrip()  # normalize to match fm.render storage
+            page_body = page_body.rstrip()
             content_hash = sha256_text(page_body)
             # Level-1 dedup: body hash (CONST-ING-3)
             dup = conn.execute(
@@ -247,10 +331,9 @@ def cmd_ingest_commit(args) -> dict:
                 continue
 
             uid = gen_uid()
-            title = args.title if not multi else f"{args.title} (part {idx + 1}/{len(pages)})"
-            uid_suffix = uid.split("-", 1)[1].lower()
-            base_slug = safe_slug(args.title)
-            slug = f"{base_slug}-{idx + 1}-{uid_suffix}" if multi else f"{base_slug}-{uid_suffix}"
+            title = title_arg if not multi else f"{title_arg} (part {idx + 1}/{len(pages)})"
+            base_slug = safe_slug(title_arg)
+            slug = f"{base_slug}-{idx + 1}-{uid}" if multi else f"{base_slug}-{uid}"
             ts = now_ts()
 
             frontmatter = {
@@ -258,22 +341,24 @@ def cmd_ingest_commit(args) -> dict:
                 FM_TITLE: title,
                 FM_LAYER: "Page",
                 FM_TEMPLATE: args.template,
-                FM_ACTIVE: True,           # bool, not 0/1 (CONST-ARCH-2)
+                FM_ACTIVE: True,
                 FM_CREATED: ts,
                 FM_CONTENT_HASH: content_hash,
                 FM_NODE_PATH: node_path,
-                "digest": args.digest,
+                "digest": args.digest or "",
             }
             if source_hash:
                 frontmatter[FM_SOURCE_HASH] = source_hash
+            if parser_used:
+                frontmatter["parser"] = parser_used
 
-            # physical layout: nodes/page/<node_path>/<slug>.md (PRIN-ARCH-19/23)
-            rel_md = Path("nodes/page") / node_path / f"{slug}.md"
+            rel_md = Path("nodes/page") / node_path / f"{slug}.md" if node_path \
+                else Path("nodes/page") / f"{slug}.md"
             md_path = ctx.root / rel_md
+            md_path.parent.mkdir(parents=True, exist_ok=True)
             doc = fm.render(frontmatter, page_body)
             atomic_write_text(md_path, doc)
 
-            # copy raw into raws/ mirrored by node_path (PRIN-ING-6, PRIN-ARCH-25)
             rel_raw = None
             if raw_src_path and Path(raw_src_path).is_file() and idx == 0:
                 rel_raw = (Path("raws") / node_path / Path(raw_src_path).name
@@ -283,7 +368,6 @@ def cmd_ingest_commit(args) -> dict:
                 if not raw_dst.exists():
                     shutil.copy2(raw_src_path, raw_dst)
 
-            # DB row
             conn.execute(
                 "INSERT INTO nodes(uid, layer, template, title, node_path, slug, "
                 "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
@@ -291,22 +375,33 @@ def cmd_ingest_commit(args) -> dict:
                 "VALUES(?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
                 (uid, "Page", args.template, title, node_path, slug,
                  str(rel_md), str(rel_raw) if rel_raw else None, content_hash,
-                 source_hash, args.digest, "{}", ts, ts),
+                 source_hash, args.digest or "", "{}", ts, ts),
             )
-            # patches v1 (PRIN-ING-10, CONST-ING-7)
             conn.execute(
                 "INSERT INTO patches(page_uid, version, op, delta, author, created_at) "
                 "VALUES(?,1,'create',?,?,?)",
                 (uid, content_hash, args.author, ts),
             )
-            # IDF (PRIN-ING-9, CONST-ING-6) — incremental update
             _update_idf(conn, page_body)
-
             created.append({"uid": uid, "title": title, "md_path": str(rel_md),
                             "raw_path": str(rel_raw) if rel_raw else None,
                             "lines": len(page_body.splitlines())})
 
-        # relations: attach to the first created page (CONST-ING-5)
+        # Deactivate original node if we're replacing it (split case with --uid)
+        if args.uid and created:
+            conn.execute(
+                "UPDATE nodes SET active=0, updated_at=? WHERE uid=?",
+                (now_ts(), args.uid),
+            )
+
+        # Legacy pending file cleanup
+        if args.pending:
+            try:
+                Path(args.pending).expanduser().resolve().unlink()
+            except OSError:
+                pass
+
+        # Relations for the first created node
         invalid_relations = []
         if relations and created:
             anchor = created[0]["uid"]
@@ -324,13 +419,6 @@ def cmd_ingest_commit(args) -> dict:
 
         conn.commit()
 
-        # Phase 2 success → delete pending (PRIN-ING-7)
-        if args.pending:
-            try:
-                Path(args.pending).expanduser().resolve().unlink()
-            except OSError:
-                pass
-
         data = {"created": created, "page_count": len(created),
                 "duplicate_parts": dup_pages, "invalid_relations": invalid_relations}
         if not created and dup_pages:
@@ -340,16 +428,14 @@ def cmd_ingest_commit(args) -> dict:
                            hints=["fix invalid_relations and retry via query-relation add"])
         hints = ["query to retrieve; read --uid for full body"]
         if parser_used == "native":
-            hints.insert(0, "DEPRECATED: --native is deprecated; use --pending for external documents (PRIN-ING-6)")
-        return success(data, f"committed {len(created)} Node_Page (L1) via {parser_used}", hints=hints)
+            hints.insert(0, "DEPRECATED: --native is deprecated")
+        return success(data, f"committed {len(created)} Node_Page (L1)", hints=hints)
+
     except Exception as e:
         conn.rollback()
-        uncommitted_pending = str(args.pending) if args.pending else None
-        return error(
-            f"commit failed, rolled back: {e}", type(e).__name__,
-            data={"uncommitted_pending": uncommitted_pending},
-            hints=["pending file retained — fix the error and re-run ingest-commit"]
-        )
+        return error(f"commit failed, rolled back: {e}", type(e).__name__,
+                     data={"uid": getattr(args, "uid", None)},
+                     hints=["fix the error and re-run ingest-commit"])
     finally:
         conn.close()
 

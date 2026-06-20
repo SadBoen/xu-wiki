@@ -464,7 +464,7 @@ CLI 校验、写盘原子化、维护一致性——LLM 直写 = 绕过校验 = 
 
 **生成时即保证唯一**（确定性），不是碰撞检测：
 
-- 格式：`{year}-{2-digit base36 counter}{6-digit base36 random}`（共 8 位）
+- 格式：8 位大写字母数字 `{2-digit base36 counter}{6-digit base36 random}`
 - 同秒内每次调用 counter 递增，绝不重复；1 秒最多覆盖 1296 个 UID
 - counter 溢出时切纯随机（36⁶ ≈ 22 亿空间），碰撞概率可忽略
 - 节点被删除后 UID **永不**分配给新节点（即使同名内容重新 ingest）
@@ -511,7 +511,7 @@ Node_Report 必须能追溯到 L1 / L2 的证据——没有证据链的 Report 
 
 ### [CONST-ARCH-3] UID 格式
 
-固定正则:年份前缀 + 大写字母数字短码。具体长度由实现定。
+固定正则:8 位大写字母数字。具体长度由实现定。
 
 ### [CONST-ARCH-4] 关系是无分类的 LRU 链表
 

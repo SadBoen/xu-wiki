@@ -9,7 +9,7 @@ import secrets
 import time
 from pathlib import Path
 
-UID_RE = re.compile(r"^\d{4}-[A-Z0-9]{8}$")
+UID_RE = re.compile(r"^[A-Z0-9]{8}$")
 _UID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 # gen_uid per-second monotonic counter (bounded, resets each second)
@@ -21,12 +21,8 @@ def now_ts() -> int:
     return int(time.time())
 
 
-def current_year() -> int:
-    return time.gmtime().tm_year
-
-
-def gen_uid(year: int | None = None) -> str:
-    """UID = year prefix + 8-char code (CONST-ARCH-3).
+def gen_uid() -> str:
+    """UID = 8-char base-36 code (CONST-ARCH-3).
 
     Uniqueness is guaranteed by two layers:
     1. Per-second monotonic counter (2 base-36 digits, 0-1295): within the
@@ -36,7 +32,6 @@ def gen_uid(year: int | None = None) -> str:
     Globally unique, never reused (BAN-ARCH-2).
     """
     global _uid_second_ts, _uid_counter
-    yr = year or current_year()
     now_sec = int(time.time())
 
     if now_sec == _uid_second_ts:
@@ -53,7 +48,7 @@ def gen_uid(year: int | None = None) -> str:
     else:
         code = "".join(secrets.choice(_UID_ALPHABET) for _ in range(8))
 
-    return f"{yr}-{code}"
+    return code
 
 
 def is_valid_uid(uid: str) -> bool:

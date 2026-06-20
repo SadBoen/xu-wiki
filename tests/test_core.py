@@ -15,9 +15,9 @@ from xu.commands.doctor import _summarize, _check_relations  # noqa: E402
 
 
 def test_uid_format():
-    uid = gen_uid(2026)
+    uid = gen_uid()
     assert is_valid_uid(uid)
-    assert uid.startswith("2026-")
+    assert len(uid) == 8
     assert len({gen_uid() for _ in range(1000)}) == 1000  # uniqueness
 
 
