@@ -78,17 +78,21 @@ def test_selfcheck_returns_4_key_envelope(xu_home, monkeypatch):
 # 3. agent deployment hint — the bash template (now uses cp -r)
 # ----------------------------------------------------------------------
 
-def test_agent_deployment_hint_uses_cp_minus_r(xu_home):
-    """Bug 2 fix: bash template must use `cp -r` to preserve reference/ subdir."""
+def test_agent_deployment_hint_excludes_python_artifacts(xu_home):
+    """Bash template must skip __init__.py and __pycache__ via for-loop."""
     r = cmd_mod.cmd_selfcheck(_args())
     h = r["data"]["agent_deployment_hint"]
     assert "copy_template_bash" in h
     assert "mkdir -p" in h["copy_template_bash"]
-    assert "cp -r" in h["copy_template_bash"], \
-        "must use cp -r to preserve reference/ subdirectory"
-    assert '"$SRC"/.' in h["copy_template_bash"], \
-        "must use trailing /. to copy CONTENTS not the dir itself"
-    # Verify command references both verification steps
+    # Uses for-loop (not cp -r) so artifacts can be filtered
+    assert 'for f in "$SRC"/*' in h["copy_template_bash"]
+    # Explicitly skips Python package artifacts
+    assert "__init__.py" in h["copy_template_bash"]
+    assert "__pycache__" in h["copy_template_bash"]
+    assert 'cp "$f" "$DEST/"' in h["copy_template_bash"]
+    # reference/ subdir preserved via mkdir + inner loop
+    assert 'mkdir -p "$DEST/$base"' in h["copy_template_bash"]
+    # Verification steps
     assert 'ls "$DEST"' in h["copy_template_bash"]
     assert 'ls "$DEST/reference"' in h["copy_template_bash"]
 

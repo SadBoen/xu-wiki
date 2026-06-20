@@ -225,22 +225,36 @@ def _check_agent_skill_deployed() -> dict:
 def _agent_deployment_hint() -> dict:
     """Return a bash template the agent can run to deploy the skill.
 
-    Uses `cp -r SRC/. DEST/` (note the trailing /.) so the bundle's
-    `reference/` subdir is preserved — flattening would put the two
-    reference files at the wrong path inside DEST.
+    Uses a for loop with per-file mkdir + cp so `reference/` subdir is
+    preserved AND Python artifacts (__init__.py, __pycache__/) are excluded.
     """
     src = str(SKILL_SRC_DIR)
+    lines = [
+        f"SRC='{src}'",
+        f"DEST=\"$HOME/.hermes/skills/{SKILL_NAME}\"",
+        "mkdir -p \"$DEST\"",
+        'for f in "$SRC"/*; do',
+        '  base="$(basename "$f")"',
+        '  # skip Python package artifacts',
+        '  if [ "$base" = "__init__.py" ] || [ "$base" = "__pycache__" ]; then',
+        '    continue',
+        '  fi',
+        '  if [ -d "$f" ]; then',
+        '    mkdir -p "$DEST/$base"',
+        '    for sf in "$f"/*; do',
+        '      cp "$sf" "$DEST/$base/"',
+        '    done',
+        '  else',
+        '    cp "$f" "$DEST/"',
+        '  fi',
+        'done',
+        'ls "$DEST"            # verify top-level files',
+        'ls "$DEST/reference"  # verify 2 reference files',
+    ]
     return {
         "skill_name": SKILL_NAME,
         "source_dir": src,
-        "copy_template_bash": (
-            f"SRC='{src}'\n"
-            f"DEST=\"$HOME/.hermes/skills/{SKILL_NAME}\"\n"
-            f"mkdir -p \"$DEST\"\n"
-            f"cp -r \"$SRC\"/. \"$DEST\"/\n"
-            f"ls \"$DEST\"            # verify 6 top-level + reference/ subdir\n"
-            f"ls \"$DEST/reference\"  # verify 2 reference files"
-        ),
+        "copy_template_bash": "\n".join(lines),
         "hint": "run the copy_template_bash to deploy the skill to Hermes; "
                 "substitute $HOME/.hermes/skills/ for your agent's discovery dir "
                 "(see README §Agent compatibility matrix).",

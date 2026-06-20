@@ -83,14 +83,15 @@ install 不应该：
 
 ## 四、约束
 
-### [CONST-INST-1] 隔离策略：venv 必须项目本地
+### [CONST-INST-1] 隔离策略：venv 必须隔离（pipx 推荐，项目本地作备选）
 
 **最有约束力的默认约定**：
 
-- venv = 装在项目目录内（如 `<project>/.venv/`），不装到系统 site-packages
-- venv 与项目共存亡——uninstall 时跟着项目一起清理
+- venv 必须与系统 site-packages 隔离
+- **推荐**：`pipx` — 全局隔离 venv（`~/.local/share/pipx/venvs/xu-wiki/`），PEP 668 安全，CLI 软链到 `~/.local/bin/`
+- **备选**：项目本地 venv（`<project>/.venv/`），适合需要项目级隔离的场景
 
-理由：项目本地 venv 让 venv 跟着项目走，备份/git 一起；不会污染其他 Python 项目；uninstall 时无需跨项目协调。
+理由：pipx 提供一键隔离（venv + symlink + PEP 668 处理），是当前最佳实践。项目本地 venv 适合手动管理或 pipx 不可用的环境。两者都满足隔离要求。
 
 ### [CONST-INST-2] CLI 是软链不是真文件
 

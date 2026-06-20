@@ -29,7 +29,18 @@ If `pipx` is unavailable, tell the user to install it
 install --user pipx`). pipx is strongly preferred — it handles PEP
 668, venv creation, and `~/.local/bin` symlink in one command.
 
-### 2. Install the package (PREFERRED — pipx)
+### 2. Ensure PATH is set up
+
+```bash
+pipx ensurepath
+```
+`pipx install` puts the `xu` symlink in `~/.local/bin`. If that dir is not on
+PATH, `xu` won't be found even though install succeeded. `pipx ensurepath`
+adds it to your shell profile — **open a new shell** (or re-source your
+profile) afterward so the change takes effect. The fact-based gate is Stage 4:
+`xu --version` must print `xu-wiki 0.1.0` before you continue.
+
+### 3. Install the package (PREFERRED — pipx)
 
 ```bash
 pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
@@ -43,7 +54,7 @@ If the user later upgrades, use `pipx upgrade xu-wiki` — same
 one-liner, no migration needed (the venv and symlink layout are
 identical between git+URL and PyPI installs).
 
-### 2-alt. Install the package (ALTERNATIVE — pip + venv)
+### 3-alt. Install the package (ALTERNATIVE — pip + venv)
 
 If pipx is unavailable or the user explicitly wants pip:
 

@@ -71,12 +71,13 @@ def test_resolve_auto_probes_existing_parent(monkeypatch, tmp_path):
     assert dest == tmp_path / ".hermes" / "skills" / SKILL_NAME
 
 
-def test_resolve_auto_falls_back_to_hermes_when_no_dir(monkeypatch, tmp_path):
+def test_resolve_auto_errors_when_no_agent_detected(monkeypatch, tmp_path):
+    """auto must NOT silently fall back to hermes; it raises so the
+    user passes --target explicitly."""
     monkeypatch.setattr("os.path.expanduser",
                         lambda p: p.replace("~", str(tmp_path)))
-    name, _, dest = cmd_mod._resolve_target("auto", cwd=str(tmp_path))
-    assert name == "hermes"
-    assert dest == tmp_path / ".hermes" / "skills" / SKILL_NAME
+    with pytest.raises(ValueError):
+        cmd_mod._resolve_target("auto", cwd=str(tmp_path))
 
 
 # ----------------------------------------------------------------------

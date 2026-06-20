@@ -75,7 +75,9 @@ def _resolve_target(target: str, *, cwd: str | None = None) -> tuple[str, str, P
 
     `auto` is resolved by probing which target's PARENT dir already
     exists — that means the agent is installed there. The first match
-    wins; if none, falls back to `hermes`.
+    wins. If no known agent is detected, `auto` raises ValueError
+    (explicit over implicit) so the user must pass --target explicitly
+    rather than silently deploying to an agent they may not use.
 
     `cwd` (test hook): overrides the current working directory used in
     {cwd} placeholders for project-local targets (trae, cursor). At
@@ -90,10 +92,13 @@ def _resolve_target(target: str, *, cwd: str | None = None) -> tuple[str, str, P
             parent = expanded.parent
             if parent.exists():
                 return tname, TARGETS[tname][0], expanded
-        # No agent detected — fall back to hermes (most common).
-        return ("hermes", TARGETS["hermes"][0],
-                Path(os.path.expanduser(TARGETS["hermes"][1].format(
-                    name=SKILL_NAME, cwd=cwd))))
+        # No known agent detected — do NOT silently deploy to hermes.
+        raise ValueError(
+            "no known agent detected (probed: "
+            + ", ".join(TARGETS.keys())
+            + "); pass --target explicitly, e.g. `--target hermes`. "
+            "For an agent not in this list, see README §Agent skill deployment."
+        )
 
     if target not in TARGETS:
         raise ValueError(f"unknown target: {target!r}; "
@@ -109,7 +114,9 @@ def cmd_deploy_skill(args) -> dict:
     try:
         target_name, desc, dest = _resolve_target(target)
     except ValueError as e:
-        return error(str(e), "UnknownTarget")
+        # `auto` with no agent detected vs an explicitly bad target name
+        err_class = "NoAgentDetected" if target == "auto" else "UnknownTarget"
+        return error(str(e), err_class)
 
     src = Path(SKILL_SRC_DIR)
     if not src.is_dir():
