@@ -6,11 +6,13 @@ not a bug. NEVER hardcode the key here.
 """
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import os
 import time
 import urllib.request
+import urllib.parse
 import zipfile
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".ppt", ".doc", ".xls", ".xlsx"}
@@ -90,10 +92,32 @@ def _do_mineru(path: str, key: str) -> str:
     upload_url = data["data"]["file_urls"][0]
     batch_id = data["data"]["batch_id"]
 
-    # 2. PUT the raw bytes to the presigned URL (no Content-Type header per docs)
-    with open(path, "rb") as f:
-        put = urllib.request.Request(upload_url, data=f.read(), method="PUT")
-        urllib.request.urlopen(put, timeout=120)
+    # 2. PUT the raw bytes to the presigned URL via http.client.
+    #    urllib.request uses chunked transfer encoding by default, but OSS
+    #    presigned URLs require an explicit Content-Length header — without it
+    #    the signature does not cover the body and OSS returns 403.
+    #    We also stream the file in chunks to avoid reading a large PDF
+    #    entirely into memory.
+    parsed = urllib.parse.urlparse(upload_url)
+    conn = http.client.HTTPSConnection(parsed.netloc, timeout=120)
+    try:
+        file_size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            chunk_size = 64 * 1024  # 64 KB chunks
+            conn.connect()
+            conn.putrequest("PUT", parsed.path)
+            conn.putheader("Content-Length", str(file_size))
+            conn.endheaders()
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                conn.send(chunk)
+            resp = conn.getresponse()
+            if resp.status not in (200, 201):
+                raise RuntimeError(f"OSS PUT failed: {resp.status} {resp.reason}")
+    finally:
+        conn.close()
 
     # 3. poll batch results until this file's state is done/failed
     deadline = time.time() + _POLL_TIMEOUT
