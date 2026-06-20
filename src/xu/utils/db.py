@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     title         TEXT NOT NULL,
     node_path     TEXT NOT NULL DEFAULT '',
     slug          TEXT,
-    rel_md_path   TEXT,                 -- relative path to .md (NULL for DB-only)
+    rel_md_path   TEXT,                 -- relative path to .md (NULL only for legacy DB-only L2/L3 rows)
     raw_path      TEXT,                 -- relative path under raws/
     content_hash  TEXT,                 -- body SHA256 (Level 1 dedup)
     source_hash   TEXT,                 -- source file SHA256 (Level 2 dedup)

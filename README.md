@@ -483,11 +483,11 @@ wiki-internal config (`.xu/config.yaml`) and are tunable per instance.
   raws/                 # original source files, mirrored by node_path
   nodes/
     page/<node_path>/   # L1 Node_Page markdown (frontmatter + body)
-    list/               # (L2 is DB-only; dir reserved)
-    report/             # (L3 is DB-only; dir reserved)
+    list/               # L2 Node_List markdown (frontmatter + comparison table)
+    report/             # L3 Node_Report markdown (frontmatter + body)
     pending/            # Phase 1 parse output, deleted on commit
   .xu/
-    wiki.db             # SQLite: nodes, patches, idf, relations, evidence, list_members
+    wiki.db             # SQLite: nodes, patches, idf, relations
     config.yaml         # tunable per-instance settings
     audit.jsonl         # append-only command log
 ```

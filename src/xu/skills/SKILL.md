@@ -91,11 +91,11 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 ## Architecture in 30 seconds
 
 - **L1 Node_Page** — immutable markdown facts. SHA256-dedup. UID never reused.
-- **L2 Node_List** — DB-only comparison/aggregation. Members are L1 UIDs.
-- **L3 Node_Report** — DB-only reasoning. **Requires ≥ 1 evidence ref** (else rejected).
+- **L2 Node_List** — `.md` comparison/aggregation in `nodes/list/`. Members in frontmatter.
+- **L3 Node_Report** — `.md` reasoning in `nodes/report/`. **Requires ≥ 1 evidence ref** (else rejected).
 - **Relations** — exactly **50 edges per node** (LRU, head=touch, tail=evict). No category, no score.
-- **DB** holds nodes / patches / IDF / relations / evidence / list_members.
-- **FS** holds only the raw material pool (`raws/`) and L1 markdown (`nodes/page/`).
+- **DB** holds nodes / patches / IDF / relations (L1 metadata only; L2/L3 are `.md`-only).
+- **FS** holds raw material pool (`raws/`), L1 markdown (`nodes/page/`), L2 (`nodes/list/`), L3 (`nodes/report/`).
 - **CLI is offline-first** (CONST-ARCH-1 / PRIN-ARCH-11/12). MinerU is an optional
   parser in the fallback chain; the key is loaded from `MINERU_API_KEY` env or
   `~/.xu/config.yaml` (`XU_HOME` overrides the dir).
