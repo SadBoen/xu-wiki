@@ -29,6 +29,5 @@ SOP_TASK_FILES = ("create.md", "ingest.md", "query.md", "doctor.md", "config.md"
 # scatter ad-hoc files". Paths are relative to SKILL_SRC_DIR.
 REFERENCE_FILES = (
     "reference/error-catalog.md",
-    "reference/pitfalls.md",
 )
 ALL_SKILL_FILES = (("SKILL.md",) + SOP_TASK_FILES + REFERENCE_FILES)

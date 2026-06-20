@@ -380,42 +380,9 @@ Page 一旦写入，**commit 命令绝不修改 Markdown 内容**。发现错误
 
 **未来加引擎的路径**:把新解析器文件丢到用户级扩展目录(或注册为内置),满足 [PRIN-ING-5] 的签名即可。引擎名 / 优先级 / 适用扩展名 = 改 [PRIN-ING-5] 表格事实层的事实,不改设计。
 
-#### 代码事实参考:MinerU 使用方式（特批录入,踩坑留痕)
+#### MinerU 事实锚点
 
-> 以下为**当前实现**对 MinerU 的具体使用方式,作为事实证据,供审计与回溯。**不是设计规约**——任何一行都可能在实现层变动而不更新本文档。设计原则请见上方段落,不要从这里反推原则。
-
-```python
-# 摘自 xu-wiki/src/xu/parsers/mineru_parser.py(踩坑时的事实快照)
-
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx"}
-_API_BATCH_URLS  = "https://mineru.net/api/v4/file-urls/batch"
-_API_RESULTS     = "https://mineru.net/api/v4/extract-results/batch"
-_API_MAX_PAGES   = 200
-_API_MAX_SIZE_MB = 200
-_POLL_INTERVAL   = 3     # 秒
-_POLL_TIMEOUT    = 600   # 秒
-
-def _resolve_mineru_key(api_key: str) -> str:
-    """API Key 解析优先级: 参数 > 环境变量 MINERU_API_KEY > config.mineru.api_key."""
-    if api_key:
-        return api_key
-    env_key = os.getenv("MINERU_API_KEY", "")
-    if env_key:
-        return env_key
-    try:
-        from xu.utils.config import load_global_config
-        cfg = load_global_config()
-        return cfg.get("mineru", {}).get("api_key", "")
-    except Exception:
-        return ""
-```
-
-**踩坑点(亲历)**:
-- Key 缺失**静默回退**到下一级解析器(是设计,见 [CONST-ING-1]),容易让人误以为「bug」;
-- 端点为云 API,强依赖外网,Key 缺失 / 服务不可达 / 配额耗尽都会触发回退;
-- 单文件 ≤ 200MB / ≤ 200 页,超出会被截断或失败(大 PDF/书稿需先切片);
-- 轮询最坏等 10 分钟,ingest 命令会阻塞同样时长(并发摄取需考虑);
-- 全部走 `urllib.request` 而非 `requests`,超时与重试由调用方控制。
+当前 MinerU 实现在 `src/xu/parsers/mineru_parser.py`。Key 缺失时静默回退到 markitdown（是设计，不是 bug）：参数 > 环境变量 `MINERU_API_KEY` > `config.mineru.api_key`。
 
 ### [CONST-ING-2] SSRF 防护(ingest_url)
 

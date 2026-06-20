@@ -309,10 +309,10 @@ def test_non_critical_failure_returns_warning(xu_home, monkeypatch):
 def test_all_skill_files_excludes_install_docs():
     """Install docs live in README, NOT the bundle — the bundle is a
     post-install resource (BAN-SKILL-3a). Bundle = SKILL.md + 5 SOPs +
-    2 reference placeholders = 8 files."""
+    1 reference placeholder = 7 files."""
     from xu.skills import ALL_SKILL_FILES
     assert "INSTALL.md" not in ALL_SKILL_FILES
-    assert len(ALL_SKILL_FILES) == 8
+    assert len(ALL_SKILL_FILES) == 7
 
 
 # ----------------------------------------------------------------------

@@ -37,7 +37,6 @@ This skill is split into 8 files per the principles in
 | `doctor.md` | `/xu-wiki doctor` SOP — full self-contained | When entering doctor SOP |
 | `config.md` | `/xu-wiki config` SOP — full self-contained | When entering config SOP |
 | `reference/error-catalog.md` | placeholder — future error_class catalog | On demand |
-| `reference/pitfalls.md` | placeholder — future pitfalls log | On demand |
 
 **Install/deploy docs are NOT in this bundle** (BAN-SKILL-3a / CONST-INST-6):
 the bundle is loaded *after* xu-wiki is installed, so how-to-install lives in

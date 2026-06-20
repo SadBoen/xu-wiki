@@ -23,8 +23,7 @@ src/xu/skills/
 ├── doctor.md         # /xu-wiki doctor 任务全文（自给自足）
 ├── config.md         # /xu-wiki config 任务全文（自给自足）
 └── reference/        # 预占位目录：空文件是引导（PRIN-SKILL-7）
-    ├── error-catalog.md   # 空 — 未来 error_class 集中地
-    └── pitfalls.md        # 空 — 未来踩坑记录集中地
+    └── error-catalog.md   # 空 — 未来 error_class 集中地
 ```
 
 **不创建** `scripts/`（CLI 已是确定性层）。`reference/` **当前只放空占位**——任务流（5 SOP）不放在这里。**不创建** `sop/` 等自定义子目录（违反 Anthropic 官方 Skill 框架的扁平约定）。
@@ -89,7 +88,7 @@ SKILL.md 是 Agent 的**唯一导航枢纽**。所有 SOP 间的跳转都通过�
 
 ### [PRIN-SKILL-7] `reference/` 用占位文件做引导——空文件也是结构信号
 
-当 `reference/` 目录下某类内容**预期会增长**（error 集、踩坑集、术语表…），**提前创建**仅含引导头的空文件作为占位。这不是"未完成"，而是"**结构化未来**"——空文件本身在告诉 Agent：
+当 `reference/` 目录下某类内容**预期会增长**（error 集、术语表…），**提前创建**仅含引导头的空文件作为占位。这不是"未完成"，而是"**结构化未来**"——空文件本身在告诉 Agent：
 
 1. **这一类内容有家**——别建 `weird-bug.md` / `error-log-2026.md` / `notes-today.md` 之类的散文件
 2. **有约定的格式**——文件头里写好 entry 模板，Agent 照着填
@@ -106,7 +105,6 @@ SKILL.md 是 Agent 的**唯一导航枢纽**。所有 SOP 间的跳转都通过�
 | 文件 | 用途 | 当前状态 |
 |---|---|---|
 | `reference/error-catalog.md` | 所有 `error_class` 的触发 / 修复 速查 | 空 |
-| `reference/pitfalls.md` | 非显然踩坑、坑的成因、绕过办法 | 空 |
 
 **触发条件**（什么时候建新占位文件）：
 
@@ -153,9 +151,9 @@ skill bundle（`src/xu/skills/` 下随包分发、由 Agent 加载的文件）**
 - SKILL.md / 各 SOP 文件提到安装时，**只写一句指路**「安装见 README」，不复述步骤。
 - 不存在 `INSTALL.md` 之类的"安装清单"进 bundle——它违反本禁令，也违反第 17-28 行的文件结构图。
 
-### [BAN-SKILL-3] 禁止在 `reference/` 之外创建参考性 / 踩坑 / 错误收集类文件
+### [BAN-SKILL-3] 禁止在 `reference/` 之外创建参考性 / 错误收集类文件
 
-所有「同类内容累积型」的文件——`error-catalog` / `pitfalls` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `reference/<type>.md`。
+所有「同类内容累积型」的文件——`error-catalog` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `reference/<type>.md`。
 
 理由（[PRIN-SKILL-7](file:///Users/boen/Coding/xu-wiki-2/xu-wiki/design-docs/09-skill-architecture.md)）：
 - `reference/` 的空占位文件是**结构信号**——告诉 Agent "这一类内容有家"
@@ -248,7 +246,6 @@ ingest.md       # 该任务需要的全部内容内联
 | process-layer audit 日志规范 | `SKILL.md`（简）+ `01-wiki-architecture.md` §五·五（详） | SKILL.md 只放一句指路，详细在架构文档 |
 | error_class 速查（短 / 静态） | `SKILL.md` | 跨切通用，跨频率不高 |
 | error_class 完整 catalog（**会增长**） | `reference/error-catalog.md` | 占位文件，未来累积（PRIN-SKILL-7） |
-| 踩坑记录、坑的成因、绕过办法 | `reference/pitfalls.md` | 占位文件，未来累积（PRIN-SKILL-7） |
 
 ---
 

@@ -190,7 +190,7 @@ Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散
 
 ### 16. `reference/` 用占位文件做引导——空文件也是结构信号（[PRIN-SKILL-7]）
 
-当 `reference/` 目录下某类内容**预期会增长**（error 集、踩坑集、术语表…），**提前创建**仅含引导头的空文件作为占位——空文件不是「未完成」，而是**结构化未来**：
+当 `reference/` 目录下某类内容**预期会增长**（error 集、术语表…），**提前创建**仅含引导头的空文件作为占位——空文件不是「未完成」，而是**结构化未来**：
 
 - **这一类内容有家**——别建 `weird-bug.md` / `error-log-2026.md` / `notes-today.md` 之类的散文件
 - **有约定的格式**——文件头里写好 entry 模板
@@ -200,7 +200,7 @@ Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散
 
 ### 17. 禁止在 `reference/` 之外创建参考性 / 踩坑 / 错误收集类文件（[BAN-SKILL-3]）
 
-所有「同类内容累积型」的文件——`error-catalog` / `pitfalls` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `reference/<type>.md`。
+所有「同类内容累积型」的文件——`error-catalog` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `reference/<type>.md`。
 
 `reference/` 的空占位文件是**结构信号**——告诉 Agent "这一类内容有家"。散文件（`error1.md` / `bug-2026-06-20.md`）违反这个信号，导致同主题内容散落、无法跨 entry 比较、无法被 install/uninstall 一致管理。
 
