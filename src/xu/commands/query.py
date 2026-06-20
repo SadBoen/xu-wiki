@@ -15,7 +15,7 @@ from ..query.slicing import make_slice, merge_slices
 from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
-from ..utils.wiki import resolve_wiki
+from ..utils.wiki import find_node_md, resolve_wiki
 
 
 def _split_kw(s: str) -> list[str]:
@@ -141,7 +141,7 @@ def cmd_query(args) -> dict:
 
     # L2/L3 hints (PRIN-QRY-1) + neighbors (M3)
     hit_uids = [b["uid"] for b in top]
-    list_hint, report_hint = _build_hints(conn_for_hints, hit_uids)
+    list_hint, report_hint = _build_hints(ctx, hit_uids)
 
     neighbor_preview = None
     if args.neighbors and hit_uids:
@@ -217,24 +217,39 @@ def _read_body(ctx, file_path: str) -> str:
     return body
 
 
-def _build_hints(conn, hit_uids: list[str]) -> tuple[list, str | None]:
-    """Find L2 Lists referencing hit pages, and L3 Reports citing them."""
+def _build_hints(ctx, hit_uids: list[str]) -> tuple[list, str | None]:
+    """Find L2 Lists referencing hit pages, and L3 Reports citing them — via filesystem scan."""
     if not hit_uids:
         return [], None
-    qmarks = ",".join("?" * len(hit_uids))
-    list_rows = conn.execute(
-        f"SELECT DISTINCT list_uid FROM list_members WHERE member_uid IN ({qmarks})",
-        hit_uids,
-    ).fetchall()
-    list_hint = [r["list_uid"] for r in list_rows]
-    rpt_rows = conn.execute(
-        f"SELECT DISTINCT report_uid FROM evidence WHERE ref_uid IN ({qmarks})",
-        hit_uids,
-    ).fetchall()
+    hit_set = set(hit_uids)
+    list_hint = []
+    report_ids = []
+
+    list_dir = ctx.list_dir
+    if list_dir.is_dir():
+        for p in list_dir.glob("*.md"):
+            try:
+                fm_dict, _ = fm.parse(p.read_text(encoding="utf-8", errors="replace"))
+                members = fm_dict.get("members", [])
+                if any(m.get("uid") in hit_set for m in members):
+                    list_hint.append(fm_dict.get("uid", p.stem))
+            except Exception:
+                continue
+
+    report_dir = ctx.report_dir
+    if report_dir.is_dir():
+        for p in report_dir.glob("*.md"):
+            try:
+                fm_dict, _ = fm.parse(p.read_text(encoding="utf-8", errors="replace"))
+                refs = fm_dict.get("references", [])
+                if any(r.get("uid") in hit_set for r in refs):
+                    report_ids.append(fm_dict.get("uid", p.stem))
+            except Exception:
+                continue
+
     report_hint = None
-    if rpt_rows:
-        ids = [r["report_uid"] for r in rpt_rows]
-        report_hint = f"{len(ids)} report(s) cite these pages: {', '.join(ids)}"
+    if report_ids:
+        report_hint = f"{len(report_ids)} report(s) cite these pages: {', '.join(report_ids)}"
     return list_hint, report_hint
 
 
@@ -245,31 +260,43 @@ def cmd_read(args) -> dict:
     conn = ctx.connect()
     try:
         row = conn.execute("SELECT * FROM nodes WHERE uid=?", (args.uid,)).fetchone()
-        if not row:
-            return error(f"node not found: {args.uid}", "NodeNotFound")
-        node = dict(row)
-        body = ""
-        if node["rel_md_path"]:
-            md_path = ctx.root / node["rel_md_path"]
-            if md_path.exists():
-                text = md_path.read_text(encoding="utf-8", errors="replace")
-                _, body = fm.parse(text)
-        else:
-            body = node.get("digest") or ""
-        # patch history (L1 applies patches; here we record current view = latest md)
-        patches = conn.execute(
-            "SELECT version, op, author, created_at FROM patches WHERE page_uid=? ORDER BY version",
-            (args.uid,),
-        ).fetchall()
-        return success(
-            {"uid": node["uid"], "title": node["title"], "layer": node["layer"],
-             "template": node["template"], "node_path": node["node_path"],
-             "active": bool(node["active"]), "body": body,
-             "patch_versions": [dict(p) for p in patches]},
-            f"read {node['layer']} node {args.uid}",
-        )
+        if row:
+            node = dict(row)
+            body = ""
+            if node["rel_md_path"]:
+                md_path = ctx.root / node["rel_md_path"]
+                if md_path.exists():
+                    text = md_path.read_text(encoding="utf-8", errors="replace")
+                    _, body = fm.parse(text)
+            else:
+                body = node.get("digest") or ""
+            patches = conn.execute(
+                "SELECT version, op, author, created_at FROM patches WHERE page_uid=? ORDER BY version",
+                (args.uid,),
+            ).fetchall()
+            return success(
+                {"uid": node["uid"], "title": node["title"], "layer": node["layer"],
+                 "template": node["template"], "node_path": node["node_path"],
+                 "active": bool(node["active"]), "body": body,
+                 "patch_versions": [dict(p) for p in patches]},
+                f"read {node['layer']} node {args.uid}",
+            )
     finally:
         conn.close()
+
+    # L2/L3: not in SQLite — look up via filesystem
+    found = find_node_md(ctx, args.uid)
+    if found:
+        fm_dict, body = found
+        return success(
+            {"uid": fm_dict.get("uid"), "title": fm_dict.get("title"),
+             "layer": fm_dict.get("layer"), "template": "article",
+             "node_path": "", "active": True, "body": body,
+             "patch_versions": []},
+            f"read {fm_dict.get('layer')} node {args.uid}",
+        )
+
+    return error(f"node not found: {args.uid}", "NodeNotFound")
 
 
 def cmd_nodes(args) -> dict:
