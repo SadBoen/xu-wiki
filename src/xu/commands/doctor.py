@@ -260,29 +260,41 @@ def _parse_pending_meta(text: str) -> dict:
 
 
 def _check_pending(ctx, conn, fix) -> dict:
-    """Nodes with node_path='' are pending (path not yet assigned).
+    """Pending leftover: files in nodes/pending/ should not exist after successful commit (PRIN-ING-7).
 
-    A formal node is created by ingest-file with node_path=''.
-    Ingest-commit then assigns the actual path.
-    Any node with node_path='' after creation = pending assignment.
+    Note: Phase 1 now uses system temp directory (tempfile.gettempdir()), not nodes/pending/.
+    This check covers legacy residual files from the old implementation.
     """
     issues = []
     fixed = []
-    rows = conn.execute(
-        "SELECT uid, title, source_hash, rel_md_path FROM nodes "
-        "WHERE node_path='' AND active=1"
-    ).fetchall()
-    for row in rows:
+    pending_dir = ctx.pending_dir
+    if not pending_dir.is_dir():
+        return {"issue_count": 0, "issues": [], "fixed": []}
+    for pf in pending_dir.glob("*-pre.md"):
+        content = pf.read_text(encoding="utf-8", errors="replace")
+        meta = _parse_pending_meta(content)
+        source_hash = meta.get("source_hash")
+        source_name = meta.get("source", pf.name)
+        has_l1 = False
+        if source_hash:
+            row = conn.execute(
+                "SELECT uid FROM nodes WHERE source_hash=? LIMIT 1", (source_hash,)
+            ).fetchone()
+            has_l1 = row is not None
+        status = "leftover" if has_l1 else "orphan"
+        fixable = True
         issues.append({
-            "uid": row["uid"],
-            "title": row["title"],
-            "source_hash": row["source_hash"],
-            "md_path": row["rel_md_path"],
-            "status": "pending_path",
-            "problem": "node has empty node_path (path assignment pending)",
+            "pending_file": str(pf.relative_to(ctx.root)),
+            "source": source_name,
+            "source_hash": source_hash,
+            "status": status,
+            "problem": f"pending file not cleaned after commit ({status})",
             "layer": "cross",
-            "fixable": False,  # path must be assigned via ingest-commit
+            "fixable": fixable,
         })
+        if fix:
+            pf.unlink()
+            fixed.append({"file": str(pf.relative_to(ctx.root)), "action": "deleted"})
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 

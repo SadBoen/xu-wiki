@@ -96,12 +96,14 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 
 ### [PRIN-ING-7] 暂存是中间产物——生命周期原则
 
-暂存文件（命名形如 `<节点路径>-pre.md`，存于暂存子目录）：
+暂存文件（Phase 1 的输出，存于系统临时目录）：
 - Phase 1 创建 → 原子写
 - Phase 2 成功 → **立即删除**
 - Phase 2 失败 → 保留供 debug / 重试
 
-规则：commit 成功的 wiki **不应有 pending 文件残留**。任何残留 = 必有 ingest 半途崩了 → 用户可用 doctor 检测。
+**暂存文件位置是实现细节**，`nodes/pending/` 不是设计要求。实现使用系统临时目录（`tempfile.gettempdir()`），由 CLI 内部管理路径，Agent 通过返回的路径使用，不涉及路径构造逻辑。
+
+规则：commit 成功的 wiki **不应有 Phase 1 临时文件残留**。任何残留 = 必有 ingest 半途崩了 → 用户可用 doctor 检测。
 
 ### [PRIN-ING-8] 不并发 ingest——并发安全原则
 
@@ -224,8 +226,8 @@ xu-wiki ingest-album \
 | 维度 | `ingest-file` → `ingest-commit` | `ingest-album` |
 |---|---|---|
 | 源文件数 | 1 | N (≥1) |
-| 写盘入口 | 2 个 (file 写 pending + commit 写正式) | 1 个 (album 内部完成所有写入) |
-| pending 文件 | 有,Phase 2 后删 | 无 (PRIN-ING-14 单次原则) |
+| 写盘入口 | 2 个 (Phase 1 写临时文件 + Phase 2 写正式节点) | 1 个 (album 内部完成所有写入) |
+| Phase 1 临时文件 | 有,Phase 2 成功后删 | 无 (PRIN-ING-14 单次原则) |
 | body 来源 | 解析器产出 | 程序渲染 |
 | Agent 介入点 | Phase 1 与 Phase 2 之间 | 调用前 (title / node-path / layout / vision 全部问清) |
 | 关系建 | commit 时 `--relations` | 不在本次建;调用后由 SOP 调 `query-relation add` (PRIN-ING-14 子流识别 B 类) |
@@ -329,7 +331,7 @@ ingest-commit 是纯确定性逻辑：
 > **警告**：`--native` 模式**不满足 PRIN-ING-6**（无源文件可 copy 进 raws/）。
 > 设计用途：Agent 合成的代码片段、终端输出等**无外部源**的纯文本。
 > **禁止**用 `--native` 摄取外部 `.md / .pdf / .docx / .pptx` 文档——会静默绕过取证副本。
-> 必须使用 `--pending` 路径（Phase 1 + Phase 2）。
+> 必须使用 Phase 1 + Phase 2 流程（`ingest-file` → `ingest-commit --pending`）。
 
 **不允许**「Agent 在 Phase 2 之前直接拼好 frontmatter 然后调用 ingest-commit 跳校验」——校验是 commit 的**入口**。
 
