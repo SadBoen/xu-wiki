@@ -2,7 +2,9 @@
 
 Every command prints a 4-key JSON response (CONST-ARCH-1) and logs to audit.
 
-Install / uninstall: handled by pip, NOT by this CLI. See README.
+Install:  handled by pip — `pip install "xu-wiki[parse,nlp,vision]"`.
+Uninstall: handled by THIS CLI — `xu uninstall`. Default dry-run.
+          The agent invokes it (never the user) via /xu-wiki config.
 Skills: NOT handled by this CLI. The agent uses its own skill manager and
 copies the source markdown files (location: `xu skills path`).
 """
@@ -187,6 +189,18 @@ def build_parser() -> argparse.ArgumentParser:
     csub.add_parser("show", help="show global config (secrets masked)").set_defaults(func="config_show")
     csub.add_parser("path", help="print global config file paths").set_defaults(func="config_path")
 
+    # ---- M7: software lifecycle (only uninstall lives here; install = pip) ----
+    sp = sub.add_parser("uninstall", help="dry-run by default; --execute to actually uninstall xu-wiki")
+    sp.add_argument("--execute", action="store_true",
+                    help="actually perform the uninstall (default is dry-run)")
+    sp.add_argument("--purge-wikis", action="store_true",
+                    help="also wipe all registered wiki data (default: keep wiki data intact)")
+    sp.add_argument("--purge-config", action="store_true",
+                    help="also remove the global config dir (default: keep ~/.xu/)")
+    sp.add_argument("--keep-pip", action="store_true",
+                    help="do NOT call pip uninstall (test / dev escape hatch)")
+    sp.set_defaults(func="uninstall")
+
     return p
 
 
@@ -262,6 +276,9 @@ def _dispatch(args) -> dict:
     if func == "config_path":
         from .commands.config import cmd_config_path
         return cmd_config_path(args)
+    if func == "uninstall":
+        from .commands.uninstall import cmd_uninstall
+        return cmd_uninstall(args)
     return error(f"unknown command function: {func}", "UnknownCommand")
 
 

@@ -63,7 +63,8 @@ more CLI subcommands. The five SOPs cover the full wiki lifecycle:
   apply `--fix` for safe repairs; rebuild derived layers when needed.
 - **config** — `/xu-wiki config` — manage configuration: set / change
   wiki alias, register / unregister existing directories, manage the
-  MinerU API key, inspect the registered wikis.
+  MinerU API key, inspect the registered wikis, **and uninstall the
+  xu-wiki package itself** (`xu uninstall`).
 
 ## SOP map (slash command ↔ CLI orchestration)
 
@@ -76,7 +77,7 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)** with PRIMARY bias toward `list create` (Report only on contradiction) |
 | `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint; **post-query reflection (PRIN-CR-1)** with PRIMARY bias toward `report create` (List only on missing axis) |
 | `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
-| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `skills path / list` for the bundled skill source dir |
+| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `skills path / list` for the bundled skill source dir; **`uninstall`** for removing xu-wiki itself (always dry-run first, then `--execute` after user confirms) |
 
 Full SOP semantics: design-docs/08-sop-architecture.md.
 
@@ -109,34 +110,61 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
      and pick a new CLI — they will not retype a corrected command
      for you.
 
-0a. **Software lifecycle (install / uninstall / upgrade) is OUTSIDE the
-    5 SOPs.** There is **no `/xu-wiki install`**, **no `/xu-wiki uninstall`**,
-    and **no `/xu-wiki upgrade`** slash command — they do not exist and
-    you must not invent them. When the user says anything about installing,
-    uninstalling, or upgrading xu-wiki:
-    - **Recognise the intent** ("uninstall xu-wiki", "remove xu-wiki",
-      "升级一下 xu-wiki", "把 xu-wiki 删了", "I want to get rid of
-      xu-wiki", etc.) and respond in natural language.
-    - **Route to your own bash / shell tool** — **NOT** to `xu` (the
-      `xu` CLI has no install / uninstall / upgrade subcommand; calling
-      `xu install` will return an `ArgParseError`).
-    - **Run the corresponding pip command**:
-      - install   → `pip install "xu-wiki[parse,nlp,vision]"`
-      - upgrade   → `pip install --upgrade "xu-wiki[parse,nlp,vision]"`
-      - uninstall → `pip uninstall xu-wiki -y`
-    - **Translate pip's stdout/stderr back to the user** in natural
-      language. Example: pip prints "Successfully uninstalled
-      xu-wiki-0.1.0" → tell the user "已卸载 xu-wiki 0.1.0".
-    - **Confirm destructive operations** before running them (especially
-      uninstall) — show what will be removed and wait for explicit "yes"
-      from the user. This is the same safety contract you apply to
-      any other destructive xu CLI (see `delete-node` / `rebuild`).
-    - **Never ask the user to run pip themselves** — that violates
-      PRIN-SOP-8 ("User never touches CLI"). You run it on their behalf.
+0a. **Uninstall goes through the `/xu-wiki config` SOP, then `xu uninstall`.**
+    Install is intentionally a plain `pip install` (the user / any agent
+    can do it — see rule 0b). Uninstall is non-trivial cleanup so it
+    needs a CLI command — but it lives in the **config** SOP because
+    it's a system-level action, not a wiki-data operation.
 
-    PRIN-SOP-8 still holds: you are the only legitimate caller of `xu`
-    AND you are the only legitimate executor of pip on the user's behalf.
-    The user only ever types natural language into your UI.
+    When the user says anything about uninstalling / removing xu-wiki
+    ("把 xu-wiki 卸了", "uninstall xu-wiki", "remove xu-wiki from
+    this machine", "I don't need xu-wiki anymore", etc.):
+
+    1. **Enter `/xu-wiki config` SOP** — that's where uninstall lives.
+       Do NOT invent a `/xu-wiki uninstall` slash command; it does not
+       exist.
+    2. **Always dry-run first**: `xu uninstall` (no `--execute`).
+       Read the `data.plan` (wikis_found, global_dir_exists, pip_uninstall
+       flag) and show the user what would happen.
+    3. **Confirm with the user** — list the wikis that would be deleted
+       (if `--purge-wikis`), whether the global `~/.xu/` config would
+       be wiped (if `--purge-config`), and whether pip would remove the
+       package. Wait for explicit "yes" / "确认" / "proceed".
+    4. **Re-run with the user's chosen flags + `--execute`**. Example
+       dialog:
+       ```
+       User: 把 xu-wiki 卸了
+       Agent: 我先看一下当前状态（dry-run）...
+              $ xu uninstall
+              → 发现 2 个 wiki: research, mykb；全局目录 ~/.xu/ 存在
+       Agent: 当前有 2 个 wiki（research、mykb）。卸载有 3 种范围：
+              a) 仅卸 pip 包（wiki 数据和 ~/.xu/ 保留）
+              b) 卸 pip 包 + 删除所有 wiki（加 --purge-wikis）
+              c) 全部清空（加 --purge-wikis --purge-config）
+              选哪个？
+       User: a
+       Agent: 好的，执行 `xu uninstall --execute`...
+       ```
+    5. **Translate the 4-key JSON result** back to natural language.
+       Don't paste raw JSON at the user.
+    6. **Never run `pip uninstall` directly via your bash tool**. Even
+       though it would technically work, it bypasses SKILL.md
+       discoverability and the dry-run safety contract. Always go
+       through `xu uninstall`.
+
+    This rule exists because **xu-wiki is a GitHub project, not a
+    pre-installed brand**. The user discovers it by reading SKILL.md
+    from the GitHub URL; you (the agent) only know about xu-wiki after
+    loading SKILL.md. Without a CLI uninstall command, you have no
+    documented entry point and cannot help. The CLI is the
+    **discoverable, SKILL.md-visible, agent-callable** uninstall entry.
+    See [PRIN-SOP-8] / [CONST-SOP-3] / design-docs/08-sop-architecture.md.
+
+0b. **Install is just `pip install "xu-wiki[parse,nlp,vision]"`** —
+    no CLI command, no special installer. The user can run this
+    themselves, or you can run it via your bash tool. Either way it is
+    a one-liner; we don't wrap it. (No `/xu-wiki install` slash command
+    exists, and you must not invent one.)
 1. **Never edit L1 markdown body** — it is immutable (PRIN-ARCH-2/3).
    UIDs are retired on delete, never reused (BAN-ARCH-2).
 2. **Report needs evidence** — `--references` must list ≥ 1 existing UIDs

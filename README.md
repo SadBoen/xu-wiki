@@ -63,31 +63,50 @@ management, no symlink config. Pip handles all of it.
 Set `XU_HOME` to relocate the global config / registry directory (defaults to
 `~/.xu`).
 
-## Uninstall / upgrade (handled by the agent, not by `xu`)
+## Uninstall (run by the agent via `/xu-wiki config` → `xu uninstall`)
 
-**The user never types `pip uninstall` in a terminal.** Under
-[PRIN-SOP-8], the user only communicates through the agent UI. The
-agent runs pip on the user's behalf via its own bash / shell tool —
-`xu` CLI is never involved.
+**Install and uninstall are asymmetric on purpose.** Install is just
+`pip install xu-wiki` — pip handles it. Uninstall needs its own CLI
+command (`xu uninstall`) because:
 
-What the user says vs what the agent does:
+- xu-wiki is a **GitHub project**, not a pre-installed brand. The user
+  discovers it by giving the agent the **GitHub URL**; the agent then
+  loads `SKILL.md` and learns what xu-wiki is. Without a CLI uninstall
+  command, the agent has no documented entry point for helping with
+  uninstall.
+- Uninstall is non-trivial cleanup (pip package + optionally wiki data
+  + optionally global config) that benefits from a single command with
+  side-effect scoping and a built-in dry-run.
 
-| User says (any phrasing) | Agent runs (via bash tool, NOT `xu`) |
-|---|---|
-| "装一下 xu-wiki" / "install xu-wiki" | `pip install "xu-wiki[parse,nlp,vision]"` |
-| "升级 xu-wiki" / "upgrade xu-wiki" | `pip install --upgrade "xu-wiki[parse,nlp,vision]"` |
-| "把 xu-wiki 卸了" / "uninstall xu-wiki" | `pip uninstall xu-wiki -y` |
-| "xu-wiki 是不是最新版" / "what version" | `pip show xu-wiki` |
+The user never types `pip uninstall` in a terminal. The user just tells
+the agent in natural language; the agent enters `/xu-wiki config`,
+recognises uninstall intent, and runs `xu uninstall` (default dry-run →
+confirmation → `--execute`).
 
-There is **no `/xu-wiki install`** / **`/xu-wiki uninstall`** /
-**`/xu-wiki upgrade`** slash command — they don't exist (see
-[CONST-SOP-3] in `design-docs/08-sop-architecture.md` and SKILL.md
-hard rule 0a).
+The agent's three-step flow:
 
-`pip uninstall xu-wiki` only removes the package and the `xu` binary.
-Wiki data on disk (`raws/`, `nodes/`, `.xu/`) is untouched. To wipe
-wiki data, that's a separate request — `xu delete-node` for individual
-nodes, or `rm -rf` for whole wikis (after `pip uninstall`).
+```bash
+# 1. dry-run — always the first call
+xu uninstall
+# → {status: success, data: {mode: "dry-run", plan: {wikis_found, ...}}}
+
+# 2. agent shows the user what's about to happen, user picks a scope:
+#    (a) pip only                  → xu uninstall --execute
+#    (b) pip + wikis               → xu uninstall --execute --purge-wikis
+#    (c) pip + wikis + ~/.xu/      → xu uninstall --execute --purge-wikis --purge-config
+
+# 3. user confirms → agent re-runs with the chosen flags
+xu uninstall --execute [--purge-wikis] [--purge-config]
+```
+
+Default scope is (a) — pip package only; wiki data and `~/.xu/` are
+preserved. The `--purge-*` flags are explicitly opt-in.
+
+There is no `/xu-wiki install` slash command and no `/xu-wiki upgrade`
+slash command. There is no `/xu-wiki uninstall` slash command either —
+the entry is `/xu-wiki config`, which contains `xu uninstall` as a
+CLI palette item. See [CONST-SOP-3] in
+`design-docs/08-sop-architecture.md` and SKILL.md hard rule 0a.
 
 > **What the CLI does NOT do**: install / uninstall the package itself. The
 > CLI only manages wiki data — it never touches venv / symlink / system PATH.
@@ -258,3 +277,4 @@ bash tests/e2e_verify.sh                # full M1->M5 run against sample files
 | `alias set\|unset\|show` | wiki registry alias management |
 | `register` / `unregister` | wiki registry management |
 | `config set-mineru-key\|show\|path` | global config management |
+| `uninstall` | remove the xu-wiki package (CLI command — see CONST-SOP-3 for why install isn't) |
