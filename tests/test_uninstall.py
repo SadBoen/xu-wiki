@@ -254,7 +254,11 @@ def test_cli_palette_includes_uninstall_under_config():
     p = build_parser()
     args = p.parse_args(["uninstall"])
     assert args.func == "uninstall"
-    assert args.execute is False
+    # With --dry-run / --execute as mutex group + default=None, the
+    # raw argparse attr is None when neither is passed. cmd_uninstall
+    # resolves execute via `bool(getattr(args, "execute", False))`.
+    assert args.execute is None
+    assert args.dry_run is None
     assert args.keep_pip is False
     assert args.purge_wikis is False
     assert args.purge_config is False
@@ -269,6 +273,18 @@ def test_cli_palette_exec_flags_parse():
     assert args.purge_wikis is True
     assert args.purge_config is True
     assert args.keep_pip is True
+
+
+def test_cli_palette_dry_run_explicit():
+    """--dry-run and --execute are mutually exclusive (P2 fix)."""
+    from xu.cli import build_parser
+    p = build_parser()
+    args = p.parse_args(["uninstall", "--dry-run"])
+    assert args.dry_run is True
+    assert args.execute is None
+    # argparse raises SystemExit on mutex violation
+    with pytest.raises(SystemExit):
+        p.parse_args(["uninstall", "--dry-run", "--execute"])
 
 
 def test_uninstall_help_does_not_raise():
@@ -299,3 +315,132 @@ def test_execute_response_shape_matches_protocol(xu_home):
                                     purge_wikis=True, purge_config=True))
     assert set(r.keys()) >= {"status", "data", "message", "hints"}
     assert r["status"] in ("success", "warning", "error")
+
+
+# ----------------------------------------------------------------------
+# 8. Agent review fixes — P0/P1 schema
+# ----------------------------------------------------------------------
+
+def test_plan_mode_consistent_with_execute_flag(xu_home, monkeypatch):
+    """Bug fix: plan.mode MUST equal 'execute' when execute=True.
+
+    Previously plan.mode was hard-coded to 'dry-run' regardless of
+    the execute flag, producing a 'mode=dry-run && execute=true'
+    contradiction inside data.plan under execute responses.
+    """
+    _seed_wiki(xu_home, "A")
+    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
+                        lambda: {"ok": True, "returncode": 0,
+                                 "stdout_tail": "", "stderr_tail": "",
+                                 "command": "python3 -m pip uninstall xu-wiki -y",
+                                 "command_redaction_note": "(redacted)",
+                                 "command_full": "/usr/bin/python3 -m pip uninstall xu-wiki -y"})
+    # dry-run path
+    r_dry = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
+                                        purge_wikis=False, purge_config=False))
+    assert r_dry["data"]["mode"] == "dry-run"
+    # execute path — data has {plan, result}
+    r_exec = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
+                                         purge_wikis=False, purge_config=False))
+    assert r_exec["data"]["plan"]["mode"] == "execute"
+    assert r_exec["data"]["plan"]["execute"] is True
+    # No contradiction: mode == execute AND execute == True
+    assert (r_exec["data"]["plan"]["mode"] == "execute"
+            and r_exec["data"]["plan"]["execute"] is True)
+
+
+def test_pip_command_redacted_no_absolute_path(xu_home, monkeypatch):
+    """Bug fix: pip.command must NOT include sys.executable absolute path."""
+    # Call _pip_uninstall() for real; it returns its actual redacted output.
+    # We monkeypatch subprocess.run to a deterministic success so the
+    # function path goes through to "ok: True".
+    class _FakeProc:
+        returncode = 0
+        stdout = "Successfully uninstalled xu-wiki-0.1.0\n"
+        stderr = ""
+    monkeypatch.setattr("subprocess.run",
+                        lambda *a, **kw: _FakeProc())
+    raw = cmd_mod._pip_uninstall()
+    assert raw["command"] == "python3 -m pip uninstall xu-wiki -y"
+    assert "python3" == raw["command"].split()[0]
+    # command_full keeps the absolute path for dev debug
+    import sys as _sys
+    assert _sys.executable in raw["command_full"]
+
+
+def test_purge_global_dir_reports_existed_before_and_files_count(xu_home):
+    """Bug fix: config_dir result must include existed_before +
+    files_removed_count so the agent can cross-check independently."""
+    # Seed a global dir with 3 entries
+    (xu_home / "a.txt").write_text("x")
+    (xu_home / "b.txt").write_text("y")
+    (xu_home / "sub").mkdir()
+    (xu_home / "sub" / "c.txt").write_text("z")
+    res = cmd_mod._purge_global_dir()
+    assert res["existed_before"] is True
+    # files_removed_count counts top-level entries (3 here: a.txt, b.txt, sub/)
+    assert res["files_removed_count"] == 3
+    assert res["ok"] is True
+    assert "error" not in res or res.get("error") is None
+
+
+def test_purge_global_dir_handles_missing_dir(xu_home):
+    """If ~/.xu/ doesn't exist, ok=True with existed_before=False."""
+    # Make sure the global dir really doesn't exist (tmp_path is
+    # auto-created by pytest but empty).
+    if xu_home.exists():
+        import shutil
+        shutil.rmtree(xu_home)
+    res = cmd_mod._purge_global_dir()
+    assert res["existed_before"] is False
+    assert res["files_removed_count"] == 0
+    assert res["ok"] is True
+
+
+def test_purge_global_dir_empty_dir_reports_zero_files(xu_home):
+    """If ~/.xu/ exists but is empty, existed_before=True with count=0."""
+    res = cmd_mod._purge_global_dir()
+    assert res["existed_before"] is True
+    assert res["files_removed_count"] == 0
+    assert res["ok"] is True
+
+
+def test_purge_wikis_schema_returns_three_lists(xu_home):
+    """P1 schema: removed / refused / failures must be present as lists."""
+    _seed_wiki(xu_home, "real")
+    _seed_nonwiki(xu_home, "fake")
+    res = cmd_mod._purge_wikis()
+    assert set(res.keys()) == {"removed", "refused", "failures"}
+    assert isinstance(res["removed"], list)
+    assert isinstance(res["refused"], list)
+    assert isinstance(res["failures"], list)
+    # The real one was rmtree'd; the fake one was refused
+    assert any(r["name"] == "real" for r in res["removed"])
+    assert any(r["name"] == "fake" for r in res["refused"])
+    assert res["failures"] == []
+
+
+def test_purge_wikis_refused_has_reason_field(xu_home):
+    """P1 schema: refused entries must include a 'reason' string explaining
+    why rmtree was blocked (vs 'failures' which is rmtree-raised-exception)."""
+    _seed_nonwiki(xu_home, "fake")
+    res = cmd_mod._purge_wikis()
+    assert len(res["refused"]) == 1
+    entry = res["refused"][0]
+    assert "reason" in entry
+    assert isinstance(entry["reason"], str)
+    assert "wiki" in entry["reason"].lower()
+
+
+def test_purge_wikis_failures_has_error_field(xu_home, monkeypatch):
+    """P1 schema: failures entries must include an 'error' string from
+    the underlying exception (vs refused which has 'reason')."""
+    _seed_wiki(xu_home, "real")
+    monkeypatch.setattr("shutil.rmtree",
+                        lambda p, **kw: (_ for _ in ()).throw(PermissionError("denied")))
+    res = cmd_mod._purge_wikis()
+    assert len(res["failures"]) == 1
+    entry = res["failures"][0]
+    assert "error" in entry
+    assert isinstance(entry["error"], str)
+    assert "denied" in entry["error"]

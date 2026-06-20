@@ -197,8 +197,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- M7: software lifecycle (only uninstall lives here; install = pip) ----
     sp = sub.add_parser("uninstall", help="dry-run by default; --execute to actually uninstall xu-wiki")
-    sp.add_argument("--execute", action="store_true",
-                    help="actually perform the uninstall (default is dry-run)")
+    g_dry = sp.add_mutually_exclusive_group()
+    g_dry.add_argument("--dry-run", dest="dry_run", action="store_true",
+                       default=None,
+                       help="explicit dry-run (default; provided for clarity — "
+                            "explicit > implicit for script users)")
+    g_dry.add_argument("--execute", dest="execute", action="store_true",
+                       default=None,
+                       help="actually perform the uninstall")
     sp.add_argument("--purge-wikis", action="store_true",
                     help="also wipe all registered wiki data (default: keep wiki data intact)")
     sp.add_argument("--purge-config", action="store_true",

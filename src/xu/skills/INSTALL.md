@@ -136,6 +136,11 @@ Show the user `data.wikis_found` (every registered wiki) and the
 | (b) pip + wikis | `--execute --purge-wikis` | pip + every registered wiki dir |
 | (c) nuclear | `--execute --purge-wikis --purge-config` | pip + wikis + `~/.xu/` |
 
+**Folding rule (rule 9)**: if `data.wikis_found == []`, scopes (a)
+and (b) are functionally identical (no wikis to purge). Do not list
+three options when one is a no-op for the user's data — collapse to
+"a (or b; same effect when no wikis) or c".
+
 ### 2. Confirm with the user
 
 Default to scope (a). User must explicitly type "yes" / "确认" /
@@ -156,10 +161,39 @@ The agent uses its own skill manager (NOT `xu uninstall`):
 - Claude Desktop: `rm -rf ~/Library/Application\ Support/Claude/skills/xu-wiki` + restart app
 - Cursor: `rm -rf <project>/.cursor/skills/xu-wiki`
 
-### 5. Tell the user
+### 5. Independent verification (rule 7, P0)
 
-"Uninstalled xu-wiki X.Y.Z; removed from <agent>." Do not paste raw
-JSON or pip stdout.
+After `--execute`, **DO NOT trust the CLI's word**. Run these
+independent checks in your bash tool:
+
+```bash
+# 5a. pip uninstall: confirm 'xu' command no longer exists
+command -v xu || echo "OK: xu removed"
+# Expected: prints "OK: xu removed" or empty (with non-zero exit)
+
+# 5b. --purge-wikis: confirm every removed path actually gone
+# Read paths from data.result.wikis.removed[*].path in the response
+test -e /path/from/response && echo "FAIL: wiki still exists" || echo "OK"
+# Do this for EACH removed path.
+
+# 5c. --purge-config: confirm ~/.xu/ actually gone
+test -e ~/.xu && echo "FAIL: ~/.xu still exists" || echo "OK: ~/.xu removed"
+
+# 5d. cross-check the CLI's reported counts
+# If response said "files_removed_count=12" but your ls only found 8,
+# something is wrong.
+```
+
+**Contradiction rule (rule 8)**: if any check contradicts the CLI
+report — for example, the CLI says `config_dir.ok = true` and
+`existed_before = true` but `~/.xu/` is still on disk — surface
+this to the user in plain language. Do NOT report "卸载完成" if
+independent verification failed.
+
+### 6. Tell the user
+
+Only after verification passes, reply: "Uninstalled xu-wiki X.Y.Z;
+removed from <agent>." Do not paste raw JSON or pip stdout.
 
 ---
 

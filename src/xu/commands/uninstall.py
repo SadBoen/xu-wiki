@@ -56,14 +56,23 @@ def _list_wikis() -> list[tuple[str, str]]:
     return out
 
 
-def _plan(args) -> dict:
-    """Build the dry-run plan: what would be removed and what stays.
+def _plan(args, *, mode: str | None = None) -> dict:
+    """Build the plan: what would be / was removed.
+
+    `mode` defaults to "dry-run" or "execute" depending on `args.execute`.
+    Passing it explicitly makes the field self-consistent regardless of
+    which branch (dry-run return vs execute result-plan) ends up using it
+    (Agent review fix #1: previously `plan.mode` always said "dry-run"
+    even when the plan was embedded inside `data.plan` of an execute
+    response, creating a `mode=dry-run && execute=true` contradiction).
 
     Each wiki entry is annotated with `is_wiki_root` so the agent can
     see which paths actually look like wikis (`.xu/config.yaml` +
     `.xu/wiki.db`) and which were registered by mistake. A non-wiki
     path on `--purge-wikis` will be REFUSED at execute time (3.1 fix).
     """
+    execute = bool(getattr(args, "execute", False))
+    resolved_mode = mode or ("execute" if execute else "dry-run")
     wikis = _list_wikis()
     annotated = []
     for name, p in wikis:
@@ -73,8 +82,8 @@ def _plan(args) -> dict:
             "is_wiki_root": is_wiki_root(p),
         })
     plan = {
-        "mode": "dry-run",
-        "execute": bool(getattr(args, "execute", False)),
+        "mode": resolved_mode,
+        "execute": execute,
         "pip_uninstall": not bool(getattr(args, "keep_pip", False)),
         "purge_wikis": bool(getattr(args, "purge_wikis", False)),
         "purge_config": bool(getattr(args, "purge_config", False)),
@@ -100,6 +109,27 @@ def _purge_wikis(strict_wiki_check: bool = True) -> dict:
     is left intact and reported under `refused`. This prevents the
     "I registered ~/projects/notebook as a wiki and uninstall nuked
     my whole project" failure mode (3.1).
+
+    Returns a dict with three lists (P1 schema, machine-readable):
+
+    - `removed`  : entries that were ACTUALLY rmtree'd
+                   (or whose path didn't exist on disk — entry
+                   still dropped from registry as no-op).
+                   Each item: {name, path[, note]}.
+    - `refused`  : entries where strict_wiki_check blocked rmtree
+                   because the path is not a wiki marker. Directory
+                   left intact, registry entry still dropped.
+                   Each item: {name, path, reason}.
+    - `failures` : entries where shutil.rmtree raised. Directory MAY
+                   be partially deleted; registry entry KEPT (might
+                   be transient permission/mount issue — operator
+                   should investigate).
+                   Each item: {name, path, error}.
+
+    The three lists are disjoint and exhaustive over the registry.
+    Agents parsing this response should treat `removed` as success,
+    `refused` as "user probably registered wrong path", `failures`
+    as "investigate, possibly retry".
     """
     removed = []
     refused = []
@@ -139,33 +169,83 @@ def _purge_wikis(strict_wiki_check: bool = True) -> dict:
 
 
 def _purge_global_dir() -> dict:
-    if GLOBAL_DIR.exists():
-        try:
-            shutil.rmtree(GLOBAL_DIR)
-            return {"removed": str(GLOBAL_DIR)}
-        except Exception as e:
-            return {"path": str(GLOBAL_DIR), "error": str(e)}
-    return {"removed": None, "note": "global dir did not exist"}
+    """Remove ~/.xu/ and report enough audit detail for the agent to
+    cross-check the action (P0: agent review fix).
+
+    Returns a dict with:
+    - existed_before (bool): was the dir present at start? (lets the
+      agent distinguish "removed" from "no-op")
+    - files_removed_count (int): how many entries were rmtree'd
+    - path (str): the absolute path (already known to the agent via
+      plan.global_dir, but echoed here for log clarity)
+    - ok (bool): True iff the rmtree succeeded
+    - error (str|None): populated only on failure
+    """
+    existed = GLOBAL_DIR.exists()
+    if not existed:
+        return {
+            "existed_before": False,
+            "files_removed_count": 0,
+            "path": str(GLOBAL_DIR),
+            "ok": True,
+            "note": "global dir did not exist; nothing to remove",
+        }
+    try:
+        # Count entries BEFORE rmtree — shutil.rmtree doesn't report.
+        count = sum(1 for _ in GLOBAL_DIR.iterdir())
+        shutil.rmtree(GLOBAL_DIR)
+        return {
+            "existed_before": True,
+            "files_removed_count": count,
+            "path": str(GLOBAL_DIR),
+            "ok": True,
+        }
+    except Exception as e:
+        return {
+            "existed_before": existed,
+            "files_removed_count": 0,
+            "path": str(GLOBAL_DIR),
+            "ok": False,
+            "error": str(e),
+        }
 
 
 def _pip_uninstall() -> dict:
-    """Run `pip uninstall xu-wiki -y`. Capture stdout/stderr + return code."""
-    cmd = [sys.executable, "-m", "pip", "uninstall", "xu-wiki", "-y"]
+    """Run `pip uninstall xu-wiki -y`. Capture stdout/stderr + return code.
+
+    The `command` field is REDACTED: we replace the absolute
+    `sys.executable` path with the literal `python3` so that audit logs
+    and the agent's 4-key JSON don't leak the user's local venv
+    layout (e.g. `/root/workspace/xu-wiki/.venv/bin/python3`). The
+    full unredacted command is recoverable from `command_full` for
+    developer debugging (test escape hatch).
+    """
+    cmd_full = [sys.executable, "-m", "pip", "uninstall", "xu-wiki", "-y"]
+    cmd_redacted = ["python3", "-m", "pip", "uninstall", "xu-wiki", "-y"]
+    redaction_note = "(sys.executable absolute path redacted; see command_full for debug)"
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120
+            cmd_full, capture_output=True, text=True, timeout=120
         )
         return {
-            "command": " ".join(cmd),
+            "command": " ".join(cmd_redacted),
+            "command_redaction_note": redaction_note,
+            "command_full": " ".join(cmd_full),
             "returncode": proc.returncode,
             "stdout_tail": (proc.stdout or "")[-400:],
             "stderr_tail": (proc.stderr or "")[-400:],
             "ok": proc.returncode == 0,
         }
     except subprocess.TimeoutExpired:
-        return {"command": " ".join(cmd), "error": "timeout after 120s", "ok": False}
+        return {"command": " ".join(cmd_redacted),
+                "command_redaction_note": redaction_note,
+                "command_full": " ".join(cmd_full),
+                "error": "timeout after 120s", "ok": False}
     except Exception as e:
-        return {"command": " ".join(cmd), "error": str(e), "ok": False}
+        return {"command": " ".join(cmd_redacted),
+                "command_redaction_note": redaction_note,
+                "command_full": " ".join(cmd_full),
+                "error": str(e), "ok": False}
 
 
 def cmd_uninstall(args) -> dict:
@@ -204,12 +284,15 @@ def cmd_uninstall(args) -> dict:
 
     # Compose status: warning if pip failed (data on disk may still exist);
     # error only if EVERYTHING failed.
+    # (P0 audit fix): config_dir now uses `ok`/`existed_before`/`files_removed_count`
+    # instead of just an `error` string. The agent can cross-check by
+    # independently stat-ing the path.
     pip_ok = (result["pip"] or {}).get("ok", True)
     wiki_failures = (result["wikis"] or {}).get("failures") or []
     wiki_refused = (result["wikis"] or {}).get("refused") or []
-    cfg_err = (result["config_dir"] or {}).get("error")
-    all_ok = pip_ok and not wiki_failures and not wiki_refused and not cfg_err
-    partial = pip_ok and (wiki_failures or wiki_refused or cfg_err)
+    cfg_ok = (result["config_dir"] or {}).get("ok", True)
+    all_ok = pip_ok and not wiki_failures and not wiki_refused and cfg_ok
+    partial = pip_ok and (wiki_failures or wiki_refused or not cfg_ok)
 
     if all_ok:
         return success(
