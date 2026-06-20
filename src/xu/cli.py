@@ -208,9 +208,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--preserve-config", action="store_true",
                     help="keep ~/.xu/ config dir after uninstall (default: remove it)")
     sp.add_argument("--purge-wikis", action="store_true",
-                    help="[DEPRECATED/IGNORED] wiki data is NEVER deleted — this flag is a no-op")
+                    help="[DEPRECATED/IGNORED] wiki data is NEVER deleted")
     sp.add_argument("--keep-pip", action="store_true",
                     help="do NOT call pip uninstall (test / dev escape hatch)")
+    sp.add_argument("--keep-skill", action="store_true",
+                    help="keep skill bundle(s) after uninstall (default: remove them)")
+    sp.add_argument("--target", action="append", default=[],
+                    dest="targets",
+                    help="agent harness to target (hermes / trae / claude / cursor); "
+                         "can be specified multiple times; default: all deployed targets")
     sp.set_defaults(func="uninstall")
 
     # ---- M8: post-install health check (坑 6 fix) ----
@@ -229,6 +235,9 @@ def build_parser() -> argparse.ArgumentParser:
                           choices=("hermes", "trae", "claude", "cursor", "auto"),
                           default="auto",
                           help="agent platform to deploy to (default: auto-detect)")
+    sp_skill.add_argument("--copy",
+                          action="store_true",
+                          help="copy files instead of symlinking (symlink is default)")
     sp_skill.set_defaults(func="deploy_skill")
 
     return p

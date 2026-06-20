@@ -33,42 +33,53 @@ no scores. Every command returns a **4-key JSON envelope**: `{status, data, mess
 One command. Works on both Linux and macOS, PEP 668-safe:
 
 ```bash
-pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+pipx install "xu-wiki[pdf,parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
 ```
 
-**What each extra provides** (install all three — they are all required):
+**What each extra provides** (install all four — all required for full SOP coverage):
 
-| Extra | Packages installed | Purpose |
+| Extra | Packages | Required for |
 |---|---|---|
-| `parse` | `markitdown[all]` | PDF / DOCX / PPTX text extraction |
-| `nlp` | `jieba` | Chinese word segmentation for query |
-| `vision` | `Pillow>=10.0` | Image metadata extraction (resolution, GPS, DateTime) for albums |
+| `pdf` | `pypdf`, `pdfplumber` | PDF text extraction |
+| `parse` | `markitdown[all]` | DOCX / PPTX text extraction |
+| `nlp` | `jieba` | Chinese query segmentation |
+| `vision` | `Pillow>=10.0` | Image EXIF metadata for albums |
 
-Without any extra: the CLI works, but PDF/DOCX ingestion silently fails and album images show no metadata.
+**Missing any extra → `MissingExtra` error at first use, no silent fall-back.**
 
-After install, the agent deploys the skill bundle:
+After install, deploy the skill bundle:
 
 ```bash
 xu deploy skill --target <agent>   # hermes, trae, claude, cursor, ...
+xu selfcheck                       # verify install is complete
 ```
 
-Verify:
+To deploy to multiple harnesses:
 
 ```bash
-xu selfcheck
+xu deploy skill --target hermes --target claude --target cursor
 ```
 
 ## Uninstall
 
-Two steps:
-
-1. Agent deletes `~/.hermes/skills/xu-wiki/` using its own skill manager.
-2. Agent runs:
+**Default scope — never touches wiki data or `~/.xu/` config.**
 
 ```bash
-xu uninstall --execute          # removes the program
-pipx uninstall xu-wiki         # (only if pipx was used)
+xu uninstall --target hermes --execute        # program + skill bundle
 ```
 
-**Wiki data is never deleted.** The uninstall flow only touches the program
-itself — your knowledge stays intact.
+**Default removes**: pip/pipx package + skill bundle at target. Wiki data and `~/.xu/` are **never touched**.
+
+Escalate (each is explicit opt-in):
+
+```bash
+xu uninstall --target hermes --execute --preserve-config  # also keep ~/.xu/
+```
+
+Multiple targets in one call:
+
+```bash
+xu uninstall --target hermes --target claude --execute
+```
+
+The uninstall plan is always shown first (dry-run). Pass `--execute` to apply.

@@ -12,18 +12,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-parse = [
-    "markitdown[all]",
-]
-nlp = [
-    "jieba",
-]
-# Pillow is a soft dep: album metadata extraction (resolution / GPS / DateTime)
-# gracefully degrades to "—" when missing. Install via:
-#   pip install xu-wiki[vision]
-vision = [
-    "Pillow>=10.0",
-]
+pdf   = ["pypdf", "pdfplumber"]
+parse = ["markitdown[all]"]
+nlp   = ["jieba"]
+vision = ["Pillow>=10.0"]
+all   = ["pypdf", "pdfplumber", "markitdown[all]", "jieba", "Pillow>=10.0"]
 
 [project.scripts]
 xu = "xu.cli:main"

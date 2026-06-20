@@ -6,6 +6,7 @@ Phase 2 (ingest-commit): validate → atomic write Page(s) + raws copy + patches
 """
 from __future__ import annotations
 
+import importlib
 import json
 import shutil
 from pathlib import Path
@@ -55,6 +56,19 @@ def cmd_ingest_file(args) -> dict:
     src = Path(args.file).expanduser()
     if not src.is_file():
         return error(f"source file not found: {src}", "FileNotFound")
+
+    # MissingExtra check: PDF/DOCX/PPTX requires the parse extra (markitdown)
+    rich_exts = {".pdf", ".docx", ".pptx", ".xlsx", ".xls"}
+    if src.suffix.lower() in rich_exts:
+        try:
+            importlib.import_module("markitdown")
+        except ImportError:
+            return error(
+                f"cannot parse {src.suffix} files: 'markitdown' is not installed",
+                "MissingExtra",
+                data={"extra": "parse", "file_ext": src.suffix},
+                hints=["pip install xu-wiki[parse] to enable PDF/DOCX/PPTX parsing"],
+            )
 
     # path whitelist (BAN-ING-5): allow anywhere readable for Phase 1 source,
     # but pending output stays inside the wiki.

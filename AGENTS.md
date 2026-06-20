@@ -31,3 +31,17 @@ xu deploy skill --target <agent>   # auto, hermes, trae, claude, cursor
 - Debian/Ubuntu: `sudo apt install -y python3-venv` required before pipx/venv
 - Wiki data default: `~/Documents/xu-wikis/<wiki-name>/`
 - Never commit: `.venv/`, `test-wikis/`, `CREDENTIALS*.md`
+
+## Uninstall is a 3-surface operation
+
+Uninstall handles three surfaces. **Never do any of these manually:**
+
+- **Program** (pipx/pip-managed): `xu uninstall --execute` handles this internally — do NOT run `pipx uninstall` separately.
+- **Skill bundle** (`~/.hermes/skills/xu-wiki/`, etc.): `xu uninstall` reads the manifest at `~/.local/share/xu-wiki/manifest.json` and removes each deployed target — do NOT delete skill directories manually.
+- **Config / wiki data**: `~/.xu/` is removed by default (`--preserve-config` to keep it). Wiki data is **NEVER deleted** under any circumstances — this is a hard invariant.
+
+**Forbidden**:
+- ❌ Running `pipx uninstall xu-wiki` as a separate step
+- ❌ Manually deleting `~/.hermes/skills/xu-wiki/`
+- ❌ Any flow that deletes wiki data, even with `--purge-wikis`
+

@@ -34,14 +34,18 @@ own audit.jsonl before the wiki dir is deleted.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..utils.config import GLOBAL_DIR, load_registry, save_registry
 from ..utils.response import error, success, warning
 from ..utils.wiki import is_wiki_root
+
+MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
 
 
 def _list_wikis() -> list[tuple[str, str]]:
@@ -56,20 +60,7 @@ def _list_wikis() -> list[tuple[str, str]]:
 
 
 def _plan(args, *, mode: str | None = None) -> dict:
-    """Build the plan: what would be / was removed.
-
-    `mode` defaults to "dry-run" or "execute" depending on `args.execute`.
-    Passing it explicitly makes the field self-consistent regardless of
-    which branch (dry-run return vs execute result-plan) ends up using it
-    (Agent review fix #1: previously `plan.mode` always said "dry-run"
-    even when the plan was embedded inside `data.plan` of an execute
-    response, creating a `mode=dry-run && execute=true` contradiction).
-
-    Each wiki entry is annotated with `is_wiki_root` so the agent can
-    see which paths actually look like wikis (`.xu/config.yaml` +
-    `.xu/wiki.db`) and which were registered by mistake. A non-wiki
-    path on `--purge-wikis` will be REFUSED at execute time (3.1 fix).
-    """
+    """Build the plan: what would be / was removed."""
     execute = bool(getattr(args, "execute", False))
     resolved_mode = mode or ("execute" if execute else "dry-run")
     wikis = _list_wikis()
@@ -80,15 +71,28 @@ def _plan(args, *, mode: str | None = None) -> dict:
             "path": p,
             "is_wiki_root": is_wiki_root(p),
         })
+
+    keep_skill = bool(getattr(args, "keep_skill", False))
+    targets = getattr(args, "targets", None) or []
+    manifest = _read_manifest()
+    skill_deployments = manifest.get("deployments", []) if manifest else []
+    if targets:
+        skill_deployments = [d for d in skill_deployments if d.get("agent") in targets]
+
     plan = {
         "mode": resolved_mode,
         "execute": execute,
         "pip_uninstall": not bool(getattr(args, "keep_pip", False)),
-        "purge_wikis": False,  # wiki data is NEVER deleted
+        "purge_skill": not keep_skill,
+        "purge_wikis": False,
         "purge_config": not bool(getattr(args, "preserve_config", False)),
+        "targets": targets or [d["agent"] for d in skill_deployments],
+        "skill_deployments": skill_deployments,
         "wikis_found": annotated,
         "global_dir": str(GLOBAL_DIR),
         "global_dir_exists": GLOBAL_DIR.exists(),
+        "manifest_path": str(MANIFEST_PATH),
+        "manifest_exists": MANIFEST_PATH.exists(),
         "package": "xu-wiki",
         "installer": _detect_installer(),
     }
@@ -98,6 +102,15 @@ def _plan(args, *, mode: str | None = None) -> dict:
             {"name": w["name"], "path": w["path"]} for w in non_wiki
         ]
     return plan
+
+
+def _read_manifest() -> dict | None:
+    if not MANIFEST_PATH.exists():
+        return None
+    try:
+        return json.loads(MANIFEST_PATH.read_text())
+    except Exception:
+        return None
 
 
 def _purge_wikis(strict_wiki_check: bool = True) -> dict:
@@ -271,11 +284,117 @@ def _pip_uninstall() -> dict:
                 "error": str(e), "ok": False}
 
 
+def _pipx_uninstall() -> dict:
+    """Run `pipx uninstall xu-wiki`. Uses `python3 -m pipx` to ensure pipx is
+    on PATH regardless of how Python was invoked.
+    """
+    cmd = ["python3", "-m", "pipx", "uninstall", "xu-wiki"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return {
+            "command": " ".join(cmd),
+            "returncode": proc.returncode,
+            "stdout_tail": (proc.stdout or "")[-400:],
+            "stderr_tail": (proc.stderr or "")[-400:],
+            "ok": proc.returncode == 0,
+        }
+    except subprocess.TimeoutExpired:
+        return {"command": " ".join(cmd), "error": "timeout after 120s", "ok": False}
+    except Exception as e:
+        return {"command": " ".join(cmd), "error": str(e), "ok": False}
+
+
+def _purge_skill_bundles(targets: list[str] | None = None) -> dict:
+    """Remove skill bundle deployments from manifest and filesystem.
+
+    Reads manifest, removes entries for the given targets (or all if None),
+    and deletes the symlink/copy at each target's skill_path.
+    """
+    manifest = _read_manifest()
+    if not manifest:
+        return {"removed": [], "skipped": True,
+                "reason": "no manifest found; nothing to clean"}
+
+    deployments = manifest.get("deployments", [])
+    if targets:
+        deployments = [d for d in deployments if d.get("agent") in targets]
+
+    removed = []
+    failures = []
+    remaining = []
+
+    for d in deployments:
+        skill_path = d.get("skill_path")
+        if not skill_path:
+            failures.append({"agent": d.get("agent"), "error": "no skill_path in manifest"})
+            continue
+        p = Path(skill_path)
+        try:
+            if p.is_symlink():
+                p.unlink()
+            elif p.exists():
+                shutil.rmtree(p)
+            removed.append({"agent": d.get("agent"), "path": skill_path,
+                            "mode": d.get("mode", "unknown")})
+        except Exception as e:
+            failures.append({"agent": d.get("agent"), "path": skill_path, "error": str(e)})
+        remaining.append(d)
+
+    if remaining and not failures:
+        manifest["deployments"] = remaining
+        try:
+            MANIFEST_PATH.write_text(json.dumps(manifest, indent=2))
+        except Exception:
+            pass
+    elif not remaining or (not remaining and failures):
+        try:
+            MANIFEST_PATH.unlink()
+        except FileNotFoundError:
+            pass
+
+    return {"removed": removed, "failures": failures,
+            "skipped": False if removed else True}
+
+
+def _format_dry_run(plan: dict) -> str:
+    lines = ["Proposed uninstall plan:", f"  Program:  xu-wiki ({plan['installer']})"]
+    if plan["pip_uninstall"]:
+        if plan["installer"] == "pipx":
+            lines.append(f"           → pipx uninstall xu-wiki")
+        else:
+            lines.append(f"           → pip uninstall xu-wiki")
+    else:
+        lines.append(f"           (kept — --keep-pip)")
+
+    skill_deps = plan.get("skill_deployments", [])
+    if skill_deps:
+        lines.append("  Skill bundle:")
+        for d in skill_deps:
+            mode = d.get("mode", "unknown")
+            lt = d.get("link_target", "")
+            lines.append(f"    - {d['agent']:<8} {d['skill_path']}  ({mode}"
+                        + (f" → {lt}" if lt else "") + ")")
+    else:
+        lines.append("  Skill bundle: (none deployed)")
+
+    if plan["purge_config"]:
+        lines.append(f"  Config:     {plan['global_dir']}  (REMOVED)")
+    else:
+        lines.append(f"  Config:     {plan['global_dir']}  (preserved — --preserve-config)")
+
+    if plan.get("wikis_found"):
+        lines.append("  Wiki data:")
+        for w in plan["wikis_found"]:
+            lines.append(f"    - {w['name']:<8} {w['path']}  (preserved — wiki data NEVER deleted)")
+    return "\n".join(lines)
+
+
 def cmd_uninstall(args) -> dict:
     plan = _plan(args)
     execute = bool(getattr(args, "execute", False))
 
     if not execute:
+        print(_format_dry_run(plan))
         return success(
             plan,
             "dry-run — pass --execute to actually uninstall",
@@ -283,38 +402,38 @@ def cmd_uninstall(args) -> dict:
 
     # ----- execute branch -----
     result: dict = {"mode": "execute", "pip": None, "wikis": None,
-                    "config_dir": None, "installer": None}
+                    "config_dir": None, "skill_bundles": None, "installer": None}
 
     # 0) detect installer context. Already in plan via _plan(); re-read
     # here so the pipx guard is a single local reference.
     installer = plan["installer"]
 
-    # 1) wikis (only if --purge-wikis)
+    # 1) wikis (wiki data NEVER deleted regardless of any flag)
     if plan["purge_wikis"]:
         result["wikis"] = _purge_wikis()
     else:
         result["wikis"] = {"skipped": True,
                             "reason": "--purge-wikis not set; wiki data preserved"}
 
-    # 2) global dir (only if --purge-config)
+    # 2) skill bundles (only if --purge-skill, default: remove)
+    if plan["purge_skill"]:
+        targets = plan.get("targets")
+        result["skill_bundles"] = _purge_skill_bundles(targets if targets else None)
+    else:
+        result["skill_bundles"] = {"skipped": True,
+                                   "reason": "--keep-skill set; skill bundles preserved"}
+
+    # 3) global dir (only if --purge-config, default: remove)
     if plan["purge_config"]:
         result["config_dir"] = _purge_global_dir()
     else:
         result["config_dir"] = {"skipped": True,
-                                "reason": "--purge-config not set; ~/.xu/ preserved"}
+                                "reason": "--preserve-config set; ~/.xu/ preserved"}
 
-    # 3) pip uninstall (skip if --keep-pip)
+    # 4) pip/pipx uninstall (skip if --keep-pip)
     if plan["pip_uninstall"]:
-        # If we're inside a pipx-managed venv, refuse to call pip
-        # uninstall ourselves — that's pipx's job. We surface a
-        # `next_action` so the agent runs `pipx uninstall xu-wiki`
-        # separately. Wikis + ~/.xu/ cleanup proceeds normally.
         if installer == "pipx":
-            result["pip"] = {
-                "skipped": True,
-                "reason": "running inside pipx venv; pipx manages program body",
-                "next_action": "pipx uninstall xu-wiki",
-            }
+            result["pip"] = _pipx_uninstall()
         else:
             result["pip"] = _pip_uninstall()
     else:

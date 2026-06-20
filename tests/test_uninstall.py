@@ -543,22 +543,18 @@ def test_detect_installer_returns_unknown_for_system_python(monkeypatch):
     assert cmd_mod._detect_installer() == "unknown"
 
 
-def test_uninstall_in_pipx_skips_pip_uninstall(monkeypatch, xu_home):
-    """When installer == pipx, xu uninstall does NOT call pip uninstall
-    itself; it returns next_action for the agent to run `pipx uninstall`."""
+def test_uninstall_in_pipx_runs_pipx_uninstall(monkeypatch, xu_home):
+    """When installer == pipx, xu uninstall auto-runs pipx uninstall."""
     _seed_wiki(xu_home, "A")
     monkeypatch.setattr(cmd_mod, "_detect_installer", lambda: "pipx")
-    pip_called = []
-    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
-                        lambda: pip_called.append(True) or {"ok": True})
+    pipx_called = []
+    monkeypatch.setattr(cmd_mod, "_pipx_uninstall",
+                        lambda: (pipx_called.append(True) or
+                                 {"ok": True, "returncode": 0,
+                                  "stdout_tail": "", "stderr_tail": ""}))
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
                                     purge_wikis=False, purge_config=False))
-    # pip was NOT called
-    assert pip_called == []
-    # result.pip reports skipped + next_action
-    assert r["data"]["result"]["pip"]["skipped"] is True
-    assert r["data"]["result"]["pip"]["next_action"] == "pipx uninstall xu-wiki"
-    # plan.installer is reported
+    assert pipx_called != [], "pipx uninstall should have been called"
     assert r["data"]["plan"]["installer"] == "pipx"
 
 

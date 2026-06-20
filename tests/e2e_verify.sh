@@ -63,4 +63,22 @@ $XU delete-node --wiki demo --uid $FIRST 2>/dev/null | python3 -c "import sys,js
 $XU doctor --wiki demo 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print('  doctor recheck:',d['status'],'issues',d['data']['total_issues'])"
 
 echo
+echo "################ M6: deploy + selfcheck + uninstall ################"
+# Verify skill deploy works
+DEPLOY_OUT=$($XU deploy skill --target hermes 2>/dev/null)
+echo "  deploy skill: $(echo "$DEPLOY_OUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['status'])")
+
+# Verify selfcheck passes
+CHECK_OUT=$($XU selfcheck 2>/dev/null)
+echo "  selfcheck: $(echo "$CHECK_OUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['status'], '- extras:', d['data'].get('optional_extras',{}).get('ok')))"
+
+# Verify uninstall dry-run plan prints (no --execute)
+UNINST_DRY=$($XU uninstall --target hermes 2>/dev/null)
+echo "  uninstall dry-run: $(echo "$UNINST_DRY" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['status'], '- mode:', d['data']['plan']['mode'])")"
+
+# Verify uninstall with --keep-skill --keep-program --preserve-config (nothing removed)
+UNINST_KEEP=$($XU uninstall --target hermes --execute --keep-skill --keep-program --preserve-config 2>/dev/null)
+echo "  uninstall keep-all: $(echo "$UNINST_KEEP" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['status'])")"
+
+echo
 echo "ALL MILESTONES VERIFIED END-TO-END."
