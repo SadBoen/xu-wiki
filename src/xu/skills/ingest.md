@@ -79,7 +79,8 @@ xu report create --wiki <w> --title <t> --body <md> \
    `--file` must be absolute.
 3. **Phase 1 — `ingest-file`**: parses the file via the offline-first
    fallback chain (MinerU → markitdown → text → image, CONST-ING-1) and
-   writes a pending file. Returns the pending file path.
+   writes a temp file to the system temp directory. Returns the temp file path
+   in `data.pending`. No node is created at this stage.
 4. **取证副本 (PRIN-ING-6)**: after `ingest-commit` succeeds, the CLI copies
    the source file to `raws/<node_path>/<original_name>` (first page only).
    **This is mandatory for all document types** — `.md / .pdf / .docx / .pptx`
@@ -88,7 +89,10 @@ xu report create --wiki <w> --title <t> --body <md> \
    > **Exception**: `--native` mode has no source file (agent-synthesized text),
    > so `raw_path` is null by design. But `--native` still requires `--source`
    > (a reference path) for dedup. Use `--pending` for any external document.
-5. **(Optional) Review the pending file** with `read --wiki W --uid <pending-uid>`.
+5. **(Optional) Review the parsed content**: the Phase 1 temp file path is in
+   `data.pending` of the `ingest-file` response. Read that file directly to review
+   the parsed markdown before committing. This is where the Agent makes semantic
+   decisions (title / node_path / relations).
 6. **Phase 2 — `ingest-commit`**: promotes pending to L1. Required:
    `--title`. Optional: `--template`, `--node-path`, `--relations`,
    `--digest`, `--author`.
@@ -118,19 +122,20 @@ xu report create --wiki <w> --title <t> --body <md> \
    > ingestion** — that silently skips the raws/ forensic copy. Use the
     > `--pending` path (Phase 1 + Phase 2) for any external document.
 
-## Pending lifecycle (PRIN-ING-7)
+## Phase 1 temp file lifecycle (PRIN-ING-7)
 
-`nodes/pending/` is the Phase 1 staging area. Its lifecycle:
+Phase 1 writes to a **system temp file** (not `nodes/pending/`). The temp file
+path is returned in `data.pending` of the `ingest-file` response. Its lifecycle:
 
 | Event | What happens |
 |---|---|
-| `ingest-file` runs | Creates `nodes/pending/<name>-pre.md` |
-| `ingest-commit` succeeds | CLI deletes pending file immediately (PRIN-ING-7) |
-| `ingest-commit` fails | Pending file **retained** (debug / retry evidence) |
-| Any残留 | **Bug** — run `xu doctor-all --wiki W` to detect |
+| `ingest-file` runs | Creates temp file via `tempfile.gettempdir()` (e.g. `/tmp/<stem>-pre.md`) |
+| `ingest-commit` succeeds | CLI deletes temp file immediately (PRIN-ING-7) |
+| `ingest-commit` fails | Temp file **retained** for debug / retry |
+| Any leftover temp file after success | **Bug** — fix the error and re-run `ingest-commit` to trigger deletion |
 
-**An empty `nodes/pending/` directory after a successful ingest is correct.
-A non-empty directory is a signal that something went wrong mid-flow.**
+**There is no `nodes/pending/` directory.** The two-phase separation is achieved
+by the system temp file; no wiki-internal staging directory exists.
 
 ## Post-commit reflection (PRIN-CR-1, asymmetric bias)
 
@@ -177,8 +182,10 @@ opposite default type.
 
 ```bash
 xu ingest-file   --wiki research --file ~/Downloads/bert.pdf
-# → {"status": "success", "data": {"pending": ".../pending/2026-ABCD.json"}, ...}
+# → {"status": "success", "data": {"pending": "/tmp/bert-pre.md", "parser": "pdf", ...}, ...}
+# Agent reviews /tmp/bert-pre.md, then:
 xu ingest-commit --wiki research \
+  --pending /tmp/bert-pre.md \
   --title "BERT: Pre-training of Deep Bidirectional Transformers" \
   --template article --digest "Masked LM + NSP pre-training achieves SOTA on 11 NLP tasks."
 # → {"status": "success", "data": {"uid": "WXYZ5678", "title": "BERT: ..."}, ...}
@@ -212,9 +219,10 @@ xu ingest-album --wiki research \
   `raws/` is empty, PRIN-ING-6 was bypassed (usually from using `--native`
   on a document). `data.created[].raw_path` in the response would be null.
   Fix: delete the L1 and re-ingest via `--pending` path.
-- **`nodes/pending/` has leftover files** — pending files should not exist
-  after a successful `ingest-commit` (PRIN-ING-7). If they do, something
-  crashed mid-flow. Run `xu doctor-all --wiki W` to detect and fix.
+- **Phase 1 temp file not deleted after commit** — if `ingest-commit` succeeded
+   but the temp file at `data.pending` still exists on disk, that is a bug.
+   Re-running `ingest-commit` with the same temp file will reject as duplicate
+   (Level-2 dedup), but will confirm the file is deleted.
 
 ## Cross-references
 

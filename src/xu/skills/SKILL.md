@@ -56,7 +56,7 @@ slash command `/xu-wiki <verb>` enters a SOP, which orchestrates one or
 more CLI subcommands. The five SOPs cover the full wiki lifecycle:
 
 - **create** — `/xu-wiki create` — build a new empty wiki at a path
-  (raws/, nodes/{page,list,report,pending}/, .xu/).
+  (raws/, nodes/{page,list,report}/, .xu/).
 - **ingest** — `/xu-wiki ingest` — add content (PDF / DOCX / PPTX / MD /
   image / album) to a wiki as Node_Page (L1, immutable). Two-phase flow
   for prose / document content (`ingest-file` → `ingest-commit`,
@@ -267,13 +267,13 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     Full reflection checklist → `ingest.md §Post-commit reflection`
     and `query.md §Workflow` step 5.
 
-13. **Pending lifecycle (PRIN-ING-7)**: `nodes/pending/` is Phase 1 staging.
-   After `ingest-commit` **succeeds**, the CLI deletes the pending file immediately.
-   After `ingest-commit` **fails**, the pending file is retained (debug evidence).
-   An empty `nodes/pending/` directory after a successful ingest is correct.
-   **Any leftover pending file is a bug signal** — run `xu doctor-all --wiki W`
-   to detect. The agent should treat a non-empty pending directory as a stop
-   signal: do not continue ingesting until the leftover is investigated.
+13. **Phase 1 temp file lifecycle (PRIN-ING-7)**: Phase 1 writes to a system
+    temp file (not `nodes/pending/`). After `ingest-commit` **succeeds**, the CLI
+    deletes the temp file immediately. After `ingest-commit` **fails**, the temp
+    file is retained (debug evidence). **No `nodes/pending/` directory exists** —
+    the pending concept is gone; the two-phase separation is achieved via the
+    system temp file returned by `ingest-file`. Any leftover temp file after a
+    commit failure is a bug signal; fix the error and re-run `ingest-commit`.
 
 > **Ingest-specific rule** (PRIN-ING-13, the body-form decision tree) lives
 > in `ingest.md` since it only applies to the ingest SOP.
@@ -284,8 +284,9 @@ Before declaring an ingest done, run through this every time:
 
 1. **`raws/<node_path>/` has the source file copy?** (PRIN-ING-6) — if empty but
    `nodes/page/` has content, PRIN-ING-6 was bypassed. Stop and re-investigate.
-2. **`nodes/pending/` is empty?** (PRIN-ING-7) — any file here means a commit
-   did not finish cleanly. Run `xu doctor-all --wiki W` before continuing.
+2. **Phase 1 temp file was deleted on success?** (PRIN-ING-7) — if `ingest-commit`
+   succeeded but the temp file still exists, that is a bug. Re-run `ingest-commit`
+   (it will reject a duplicate commit) to confirm deletion.
 3. **`data.created[].raw_path` is non-null?** — if null, explains why raws/ is
    empty. Null is expected only for `--native` (agent-synthesized text).
 4. **`xu doctor-all --wiki W` returns zero issues?** — do not proceed to the next
@@ -300,7 +301,7 @@ agent does NOT need to (and must NOT) call any logging command explicitly:
 
 - Commands with a resolvable `--wiki` write to `<wiki>/.xu/audit.jsonl`
 - Commands without `--wiki` (or unresolvable) write to
-  `~/.local/share/xu-wiki/global_audit.jsonl`
+  `~/.xu-wiki/global_audit.jsonl`
 
 Each line carries `ts` / `command` / `wiki` / `status` / `elapsed_ms`;
 failures add `error_class`. This log exists for SOP / CLI health diagnosis
@@ -333,8 +334,9 @@ act on its own (PRIN-QRY-1).
 xu create --name research --path /abs/path/to/wiki
 
 # 2. ingest L1 — two phases (PRIN-ING-1); verify raws/ has copy after (PRIN-ING-6)
-xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → pending
-xu ingest-commit --wiki research --pending <pending-path> --title "BERT" --template article # → L1 entry
+xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → {"data":{"pending":"/tmp/...-pre.md",...}}
+# Agent reviews the temp file content, then:
+xu ingest-commit --wiki research --pending /tmp/...-pre.md --title "BERT" --template article # → L1 entry
 
 # 3. query (Agent grades the keywords into core vs expansion)
 xu query --wiki research --core "transformer,attention" \
