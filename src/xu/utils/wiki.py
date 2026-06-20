@@ -34,10 +34,6 @@ class WikiContext:
         return self.root / "nodes" / "report"
 
     @property
-    def pending_dir(self) -> Path:
-        return self.root / "nodes" / "pending"
-
-    @property
     def xu_dir(self) -> Path:
         return self.root / ".xu"
 

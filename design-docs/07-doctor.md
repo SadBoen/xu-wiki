@@ -54,14 +54,10 @@ LLM 重写时不要让 doctor --fix 凭「我觉得该删」删东西——必�
 
 | 子命令 | 检查 |
 |---|---|
-| `doctor`（总入口） | 4 类快速检查（missing_raw / orphan_file / pending_file / stale_pending） |
+| `doctor`（总入口） | 快速检查（fields / files / relations / l1-immutable / report-evidence / idf） |
 | `doctor-fields` | frontmatter 必填字段、类型、格式 |
 | `doctor-files` | 文件系统与 DB 一致性 |
 | `doctor-relations` | 关系完整性（含 50 条上限 + 无悬挂边） |
-| `doctor-parser` | parse_tracker 状态 |
-| `doctor-content-type` | 〈形态字段〉与 body 格式是否匹配 |
-| `doctor-tree` | 节点路径总览 |
-| `doctor-graph` | 图结构分析（含 50 条上限 / LRU 链表健康度） |
 | `doctor-l1-immutable` | L1 Page Markdown 未被外部修改 + patches v1 初值存在 |
 | `doctor-report-evidence` | L3 Report 证据链完整（无悬挂引用） |
 | `doctor-idf` | IDF 词频表与 Page 实际一致 |

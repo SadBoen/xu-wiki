@@ -55,7 +55,6 @@ def cmd_doctor(args) -> dict:
             "doctor-l1-immutable": _check_l1_immutable,
             "doctor-report-evidence": _check_report_evidence,
             "doctor-idf": _check_idf,
-            "doctor-pending": _check_pending,
         }
         if kind in ("doctor", "doctor-all"):
             report = {fn_name: fn(ctx, conn, fix) for fn_name, fn in checks.items()}
@@ -244,58 +243,6 @@ def _check_idf(ctx, conn, fix) -> dict:
     return {"issue_count": len(issues), "issues": issues[:50], "fixed": fixed,
             "total_nouns": len(rows)}
 
-
-def _parse_pending_meta(text: str) -> dict:
-    """Extract key=value from <!-- xu-pending ... --> header."""
-    meta = {}
-    if text.startswith("<!-- xu-pending"):
-        end = text.find("-->")
-        if end != -1:
-            header = text[len("<!-- xu-pending"):end].strip()
-            for tok in header.split():
-                if "=" in tok:
-                    k, v = tok.split("=", 1)
-                    meta[k] = v
-    return meta
-
-
-def _check_pending(ctx, conn, fix) -> dict:
-    """Pending leftover: files in nodes/pending/ should not exist after successful commit (PRIN-ING-7).
-
-    Note: Phase 1 now uses system temp directory (tempfile.gettempdir()), not nodes/pending/.
-    This check covers legacy residual files from the old implementation.
-    """
-    issues = []
-    fixed = []
-    pending_dir = ctx.pending_dir
-    if not pending_dir.is_dir():
-        return {"issue_count": 0, "issues": [], "fixed": []}
-    for pf in pending_dir.glob("*-pre.md"):
-        content = pf.read_text(encoding="utf-8", errors="replace")
-        meta = _parse_pending_meta(content)
-        source_hash = meta.get("source_hash")
-        source_name = meta.get("source", pf.name)
-        has_l1 = False
-        if source_hash:
-            row = conn.execute(
-                "SELECT uid FROM nodes WHERE source_hash=? LIMIT 1", (source_hash,)
-            ).fetchone()
-            has_l1 = row is not None
-        status = "leftover" if has_l1 else "orphan"
-        fixable = True
-        issues.append({
-            "pending_file": str(pf.relative_to(ctx.root)),
-            "source": source_name,
-            "source_hash": source_hash,
-            "status": status,
-            "problem": f"pending file not cleaned after commit ({status})",
-            "layer": "cross",
-            "fixable": fixable,
-        })
-        if fix:
-            pf.unlink()
-            fixed.append({"file": str(pf.relative_to(ctx.root)), "action": "deleted"})
-    return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
 def cmd_delete_node(args) -> dict:
