@@ -349,8 +349,8 @@ UID 永不重用（即使节点被硬删，UID 也不回收给新节点）。
 ├── raws/        # 原始文件（与 nodes/page 按 node_path 镜像对应）
 ├── nodes/       # 节点正文（Markdown + YAML Frontmatter）
 │   ├── page/    # Node_Page（按 node_path 分区）
-│   ├── list/    # Node_List（DB-only 或简化 .md）
-│   └── report/  # Node_Report（DB-only 或简化 .md）
+│   ├── list/    # Node_List（.md: frontmatter + 对比表）
+│   └── report/  # Node_Report（.md: frontmatter + 正文）
 │   └── pending/ # ingest 中间态
 └── .xu/
     ├── 主 SQLite DB           # SQLite（JSONB 支持）
@@ -392,11 +392,13 @@ nodes/ 与 raws/ 按同一 node_path 镜像对应。Page 移位时两侧联动�
 
 ## 八、设计取舍（DESIGN）
 
-### [DESIGN-ARCH-1] L2/L3 可不写 .md
+### [DESIGN-ARCH-1] L2/L3 只存 .md，不存 SQLite
 
-Node_List 与 Node_Report 主要是**逻辑视图**——可以 DB-only（只在 SQLite 有记录，不生成 .md），也可以生成简化的 .md 用于人工查看。
+Node_List 与 Node_Report 是**逻辑视图**，统一以 .md 文件存储，不写入 SQLite。
+- L2: `nodes/list/<uid>.md`，frontmatter 含 `members[]`（uid/title/layer/position），body 含对比表格
+- L3: `nodes/report/<uid>.md`，frontmatter 含 `references[]`（uid/title/layer/note），body 是报告正文
 
-**推荐**：L1 必写 .md（不可变 + 可溯源）；L2 / L3 DB-only，必要时按需导出。
+L1 必写 .md（不可变 + 可溯源）；L2 / L3 同样写 .md，保证所有节点统一文件系统访问。
 
 ### [DESIGN-ARCH-2] L1 切分粒度 = 300 行（正文,按余数）
 
@@ -541,7 +543,7 @@ Node_Report 必须能追溯到 L1 / L2 的证据——没有证据链的 Report 
 | 动作 | 命令族 | 备注 |
 |---|---|---|
 | **建 Page** | `ingest-commit` | L1 不可变，落地后写 patches 表初值 |
-| **建 List** | `list create` | L2 DB-only，可选导出 |
+| **建 List** | `list create` | L2 .md-only（nodes/list/<uid>.md） |
 | **建 Report** | `report create` | L3 必须引用 L1 / L2 证据链 |
 | **读 Page** | `read --uid` | 叠加 patches 还原当前视图 |
 | **读 List** | `list show` | 横向对比表 |

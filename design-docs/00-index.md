@@ -254,8 +254,8 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 ├── raws/            # 原始文件（与 nodes/page 按 node_path 镜像）
 ├── nodes/
 │   ├── page/        # Node_Page（按 node_path 分区）
-│   ├── list/        # Node_List（DB-only）
-│   ├── report/      # Node_Report（DB-only）
+│   ├── list/        # Node_List（.md: frontmatter + 对比表）
+│   ├── report/      # Node_Report（.md: frontmatter + 正文）
 │   └── pending/     # ingest 暂存
 └── .xu/
     ├── 主 SQLite DB           # SQLite（JSONB）
