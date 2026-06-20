@@ -1,17 +1,16 @@
-"""L2 Node_List + L3 Node_Report — DB-only upper layers (01-wiki-architecture.md).
+"""L2 Node_List + L3 Node_Report — file-based upper layers (01-wiki-architecture.md).
 
-L2 List: comparison/aggregation over existing nodes. DB-only (no .md).
+L2 List: comparison/aggregation over existing nodes. Stored as .md in nodes/list/.
 L3 Report: reasoning + conclusion + MANDATORY evidence chain (BAN-ARCH-5).
 A Report with zero references is rejected (CONST-DOC-3).
-Both are DB-only: rel_md_path stays NULL; body lives in `digest`/attrs (PRIN-ARCH-4/5).
+Both are .md-only: body + frontmatter in nodes/list/|nodes/report/ (DESIGN-ARCH-1).
 """
 from __future__ import annotations
 
-import json
-
+from ..utils import frontmatter as fm
 from ..utils.response import error, success, warning
-from ..utils.paths import gen_uid, now_ts, safe_node_path
-from ..utils.wiki import resolve_wiki
+from ..utils.paths import atomic_write_text, gen_uid, now_ts
+from ..utils.wiki import find_node_md, resolve_wiki
 
 
 def _split_uids(s: str) -> list[str]:
@@ -33,74 +32,76 @@ def _list_create(args) -> dict:
     members = _split_uids(args.members)
     if not members:
         return error("a List needs at least one member (--members)", "EmptyList")
-    try:
-        node_path = safe_node_path(args.node_path)
-    except ValueError as e:
-        return error(str(e), "BadNodePath")
 
-    conn = ctx.connect()
-    try:
-        missing = [m for m in members
-                   if not conn.execute("SELECT 1 FROM nodes WHERE uid=?", (m,)).fetchone()]
-        if missing:
-            return error(f"member node(s) not found: {missing}", "MemberNotFound",
-                         data={"missing": missing})
+    member_meta = []
+    missing = []
+    for pos, m_uid in enumerate(members):
+        found = find_node_md(ctx, m_uid)
+        if not found:
+            missing.append(m_uid)
+        else:
+            mf, _ = found
+            member_meta.append({
+                "uid": m_uid,
+                "position": pos,
+                "title": mf.get("title", ""),
+                "layer": mf.get("layer", ""),
+            })
+    if missing:
+        return error(f"member node(s) not found: {missing}", "MemberNotFound",
+                     data={"missing": missing})
 
-        uid = gen_uid()
-        ts = now_ts()
-        attrs = json.dumps({"dimension": args.dimension}, ensure_ascii=False)
-        conn.execute(
-            "INSERT INTO nodes(uid, layer, template, title, node_path, slug, "
-            "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
-            "attrs, created_at, updated_at) "
-            "VALUES(?,?,?,?,?,?,NULL,NULL,NULL,NULL,1,?,?,?,?)",
-            (uid, "List", "table", args.title, node_path,
-             None, args.dimension, attrs, ts, ts),
-        )
-        for pos, m in enumerate(members):
-            conn.execute(
-                "INSERT INTO list_members(list_uid, member_uid, position) VALUES(?,?,?)",
-                (uid, m, pos),
-            )
-        conn.commit()
-        return success(
-            {"uid": uid, "layer": "List", "members": members, "dimension": args.dimension},
-            f"created Node_List {uid} with {len(members)} member(s) (DB-only)",
-            hints=["list show <uid> to view the comparison"],
-        )
-    except Exception as e:
-        conn.rollback()
-        return error(f"list create failed, rolled back: {e}", type(e).__name__)
-    finally:
-        conn.close()
+    uid = gen_uid()
+    ts = now_ts()
+
+    frontmatter = {
+        "uid": uid,
+        "title": args.title,
+        "layer": "List",
+        "dimension": args.dimension,
+        "members": member_meta,
+        "created_at": ts,
+        "updated_at": ts,
+    }
+
+    md_path = ctx.list_dir / f"{uid}.md"
+    table_rows = "".join(
+        f"| {i+1} | {m['uid']} | {m['title']} | {m['layer']} |\n"
+        for i, m in enumerate(member_meta)
+    )
+    body = f"# {args.title}\n\n| # | UID | Title | Layer |\n|---|-----|-------|-------|\n{table_rows}"
+    atomic_write_text(md_path, fm.render(frontmatter, body))
+
+    return success(
+        {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_meta],
+         "dimension": args.dimension},
+        f"created Node_List {uid} with {len(member_meta)} member(s)",
+        hints=[f"nodes/list/{uid}.md"],
+    )
 
 
 def _list_show(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
-    conn = ctx.connect()
+
+    md_path = ctx.list_dir / f"{args.uid}.md"
+    if not md_path.exists():
+        return error(f"List not found: {args.uid}", "ListNotFound")
+
     try:
-        row = conn.execute("SELECT * FROM nodes WHERE uid=? AND layer='List'",
-                           (args.uid,)).fetchone()
-        if not row:
-            return error(f"List not found: {args.uid}", "ListNotFound")
-        node = dict(row)
-        members = conn.execute(
-            "SELECT lm.member_uid, lm.position, n.title, n.layer, n.digest "
-            "FROM list_members lm LEFT JOIN nodes n ON n.uid = lm.member_uid "
-            "WHERE lm.list_uid=? ORDER BY lm.position",
-            (args.uid,),
-        ).fetchall()
-        attrs = json.loads(node.get("attrs") or "{}")
-        return success(
-            {"uid": node["uid"], "title": node["title"],
-             "dimension": attrs.get("dimension", node.get("digest")),
-             "members": [dict(m) for m in members], "member_count": len(members)},
-            f"List {args.uid}: {len(members)} member(s)",
-        )
-    finally:
-        conn.close()
+        text = md_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return error(f"failed to read List file: {e}", "ReadError")
+
+    frontmatter, _ = fm.parse(text)
+    members = frontmatter.get("members", [])
+    return success(
+        {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),
+         "dimension": frontmatter.get("dimension", ""),
+         "members": members, "member_count": len(members)},
+        f"List {args.uid}: {len(members)} member(s)",
+    )
 
 
 def cmd_report(args) -> dict:
@@ -122,74 +123,70 @@ def _report_create(args) -> dict:
             "EmptyEvidence",
             hints=["L3 conclusions require an evidence chain; no naked reports"],
         )
-    try:
-        node_path = safe_node_path(args.node_path)
-    except ValueError as e:
-        return error(str(e), "BadNodePath")
 
-    conn = ctx.connect()
-    try:
-        missing = [r for r in refs
-                   if not conn.execute("SELECT 1 FROM nodes WHERE uid=?", (r,)).fetchone()]
-        if missing:
-            return error(f"evidence node(s) not found: {missing}", "EvidenceNotFound",
-                         data={"missing": missing})
+    ref_meta = []
+    missing = []
+    for r_uid in refs:
+        found = find_node_md(ctx, r_uid)
+        if not found:
+            missing.append(r_uid)
+        else:
+            rf, _ = found
+            ref_meta.append({
+                "uid": r_uid,
+                "note": "",
+                "title": rf.get("title", ""),
+                "layer": rf.get("layer", ""),
+            })
+    if missing:
+        return error(f"evidence node(s) not found: {missing}", "EvidenceNotFound",
+                     data={"missing": missing})
 
-        uid = gen_uid()
-        ts = now_ts()
-        attrs = json.dumps({"body": args.body}, ensure_ascii=False)
-        conn.execute(
-            "INSERT INTO nodes(uid, layer, template, title, node_path, slug, "
-            "rel_md_path, raw_path, content_hash, source_hash, active, digest, "
-            "attrs, created_at, updated_at) "
-            "VALUES(?,?,?,?,?,NULL,NULL,NULL,NULL,NULL,1,?,?,?,?)",
-            (uid, "Report", "article", args.title, node_path,
-             args.body[:200], attrs, ts, ts),
-        )
-        for r in refs:
-            conn.execute(
-                "INSERT INTO evidence(report_uid, ref_uid, note) VALUES(?,?,'')",
-                (uid, r),
-            )
-        conn.commit()
-        return success(
-            {"uid": uid, "layer": "Report", "references": refs, "ref_count": len(refs)},
-            f"created Node_Report {uid} with {len(refs)} evidence link(s) (DB-only)",
-            hints=["report show <uid> to view conclusion + evidence chain"],
-        )
-    except Exception as e:
-        conn.rollback()
-        return error(f"report create failed, rolled back: {e}", type(e).__name__)
-    finally:
-        conn.close()
+    uid = gen_uid()
+    ts = now_ts()
+
+    frontmatter = {
+        "uid": uid,
+        "title": args.title,
+        "layer": "Report",
+        "references": ref_meta,
+        "created_at": ts,
+        "updated_at": ts,
+    }
+
+    md_path = ctx.report_dir / f"{uid}.md"
+    atomic_write_text(md_path, fm.render(frontmatter, args.body or ""))
+
+    return success(
+        {"uid": uid, "layer": "Report", "references": [r["uid"] for r in ref_meta],
+         "ref_count": len(ref_meta)},
+        f"created Node_Report {uid} with {len(ref_meta)} evidence link(s)",
+        hints=[f"nodes/report/{uid}.md"],
+    )
 
 
 def _report_show(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
-    conn = ctx.connect()
+
+    md_path = ctx.report_dir / f"{args.uid}.md"
+    if not md_path.exists():
+        return error(f"Report not found: {args.uid}", "ReportNotFound")
+
     try:
-        row = conn.execute("SELECT * FROM nodes WHERE uid=? AND layer='Report'",
-                           (args.uid,)).fetchone()
-        if not row:
-            return error(f"Report not found: {args.uid}", "ReportNotFound")
-        node = dict(row)
-        evidence = conn.execute(
-            "SELECT e.ref_uid, e.note, n.title, n.layer FROM evidence e "
-            "LEFT JOIN nodes n ON n.uid = e.ref_uid WHERE e.report_uid=?",
-            (args.uid,),
-        ).fetchall()
-        attrs = json.loads(node.get("attrs") or "{}")
-        # warn if any evidence dangles (M5 doctor also catches this)
-        dangling = [dict(e)["ref_uid"] for e in evidence if e["title"] is None]
-        data = {"uid": node["uid"], "title": node["title"],
-                "body": attrs.get("body", ""),
-                "evidence": [dict(e) for e in evidence],
-                "evidence_count": len(evidence)}
-        if dangling:
-            return warning(data, f"Report shown; {len(dangling)} dangling evidence ref(s)",
-                           hints=[f"run doctor-report-evidence; dangling: {dangling}"])
-        return success(data, f"Report {args.uid}: {len(evidence)} evidence link(s)")
-    finally:
-        conn.close()
+        text = md_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return error(f"failed to read Report file: {e}", "ReadError")
+
+    frontmatter, body = fm.parse(text)
+    references = frontmatter.get("references", [])
+    dangling = [r["uid"] for r in references if not find_node_md(ctx, r["uid"])]
+    data = {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),
+            "body": body,
+            "references": references,
+            "evidence_count": len(references)}
+    if dangling:
+        return warning(data, f"Report shown; {len(dangling)} dangling evidence ref(s)",
+                       hints=[f"run doctor-report-evidence; dangling: {dangling}"])
+    return success(data, f"Report {args.uid}: {len(references)} evidence link(s)")

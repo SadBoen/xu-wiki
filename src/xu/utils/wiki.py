@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import db
+from . import frontmatter as _fm
 from .config import load_wiki_config, registry_find
 
 
@@ -77,4 +78,20 @@ def resolve_wiki(name_or_path: str) -> WikiContext | None:
     p = Path(name_or_path).expanduser()
     if is_wiki_root(p):
         return WikiContext(p)
+    return None
+
+
+def find_node_md(ctx: WikiContext, uid: str) -> tuple[dict, str] | None:
+    """Find a node .md file by UID via fs walk. Returns (frontmatter, body) or None."""
+    nodes_root = ctx.nodes_dir
+    if not nodes_root.is_dir():
+        return None
+    for p in nodes_root.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, body = _fm.parse(text)
+            if fm_dict.get("uid") == uid:
+                return fm_dict, body
+        except Exception:
+            continue
     return None
