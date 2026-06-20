@@ -27,6 +27,7 @@ from typing import Any
 from ..ingest.splitter import extract_nouns
 from ..parsers.image_meta import read_image_meta
 from ..utils import frontmatter as fm
+from ..utils.paths import safe_slug, safe_node_path
 from ..utils.db import idf_increment
 from ..utils.constants import (
     FM_ACTIVE,
@@ -158,7 +159,10 @@ def cmd_ingest_album(args) -> dict:
     vision = bool(args.vision)
 
     try:
-        node_path = safe_node_path(args.node_path)
+        if args.node_path:
+            node_path = safe_node_path(args.node_path)
+        else:
+            node_path = safe_slug(args.title)
     except ValueError as e:
         return error(str(e), "BadNodePath")
 
