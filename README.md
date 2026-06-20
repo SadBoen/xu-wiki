@@ -47,6 +47,26 @@ when the list is full.
 
 ## Install
 
+> **PEP 668 heads-up (READ THIS FIRST if you are on Debian 12+,
+> Ubuntu 23.04+, Fedora, or Homebrew Python):** system-managed Pythons
+> ship with PEP 668 enabled and reject bare `pip install`. You MUST
+> install into a virtual environment, otherwise `pip install` will fail
+> with `error: externally-managed-environment`. The recommended flow:
+>
+> ```bash
+> python3 -m venv .venv
+> .venv/bin/pip install --upgrade pip
+> .venv/bin/pip install "xu-wiki[parse,nlp,vision]"
+> .venv/bin/xu --help   # verify CLI works
+> ```
+>
+> If `python3 -m venv` complains about `ensurepip`, install
+> `python3-venv` first (`sudo apt install -y python3-venv` on Debian/
+> Ubuntu, or `sudo dnf install python3-virtualenv` on Fedora).
+
+Once you're in a venv (or on a non-PEP-668 system like macOS system
+Python before 3.12, or a custom-built Python):
+
 ```bash
 pip install "xu-wiki[parse,nlp,vision]"
 ```
@@ -62,6 +82,12 @@ management, no symlink config. Pip handles all of it.
 
 Set `XU_HOME` to relocate the global config / registry directory (defaults to
 `~/.xu`).
+
+**Verify with `xu selfcheck`** (after install, before doing anything
+else): it confirms the CLI is on PATH, the skill bundle is readable,
+`~/.xu/` is writable, and the three optional extras are present. See
+[§Agent skill deployment](#agent-skill-deployment) below for the full
+post-install checklist.
 
 ## Uninstall (run by the agent via `/xu-wiki config` → `xu uninstall`)
 
@@ -88,7 +114,23 @@ The agent's three-step flow:
 ```bash
 # 1. dry-run — always the first call
 xu uninstall
-# → {status: success, data: {mode: "dry-run", plan: {wikis_found, ...}}}
+# → {
+#     "status": "success",
+#     "data": {
+#       "mode": "dry-run",
+#       "execute": false,
+#       "pip_uninstall": true,
+#       "purge_wikis": false,
+#       "purge_config": false,
+#       "wikis_found": [{"name": "research", "path": "/abs/path/to/research"}, ...],
+#       "global_dir": "/home/user/.xu",
+#       "global_dir_exists": true,
+#       "package": "xu-wiki"
+#     },
+#     "message": "dry-run — pass --execute to actually uninstall"
+#   }
+# NB: in dry-run, `data` IS the plan (no `plan` nesting). After --execute,
+# the shape changes to `data = {"plan": <plan>, "result": {pip, wikis, config_dir}}`.
 
 # 2. agent shows the user what's about to happen, user picks a scope:
 #    (a) pip only                  → xu uninstall --execute
@@ -142,6 +184,78 @@ v4 Precision Extract API (`/api/v4/file-urls/batch` →
 `/api/v4/extract-results/batch/{batch_id}` → ZIP → `full.md`). Any failure
 (network error, 401, non-zero `code`, ZIP without `full.md`) returns `""` and
 the next parser in the chain takes over.
+
+> **Optional extras — what happens if you skip them.** `pip install
+> xu-wiki` (no extras) only installs `PyYAML`. The `parse` / `nlp` /
+> `vision` extras add `markitdown[all]` (PDF/DOCX/PPTX parsing),
+> `jieba` (Chinese noun extraction for IDF), and `Pillow` (image EXIF
+> for albums). **If you skip them:**
+> - `parse` → `xu ingest-file --file paper.pdf` will fall back to
+>   plain-text extraction (most PDFs return "" → ingest refused).
+> - `nlp` → Chinese IDF degrades to character n-gram (less accurate).
+> - `vision` → album EXIF reads return "—" (no GPS / resolution).
+>
+> Recommended: install all three extras on first install. You can
+> always `pip install --upgrade "xu-wiki[parse,nlp,vision]"` later.
+
+## Agent skill deployment
+
+**`pip install` does NOT deploy the skill to your agent.** The CLI
+writes 8 skill files to `<site-packages>/xu/skills/` (a `package_data`
+directory). Each agent platform has its own skill discovery
+mechanism — the agent's job is to copy these files into its own
+discovery directory. `xu` provides two introspection commands so the
+agent can find the source:
+
+```bash
+# Where are the skill files?
+xu skills path
+# → {"status": "success", "data": {"skill_name": "xu-wiki",
+#     "source_dir": "/abs/path/to/site-packages/xu/skills",
+#     "file_count": 8}, ...}
+
+# What are the 8 files?
+xu skills list
+# → {"status": "success", "data": {"skill_name": "xu-wiki",
+#     "source_dir": "...", "files": ["SKILL.md", "create.md", ...,
+#     "reference/error-catalog.md", "reference/pitfalls.md"]}, ...}
+```
+
+**Important:** `xu skills path` returns the 4-key JSON envelope — the
+actual path is at `data.source_dir`. An agent that tries `cp $(xu
+skills path) ~/.hermes/skills/` will copy the JSON string instead of
+the directory. Always parse `data.source_dir` first.
+
+### Agent compatibility matrix
+
+| Agent | Skill discovery dir | Install flow |
+|---|---|---|
+| **Hermes** | `~/.hermes/skills/xu-wiki/` | `mkdir -p` + `cp` 8 files; or use Hermes's own `skills install` if it has one |
+| **Trae IDE** | `<project>/.trae/skills/xu-wiki/` (project-local) | `mkdir -p` + `cp` 8 files; reload Trae's skill index |
+| **Claude Desktop** | `~/Library/Application Support/Claude/skills/xu-wiki/` (macOS); platform-dependent elsewhere | Same `mkdir` + `cp` flow; restart Claude Desktop after |
+| **Cursor** | `<project>/.cursor/skills/xu-wiki/` (project-local) | Same flow; reload Cursor's skill index |
+| **Other (Codex, Aider, …)** | Agent-specific — consult your agent's docs | Same `mkdir` + `cp`; the 8 files are platform-agnostic markdown |
+
+### Copy template (bash, agent-callable)
+
+```bash
+# 1. Parse the source dir out of the JSON envelope.
+SRC=$(xu skills path | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['source_dir'])")
+
+# 2. Parse the file list out of the JSON envelope.
+mapfile -t FILES < <(xu skills list | python3 -c "import sys,json; print('\n'.join(json.load(sys.stdin)['data']['files']))")
+
+# 3. Pick the right destination per agent (Hermes shown; swap per the table above).
+DEST="$HOME/.hermes/skills/xu-wiki"
+mkdir -p "$DEST"
+cp "${SRC}/${FILES[@]}" "$DEST/"
+
+# 4. Verify
+ls "$DEST"   # should list 8 files
+```
+
+**After deploying the skill**, restart the agent (or reload its skill
+index) so `/xu-wiki <verb>` is recognised.
 
 ## Quick start
 

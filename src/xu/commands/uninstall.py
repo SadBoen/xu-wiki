@@ -42,6 +42,7 @@ from pathlib import Path
 
 from ..utils.config import GLOBAL_DIR, REGISTRY_FILE, load_registry, save_registry
 from ..utils.response import error, success, warning
+from ..utils.wiki import is_wiki_root
 
 
 def _list_wikis() -> list[tuple[str, str]]:
@@ -56,25 +57,52 @@ def _list_wikis() -> list[tuple[str, str]]:
 
 
 def _plan(args) -> dict:
-    """Build the dry-run plan: what would be removed and what stays."""
+    """Build the dry-run plan: what would be removed and what stays.
+
+    Each wiki entry is annotated with `is_wiki_root` so the agent can
+    see which paths actually look like wikis (`.xu/config.yaml` +
+    `.xu/wiki.db`) and which were registered by mistake. A non-wiki
+    path on `--purge-wikis` will be REFUSED at execute time (3.1 fix).
+    """
     wikis = _list_wikis()
+    annotated = []
+    for name, p in wikis:
+        annotated.append({
+            "name": name,
+            "path": p,
+            "is_wiki_root": is_wiki_root(p),
+        })
     plan = {
         "mode": "dry-run",
         "execute": bool(getattr(args, "execute", False)),
         "pip_uninstall": not bool(getattr(args, "keep_pip", False)),
         "purge_wikis": bool(getattr(args, "purge_wikis", False)),
         "purge_config": bool(getattr(args, "purge_config", False)),
-        "wikis_found": [{"name": n, "path": p} for n, p in wikis],
+        "wikis_found": annotated,
         "global_dir": str(GLOBAL_DIR),
         "global_dir_exists": GLOBAL_DIR.exists(),
         "package": "xu-wiki",
     }
+    non_wiki = [w for w in annotated if not w["is_wiki_root"]]
+    if non_wiki:
+        plan["non_wiki_paths_detected"] = [
+            {"name": w["name"], "path": w["path"]} for w in non_wiki
+        ]
     return plan
 
 
-def _purge_wikis() -> dict:
-    """Actually remove every registered wiki dir + drop them from registry."""
+def _purge_wikis(strict_wiki_check: bool = True) -> dict:
+    """Actually remove every registered wiki dir + drop them from registry.
+
+    `strict_wiki_check` (default True): refuse to rmtree any path that
+    doesn't look like a wiki (`.xu/config.yaml` + `.xu/wiki.db`).
+    Such entries are still dropped from the registry, but the directory
+    is left intact and reported under `refused`. This prevents the
+    "I registered ~/projects/notebook as a wiki and uninstall nuked
+    my whole project" failure mode (3.1).
+    """
     removed = []
+    refused = []
     failures = []
     reg = load_registry()
     for name in list(reg.get("wikis", {}).keys()):
@@ -82,20 +110,32 @@ def _purge_wikis() -> dict:
         p = entry.get("path")
         if not p:
             failures.append({"name": name, "error": "no path in registry entry"})
+            reg["wikis"].pop(name, None)
             continue
         wiki_path = Path(p)
         if wiki_path.exists():
+            if strict_wiki_check and not is_wiki_root(wiki_path):
+                refused.append({
+                    "name": name,
+                    "path": p,
+                    "reason": "path is not a wiki (missing .xu/config.yaml or .xu/wiki.db); "
+                              "leaving directory intact",
+                })
+                reg["wikis"].pop(name, None)
+                continue
             try:
                 shutil.rmtree(wiki_path)
                 removed.append({"name": name, "path": p})
             except Exception as e:
                 failures.append({"name": name, "path": p, "error": str(e)})
+                # keep registry entry on failure (might be transient)
+                continue
         else:
             # Path already gone — still drop from registry
             removed.append({"name": name, "path": p, "note": "path did not exist"})
         reg["wikis"].pop(name, None)
     save_registry(reg)
-    return {"removed": removed, "failures": failures}
+    return {"removed": removed, "refused": refused, "failures": failures}
 
 
 def _purge_global_dir() -> dict:
@@ -165,19 +205,21 @@ def cmd_uninstall(args) -> dict:
     # Compose status: warning if pip failed (data on disk may still exist);
     # error only if EVERYTHING failed.
     pip_ok = (result["pip"] or {}).get("ok", True)
-    wiki_ok = not (result["wikis"] or {}).get("failures")
-    cfg_ok = not (result["config_dir"] or {}).get("error")
-    all_ok = pip_ok and wiki_ok and cfg_ok
+    wiki_failures = (result["wikis"] or {}).get("failures") or []
+    wiki_refused = (result["wikis"] or {}).get("refused") or []
+    cfg_err = (result["config_dir"] or {}).get("error")
+    all_ok = pip_ok and not wiki_failures and not wiki_refused and not cfg_err
+    partial = pip_ok and (wiki_failures or wiki_refused or cfg_err)
 
     if all_ok:
         return success(
             {"plan": plan, "result": result},
             "xu-wiki uninstalled",
         )
-    if pip_ok:
+    if partial:
         return warning(
             {"plan": plan, "result": result},
-            "uninstall partially completed; check the per-step error fields",
+            "uninstall partially completed; check the per-step error/refused fields",
         )
     return error(
         "uninstall failed; see result.pip for details",

@@ -201,6 +201,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="do NOT call pip uninstall (test / dev escape hatch)")
     sp.set_defaults(func="uninstall")
 
+    # ---- M8: post-install health check (坑 6 fix) ----
+    sub.add_parser("selfcheck",
+                   help="verify xu-wiki install (CLI / Python / skills / ~/.xu/ / extras); "
+                        "agent-callable, returns 4-key JSON").set_defaults(func="selfcheck")
+
     return p
 
 
@@ -279,6 +284,9 @@ def _dispatch(args) -> dict:
     if func == "uninstall":
         from .commands.uninstall import cmd_uninstall
         return cmd_uninstall(args)
+    if func == "selfcheck":
+        from .commands.selfcheck import cmd_selfcheck
+        return cmd_selfcheck(args)
     return error(f"unknown command function: {func}", "UnknownCommand")
 
 

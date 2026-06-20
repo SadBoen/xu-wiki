@@ -227,6 +227,36 @@ def test_config_path(xu_home):
     assert r["data"]["global_dir"] == str(xu_home)
 
 
+# ----------------------------------------------------------------------
+# 3.4 fix: save_global_config auto-chmods 600 when a secret is present.
+# ----------------------------------------------------------------------
+
+def test_save_global_config_chmods_600_when_secret_present(xu_home, monkeypatch):
+    """When mineru.api_key is set, the saved file should be chmod 600."""
+    monkeypatch.setenv("MINERU_API_KEY", "sk-test-1234567890abcdef")
+    cmd_mod.cmd_config_set_mineru_key(_args())
+    mode = oct(cfg_mod.GLOBAL_CONFIG.stat().st_mode & 0o777)
+    assert mode == "0o600", f"expected 0o600, got {mode}"
+
+
+def test_save_global_config_no_chmod_when_no_secret(xu_home):
+    """When no secret is in the config, mode is whatever the umask gave us."""
+    cfg_mod.save_global_config({"foo": "bar"})
+    mode = oct(cfg_mod.GLOBAL_CONFIG.stat().st_mode & 0o777)
+    # default umask is typically 022 → 0644
+    assert mode in ("0o600", "0o644"), f"unexpected mode {mode}"
+
+
+def test_save_global_config_chmod_idempotent_after_repeated_writes(xu_home, monkeypatch):
+    """If user re-saves with same key, chmod stays 600 (no surprise flip)."""
+    monkeypatch.setenv("MINERU_API_KEY", "sk-test-abcdef1234567890")
+    cmd_mod.cmd_config_set_mineru_key(_args())
+    os.chmod(cfg_mod.GLOBAL_CONFIG, 0o644)  # simulate someone else touching it
+    cmd_mod.cmd_config_set_mineru_key(_args())  # re-write
+    mode = oct(cfg_mod.GLOBAL_CONFIG.stat().st_mode & 0o777)
+    assert mode == "0o600", f"re-save should re-chmod; got {mode}"
+
+
 def test_cli_dispatch_routes_new_commands():
     """Smoke: cli.build_parser accepts every new subcommand form."""
     from xu.cli import build_parser

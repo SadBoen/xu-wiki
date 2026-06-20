@@ -38,13 +38,40 @@ def _args(**kw):
 
 
 def _seed_wiki(xu_home, name, *, alias=None, path=None):
-    """Add (or initialise) a wiki entry in the registry AND create the dir."""
+    """Add a wiki entry in the registry AND lay down the wiki marker files.
+
+    `is_wiki_root()` requires `.xu/config.yaml` + `.xu/wiki.db` to
+    exist. The seed creates both so the uninstall's strict-wiki check
+    accepts this path as a real wiki.
+    """
     if path is None:
         path = str(xu_home / "wikis" / name)
     os.makedirs(path, exist_ok=True)
+    xu_subdir = os.path.join(path, ".xu")
+    os.makedirs(xu_subdir, exist_ok=True)
+    # wiki.db is allowed to be a 0-byte file; is_wiki_root only checks exists().
+    open(os.path.join(xu_subdir, "wiki.db"), "wb").close()
+    with open(os.path.join(xu_subdir, "config.yaml"), "w", encoding="utf-8") as f:
+        f.write("# synthetic seed for test\n")
     reg = cfg_mod.load_registry()
     reg.setdefault("wikis", {})[name] = {
         "path": path, "alias": alias, "created_at": now_ts()
+    }
+    cfg_mod.save_registry(reg)
+
+
+def _seed_nonwiki(xu_home, name, *, path=None):
+    """Seed an entry in the registry whose path is NOT a wiki marker.
+
+    Used to verify that `_purge_wikis` refuses to rmtree non-wiki
+    paths (3.1 fix).
+    """
+    if path is None:
+        path = str(xu_home / "not-a-wiki" / name)
+    os.makedirs(path, exist_ok=True)
+    reg = cfg_mod.load_registry()
+    reg.setdefault("wikis", {})[name] = {
+        "path": path, "alias": None, "created_at": now_ts()
     }
     cfg_mod.save_registry(reg)
 
@@ -81,6 +108,56 @@ def test_dry_run_lists_wikis_and_marks_purge_flags(xu_home):
     assert plan["purge_config"] is True
     names = sorted(w["name"] for w in plan["wikis_found"])
     assert names == ["A", "B"]
+
+
+def test_dry_run_annotates_is_wiki_root(xu_home):
+    """3.1: dry-run should annotate each entry with is_wiki_root boolean."""
+    _seed_wiki(xu_home, "real")
+    _seed_nonwiki(xu_home, "fake")
+    r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
+                                    purge_wikis=True, purge_config=False))
+    plan = r["data"]
+    by_name = {w["name"]: w for w in plan["wikis_found"]}
+    assert by_name["real"]["is_wiki_root"] is True
+    assert by_name["fake"]["is_wiki_root"] is False
+    # The non_wiki_paths_detected key surfaces the warning at plan level
+    detected = plan.get("non_wiki_paths_detected")
+    assert detected is not None
+    assert any(d["name"] == "fake" for d in detected)
+
+
+def test_execute_purge_wikis_refuses_non_wiki_path(xu_home, monkeypatch):
+    """3.1: --purge-wikis refuses to rmtree a non-wiki path; entry dropped
+    from registry but directory left intact."""
+    _seed_nonwiki(xu_home, "fake")
+    fake_path = xu_home / "not-a-wiki" / "fake"
+    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
+                        lambda: {"ok": True, "returncode": 0,
+                                 "stdout_tail": "", "stderr_tail": ""})
+    r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
+                                    purge_wikis=True, purge_config=False))
+    # directory NOT removed
+    assert fake_path.exists()
+    # registry entry dropped
+    assert "fake" not in cfg_mod.load_registry()["wikis"]
+    # reported under `refused`
+    refused = r["data"]["result"]["wikis"]["refused"]
+    assert any(x["name"] == "fake" for x in refused)
+    # status reflects partial (warning)
+    assert r["status"] == "warning"
+
+
+def test_execute_purge_wikis_removes_real_wiki(xu_home, monkeypatch):
+    """3.1: a real-wiki path IS removed normally."""
+    _seed_wiki(xu_home, "real")
+    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
+                        lambda: {"ok": True, "returncode": 0,
+                                 "stdout_tail": "", "stderr_tail": ""})
+    r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
+                                    purge_wikis=True, purge_config=False))
+    assert not (xu_home / "wikis" / "real").exists()
+    assert r["data"]["result"]["wikis"]["refused"] == []
+    assert r["status"] == "success"
 
 
 # ----------------------------------------------------------------------
