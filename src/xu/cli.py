@@ -218,6 +218,19 @@ def build_parser() -> argparse.ArgumentParser:
                    help="verify xu-wiki install (CLI / Python / skills / ~/.xu/ / extras); "
                         "agent-callable, returns 4-key JSON").set_defaults(func="selfcheck")
 
+    # ---- M9: skill deployment helper (agent-callable, replaces manual cp -r) ----
+    sp_deploy = sub.add_parser("deploy",
+                                help="deploy artefacts to agent-visible locations "
+                                     "(currently: skill bundle)")
+    deploy_sub = sp_deploy.add_subparsers(dest="deploy_action", required=True)
+    sp_skill = deploy_sub.add_parser("skill",
+                                      help="copy the skill bundle to <target>'s discovery dir")
+    sp_skill.add_argument("--target",
+                          choices=("hermes", "trae", "claude", "cursor", "auto"),
+                          default="auto",
+                          help="agent platform to deploy to (default: auto-detect)")
+    sp_skill.set_defaults(func="deploy_skill")
+
     return p
 
 
@@ -299,6 +312,9 @@ def _dispatch(args) -> dict:
     if func == "selfcheck":
         from .commands.selfcheck import cmd_selfcheck
         return cmd_selfcheck(args)
+    if func == "deploy_skill":
+        from .commands.deploy_skill import cmd_deploy_skill
+        return cmd_deploy_skill(args)
     return error(f"unknown command function: {func}", "UnknownCommand")
 
 

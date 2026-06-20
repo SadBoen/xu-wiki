@@ -21,85 +21,125 @@ not skip steps based on what `xu selfcheck` reports.
 | Step | Command (in the agent's bash tool) | Pass criterion |
 |---|---|---|
 | 1a | `python3 -c "import sys; print(sys.version_info >= (3, 10))"` | prints `True` |
-| 1b | `pip --version` | exits 0 |
+| 1b | `command -v pipx` | exits 0 (preferred path) |
+| 1c | `command -v pip` | exits 0 (alternative path) |
 
-### 2. Bootstrap venv if PEP 668 system
+If `pipx` is unavailable, tell the user to install it
+(`apt install pipx`, `brew install pipx`, or `python3 -m pip
+install --user pipx`). pipx is strongly preferred — it handles PEP
+668, venv creation, and `~/.local/bin` symlink in one command.
 
-Skip this step if the user's Python is non-PEP-668 (macOS pre-3.12,
-custom builds). Otherwise:
+### 2. Install the package (PREFERRED — pipx)
+
+```bash
+pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+```
+
+**Syntax warning**: use PEP 508 `name[extra] @ git+URL`, NOT the
+deprecated `git+URL#egg=name[extra]`. Modern pip rejects the latter
+as `invalid-egg-fragment`.
+
+If the user later upgrades, use `pipx upgrade xu-wiki` — same
+one-liner, no migration needed (the venv and symlink layout are
+identical between git+URL and PyPI installs).
+
+### 2-alt. Install the package (ALTERNATIVE — pip + venv)
+
+If pipx is unavailable or the user explicitly wants pip:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
-```
-
-If `python3 -m venv` complains about `ensurepip`, tell the user to
-install `python3-venv` via apt / dnf / brew.
-
-### 3. Install the package
-
-```bash
 .venv/bin/pip install "xu-wiki[parse,nlp,vision]"
 ```
 
-(The agent always uses the absolute `.venv/bin/xu` path; do NOT add
-to global PATH unless the user explicitly asks.)
+(Always use the absolute `.venv/bin/xu` path; do NOT add to global
+PATH unless the user explicitly asks.)
 
-### 4. Verify package-level health
+### 3. Verify package-level health
 
 ```bash
-.venv/bin/xu --version
+# pipx users:
+xu --version
 # → "xu-wiki 0.1.0"
-.venv/bin/xu selfcheck
+xu selfcheck
+# → deployment_status.installer == "pipx"
 # → status in {success, warning} with checks.agent_skill_deployed.ok = false
-#    (expected: the skill isn't deployed yet)
-```
+#    (expected: the skill isn't deployed yet — step 4 handles it)
 
-`xu selfcheck` will show `agent_skill_deployed.ok = false` at this
-point. That is **expected**, not a bug — the next step deploys it.
-
-### 5. Deploy the skill to the agent's discovery dir
-
-Pick the destination per the user agent:
-
-| Agent | Discovery dir |
-|---|---|
-| Hermes | `~/.hermes/skills/xu-wiki/` |
-| Trae IDE | `<project>/.trae/skills/xu-wiki/` (project-local) |
-| Claude Desktop | `~/Library/Application Support/Claude/skills/xu-wiki/` (macOS) |
-| Cursor | `<project>/.cursor/skills/xu-wiki/` (project-local) |
-
-Then run (Hermes example; substitute the destination):
-
-```bash
-SRC=$(.venv/bin/xu skills path | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['source_dir'])")
-DEST="$HOME/.hermes/skills/xu-wiki"
-mkdir -p "$DEST"
-cp -r "$SRC/." "$DEST/"
-ls "$DEST"            # 6 top-level files (SKILL + 5 SOP)
-ls "$DEST/reference"  # 2 reference files
-```
-
-> **Common mistake**: `cp -r "$SRC" "$DEST"` (without trailing `/.`)
-> creates `$DEST/xu/skills/...` — wrong. Always write `$SRC/.`.
-
-### 6. Verify deployment
-
-```bash
+# pip+venv users (use absolute path until activate):
+.venv/bin/xu --version
 .venv/bin/xu selfcheck
-# → status = success; checks.agent_skill_deployed.ok = true
 ```
 
-If still `agent_skill_deployed.ok = false`, you copied to the wrong
-dir; re-check step 5's table. You can also override the probe with:
+### 4. Deploy the skill to the agent's discovery dir
+
+This step requires the agent — only the agent knows its own
+discovery directory. Use `xu deploy skill --target <agent>`:
 
 ```bash
-XU_AGENT_SKILL_DIR=/path/to/custom/skill .venv/bin/xu selfcheck
+# pipx users:
+xu deploy skill --target hermes
+xu deploy skill --target trae       # project-local
+xu deploy skill --target claude     # macOS only
+xu deploy skill --target cursor     # project-local
+xu deploy skill --target auto       # probe existing dirs, deploy to first match
+
+# pip+venv users:
+.venv/bin/xu deploy skill --target hermes
 ```
+
+`auto` resolves to whichever target's parent directory already
+exists on the machine — meaning that agent is installed there. If
+none match, `auto` falls back to `hermes`.
+
+**Don't write `cp -r` by hand.** The deploy command handles three
+things the manual flow gets wrong:
+
+1. Preserves the `reference/` subdir (per-file copy with relative paths).
+2. Filters out Python artifacts (`__init__.py`, `__pycache__/`) so
+   they don't leak into the agent's discovery dir.
+3. Maps `--target` to the right discovery dir for each agent platform.
+
+### 5. Verify deployment
+
+```bash
+xu selfcheck
+# → checks.agent_skill_deployed.ok = true
+# → deployment_status.skill_deployed_to == ["hermes"]
+# → next_actions == []   ← the high-signal "nothing left to do"
+```
+
+If `next_actions` is non-empty, walk the list before declaring
+"install complete" — each entry is something still left undone
+(reload agent, fix permissions, install missing extras, etc.).
+
+### 6. End-to-end smoke
+
+```bash
+xu create --name smoke --path /tmp/xw-smoke --alias s
+xu wikis
+xu unregister --name smoke
+```
+
+All three should return `status: success`. If any fails, see
+[reference/error-catalog.md](reference/error-catalog.md).
+
+### 7. Tell the user
+
+In the agent's reply: "Installed xu-wiki X.Y.Z via pipx; deployed
+the skill to <agent>; smoke test passed." Do NOT paste raw JSON;
+translate.
 
 ### 7. End-to-end smoke
 
 ```bash
+# pipx users:
+xu create --name smoke --path /tmp/xw-smoke --alias s
+xu wikis
+xu unregister --name smoke
+
+# pip+venv users:
 .venv/bin/xu create --name smoke --path /tmp/xw-smoke --alias s
 .venv/bin/xu wikis
 .venv/bin/xu unregister --name smoke
@@ -110,8 +150,9 @@ All three should return `status: success`. If any fails, see
 
 ### 8. Tell the user
 
-In the agent's reply: "Installed xu-wiki X.Y.Z; deployed the skill
-to <agent>; smoke test passed." Do NOT paste raw JSON; translate.
+In the agent's reply: "Installed xu-wiki X.Y.Z via pipx; deployed
+the skill to <agent>; smoke test passed." Do NOT paste raw JSON;
+translate.
 
 ---
 
@@ -119,12 +160,14 @@ to <agent>; smoke test passed." Do NOT paste raw JSON; translate.
 
 Always go through the `/xu-wiki config` SOP → `xu uninstall`. Never
 call `pip uninstall` directly via the bash tool — that bypasses
-SKILL.md discoverability and the dry-run safety contract.
+SKILL.md discoverability and the dry-run safety contract. In a
+pipx-managed install, `pipx uninstall xu-wiki` is the canonical
+program-body removal tool (NOT `pip uninstall`).
 
 ### 1. Dry-run first
 
 ```bash
-.venv/bin/xu uninstall
+xu uninstall --dry-run    # or just `xu uninstall` — dry-run is default
 ```
 
 Show the user `data.wikis_found` (every registered wiki) and the
@@ -148,8 +191,31 @@ Default to scope (a). User must explicitly type "yes" / "确认" /
 
 ### 3. Execute
 
+The execution flow depends on `data.plan.installer` from step 1.
+
+**pipx users** (the typical case on Debian/Ubuntu/Fedora/Homebrew
+after `pipx install`):
+
 ```bash
-.venv/bin/xu uninstall --execute [--purge-wikis] [--purge-config]
+# 3a. xu uninstall cleans the DATA layer only (program body is pipx's job)
+xu uninstall --execute --purge-wikis --purge-config
+
+# 3b. pipx uninstall removes the PROGRAM body
+pipx uninstall xu-wiki
+```
+
+If you accidentally call `xu uninstall --execute` and the response
+says `data.installer == "pipx"`, the CLI will refuse to call
+`pip uninstall` itself; it returns `next_action:
+"pipx uninstall xu-wiki"` for the agent to act on. **Do not
+substitute `pip uninstall xu-wiki` for `pipx uninstall`** — that
+leaves a ghost venv in pipx's registry.
+
+**pip+venv users**:
+
+```bash
+xu uninstall --execute --purge-wikis --purge-config
+# (everything in one call: pip uninstall + data layer cleanup)
 ```
 
 ### 4. Remove the skill from the agent's discovery dir

@@ -47,112 +47,198 @@ when the list is full.
 
 ## Install
 
-> **PEP 668 heads-up (READ THIS FIRST if you are on Debian 12+,
-> Ubuntu 23.04+, Fedora, or Homebrew Python):** system-managed Pythons
-> ship with PEP 668 enabled and reject bare `pip install`. You MUST
-> install into a virtual environment, otherwise `pip install` will fail
-> with `error: externally-managed-environment`. The recommended flow:
->
-> ```bash
-> python3 -m venv .venv
-> .venv/bin/pip install --upgrade pip
-> .venv/bin/pip install "xu-wiki[parse,nlp,vision]"
-> .venv/bin/xu --help   # verify CLI works
-> ```
->
-> If `python3 -m venv` complains about `ensurepip`, install
-> `python3-venv` first (`sudo apt install -y python3-venv` on Debian/
-> Ubuntu, or `sudo dnf install python3-virtualenv` on Fedora).
+xu-wiki is a **GitHub project, not a pre-installed brand**. The user
+discovers it by reading `SKILL.md` from the GitHub URL; the agent
+loads `SKILL.md` and learns how to install/uninstall. There are three
+distinct install surfaces and you must keep them straight:
 
-Once you're in a venv (or on a non-PEP-668 system like macOS system
-Python before 3.12, or a custom-built Python):
+| Layer | What | Location decided by |
+|---|---|---|
+| Source repo | git clone dir (throwaway) | where you cloned it |
+| Package + `xu` command | the actually-running code | pipx (or pip+venv) |
+| Skill bundle | 9 markdown files for the agent | agent's discovery dir |
+
+The recommended path uses `pipx` — one command, no venv wrangling,
+PEP-668-safe on Debian/Ubuntu/Fedora/Homebrew. `pip` is supported for
+the venv-willing and for environments without pipx.
+
+### Recommended: `pipx` (one line, works on PEP 668 systems)
 
 ```bash
-pip install "xu-wiki[parse,nlp,vision]"
+pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
 ```
 
-That single command installs:
+This:
 
-- the `xu` CLI binary (placed on `PATH` by pip, like any Python tool)
-- the bundled skill source (8 files under `<site-packages>/xu/skills/`)
-- the 3 optional parser groups
+1. Creates an **isolated venv** at `~/.local/share/pipx/venvs/xu-wiki/`
+2. Installs the package + 3 optional extras into that venv
+3. Symlinks `xu` → `~/.local/bin/xu` (already on `PATH` after
+   `pipx ensurepath`)
 
-That's it — no `xu install`, no separate `install.sh`, no venv
-management, no symlink config. Pip handles all of it.
+**PEP 508 URL syntax** — note `name[extra] @ git+URL`. The
+older `#egg=name[extra]` form is **deprecated** by pip and will be
+rejected as `invalid-egg-fragment`.
 
-Set `XU_HOME` to relocate the global config / registry directory (defaults to
-`~/.xu`).
+To upgrade later (zero-migration):
 
-**Verify with `xu selfcheck`** (after install, before doing anything
-else): it confirms the CLI is on PATH, the skill bundle is readable,
-`~/.xu/` is writable, and the three optional extras are present. See
-[§Agent skill deployment](#agent-skill-deployment) below for the full
-post-install checklist.
+```bash
+pipx upgrade xu-wiki
+```
 
-## Uninstall (run by the agent via `/xu-wiki config` → `xu uninstall`)
+### Alternative: `pip` + manual venv
+
+If you don't have pipx (or don't want it):
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install "xu-wiki[parse,nlp,vision]"
+.venv/bin/xu --version    # → "xu-wiki 0.1.0"
+```
+
+You MUST use a venv on Debian 12+, Ubuntu 23.04+, Fedora 38+, or
+Homebrew Python — bare `pip install` will fail with
+`error: externally-managed-environment`. If `python3 -m venv` complains
+about `ensurepip`, install the OS package first
+(`sudo apt install -y python3-venv` / `sudo dnf install python3-virtualenv`).
+
+### What this single command does NOT do
+
+- It does **not** deploy the skill bundle to your agent. That step
+  needs to know which agent platform you're using — see [§Agent skill
+  deployment](#agent-skill-deployment) below.
+- It does **not** create or modify `~/.xu/` (the global config dir).
+  That happens automatically the first time you run any `xu` command.
+
+### Default wiki data location
+
+Wiki data lives at whatever path you pass to `xu create --path`. The
+default convention (used by INSTALL.md and the agent's
+auto-suggestion) is:
+
+```
+~/Documents/xu-wikis/<wiki-name>/
+```
+
+You can override per-wiki; the convention just makes `ls` / backup
+/ migration easy.
+
+### Verify with `xu selfcheck`
+
+After install, before doing anything else, run:
+
+```bash
+xu selfcheck
+```
+
+It returns a 4-key JSON response with three new high-signal fields:
+
+- **`deployment_status`** — `{installer, binary_on_path, skill_deployed_to, ...}`
+- **`next_actions`** — list of what's still left to do (deploy skill,
+  fix permissions, etc.). Empty list = nothing left.
+- **`agent_deployment_hint.copy_template_bash`** — fallback bash
+  template if you prefer not to use `xu deploy skill`.
+
+The agent uses `next_actions` to avoid declaring "install complete"
+prematurely. See [§Agent skill deployment](#agent-skill-deployment)
+for the full flow.
+
+## Uninstall (run by the agent via `/xu-wiki config` → `xu uninstall` + `pipx uninstall`)
 
 **Install and uninstall are asymmetric on purpose.** Install is just
-`pip install xu-wiki` — pip handles it. Uninstall needs its own CLI
-command (`xu uninstall`) because:
+`pip install xu-wiki` (or one `pipx install` line). Uninstall needs
+its own CLI command because:
 
 - xu-wiki is a **GitHub project**, not a pre-installed brand. The user
   discovers it by giving the agent the **GitHub URL**; the agent then
   loads `SKILL.md` and learns what xu-wiki is. Without a CLI uninstall
-  command, the agent has no documented entry point for helping with
-  uninstall.
-- Uninstall is non-trivial cleanup (pip package + optionally wiki data
-  + optionally global config) that benefits from a single command with
-  side-effect scoping and a built-in dry-run.
+  command, the agent has no documented entry point.
+- Uninstall is non-trivial cleanup with three independent surfaces
+  (program body, skill bundle, wiki data) that need different owners.
 
-The user never types `pip uninstall` in a terminal. The user just tells
-the agent in natural language; the agent enters `/xu-wiki config`,
-recognises uninstall intent, and runs `xu uninstall` (default dry-run →
-confirmation → `--execute`).
+### Three uninstall surfaces, three owners
 
-The agent's three-step flow:
+| Surface | Owner | Why |
+|---|---|---|
+| Program body (`xu` binary + venv) | `pipx uninstall xu-wiki` (or `pip uninstall`) | pipx/pip track their own installs |
+| Skill bundle (`~/.hermes/skills/xu-wiki/`) | the agent's skill manager | xu and pipx don't know about it |
+| Wiki data (`~/.xu/` + `<wiki>` dirs) | `xu uninstall --execute --purge-*` | pipx/pip don't know about it |
+
+`xu uninstall` **does NOT touch the program body** in a pipx-managed
+install — it detects the pipx venv and refuses to call
+`pip uninstall`, instead returning `next_action: "pipx uninstall
+xu-wiki"` for the agent to run separately. This split is enforced:
+
+- **pipx users**: `xu uninstall` cleans `~/.xu/` + wikis; you must
+  separately run `pipx uninstall xu-wiki` to remove the program.
+- **pip+venv users**: `xu uninstall --execute` does everything
+  (pip uninstall + optional purge).
+
+### The agent's complete uninstall flow
 
 ```bash
-# 1. dry-run — always the first call
+# 1. Dry-run first (always). Detect installer from the response.
 xu uninstall
-# → {
-#     "status": "success",
-#     "data": {
-#       "mode": "dry-run",
-#       "execute": false,
-#       "pip_uninstall": true,
-#       "purge_wikis": false,
-#       "purge_config": false,
-#       "wikis_found": [{"name": "research", "path": "/abs/path/to/research"}, ...],
-#       "global_dir": "/home/user/.xu",
-#       "global_dir_exists": true,
-#       "package": "xu-wiki"
-#     },
-#     "message": "dry-run — pass --execute to actually uninstall"
-#   }
-# NB: in dry-run, `data` IS the plan (no `plan` nesting). After --execute,
-# the shape changes to `data = {"plan": <plan>, "result": {pip, wikis, config_dir}}`.
+# → data.installer ∈ {"pipx", "pip", "unknown"}
+# → data.plan with wikis_found, global_dir, etc.
+# → data.next_actions might suggest "pipx uninstall xu-wiki"
 
-# 2. agent shows the user what's about to happen, user picks a scope:
-#    (a) pip only                  → xu uninstall --execute
-#    (b) pip + wikis               → xu uninstall --execute --purge-wikis
-#    (c) pip + wikis + ~/.xu/      → xu uninstall --execute --purge-wikis --purge-config
+# 2. Tell the user what will happen. Pick scope:
+#    (a) data layer only (--purge-wikis --purge-config):  wikis + ~/.xu/
+#    (b) program body (pipx uninstall OR pip uninstall via xu)
+#    (c) everything: (a) + (b) in order
+# Default = (a) only — preserves the program; user can re-run later.
 
-# 3. user confirms → agent re-runs with the chosen flags
-xu uninstall --execute [--purge-wikis] [--purge-config]
+# 3a. If installer == "pipx": program body goes through pipx
+xu uninstall --execute --purge-wikis --purge-config   # data layer
+pipx uninstall xu-wiki                                # program body
+
+# 3b. If installer == "pip": program body goes through xu's pip call
+xu uninstall --execute --purge-wikis --purge-config   # everything
+
+# 4. Skill bundle: the agent's skill manager, not xu/pipx
+rm -rf ~/.hermes/skills/xu-wiki        # Hermes
+# (other agents: see §Agent skill deployment above)
+
+# 5. INDEPENDENT VERIFICATION — never trust the tool's self-report
+command -v xu || echo "OK: xu removed"
+test -e ~/.xu && echo "FAIL" || echo "OK: ~/.xu removed"
+test -e ~/.hermes/skills/xu-wiki && echo "FAIL" || echo "OK: skill removed"
 ```
 
-Default scope is (a) — pip package only; wiki data and `~/.xu/` are
-preserved. The `--purge-*` flags are explicitly opt-in.
+### Why `xu uninstall` doesn't run `pip uninstall` in pipx context
 
-There is no `/xu-wiki install` slash command and no `/xu-wiki upgrade`
-slash command. There is no `/xu-wiki uninstall` slash command either —
-the entry is `/xu-wiki config`, which contains `xu uninstall` as a
-CLI palette item. See [CONST-SOP-3] in
-`design-docs/08-sop-architecture.md` and SKILL.md hard rule 0a.
+`pip uninstall` inside a pipx-managed venv is **undefined behavior**:
+pipx tracks installs in its own JSON registry
+(`~/.local/share/pipx/venvs/xu-wiki/pipx_metadata.json`), and a
+bare `pip uninstall` would remove the package from the venv without
+notifying pipx, leaving a "ghost" venv that pipx still thinks owns
+the install. The fix is `pipx uninstall`, which both removes the
+package AND cleans up the venv + symlink.
 
-> **What the CLI does NOT do**: install / uninstall the package itself. The
-> CLI only manages wiki data — it never touches venv / symlink / system PATH.
-> All wiki data lives outside the source tree.
+`xu uninstall` detects this context (`sys.prefix` under
+`/pipx/venvs/`) and refuses to act on the program body. The
+`--purge-wikis` and `--purge-config` flags still work — those are
+pipx-unconcerned.
+
+### What's NOT in this SOP
+
+There is **no `/xu-wiki install` slash command and no
+`/xu-wiki upgrade` slash command**. Install is `pipx install` /
+`pip install` (run by the agent's bash tool, not the CLI). Upgrade is
+`pipx upgrade xu-wiki` / `pip install --upgrade
+"xu-wiki[parse,nlp,vision]"`.
+
+There is also **no `/xu-wiki uninstall` slash command** — the entry
+is `/xu-wiki config`, which contains `xu uninstall` as a CLI palette
+item. See [CONST-SOP-3] in `design-docs/08-sop-architecture.md` and
+SKILL.md hard rule 0a.
+
+> **What the CLI does NOT do for install / uninstall**: see the
+> `## Uninstall` section above for the responsibility split between
+> `pipx` (program body), the agent's skill manager (skill bundle),
+> and `xu uninstall` (wiki data). The CLI never touches venv / symlink
+> / system PATH on its own.
 
 ## Configuring MinerU (optional)
 
@@ -201,78 +287,101 @@ the next parser in the chain takes over.
 ## Agent skill deployment
 
 **`pip install` does NOT deploy the skill to your agent.** The CLI
-writes 8 skill files to `<site-packages>/xu/skills/` (a `package_data`
-directory). Each agent platform has its own skill discovery
-mechanism — the agent's job is to copy these files into its own
-discovery directory. `xu` provides two introspection commands so the
-agent can find the source:
+writes 9 markdown files (SKILL.md + 5 SOPs + 2 reference + INSTALL.md)
+to `<site-packages>/xu/skills/` as `package_data`. Each agent
+platform has its own skill discovery directory layout — the agent's
+job is to copy these files into it.
+
+The recommended way is `xu deploy skill --target <agent>`. The
+manual `cp -r` fallback is documented at the end of this section
+for environments where `xu` isn't on PATH yet.
+
+### Recommended: `xu deploy skill`
 
 ```bash
-# Where are the skill files?
+xu deploy skill --target hermes      # → ~/.hermes/skills/xu-wiki/
+xu deploy skill --target trae        # → <cwd>/.trae/skills/xu-wiki/  (project-local)
+xu deploy skill --target claude      # → ~/Library/Application Support/Claude/skills/xu-wiki/  (macOS only)
+xu deploy skill --target cursor      # → <cwd>/.cursor/skills/xu-wiki/  (project-local)
+xu deploy skill --target auto        # probe existing agent dirs, deploy to first match
+```
+
+`auto` resolves to whichever target's PARENT directory already
+exists on the machine — meaning the agent is installed there. If
+none match, `auto` falls back to `hermes` (most common).
+
+The command handles three things the manual flow got wrong:
+
+1. **Subdir preservation** — each file in the curated
+   `ALL_SKILL_FILES` list is copied to `$DEST/<relative-path>`, so
+   `reference/error-catalog.md` lands at
+   `$DEST/reference/error-catalog.md` (not flattened).
+2. **Python-artifact filter** — the source dir is a regular Python
+   package, so a naive `cp -r` would copy `__init__.py` and
+   `__pycache__/` into the agent's discovery dir. `xu deploy skill`
+   uses the same curated list that `xu skills list` returns (which
+   already excludes these artifacts).
+3. **Built-in target → discovery-dir mapping** — no need to look up
+   the matrix below.
+
+After `xu deploy skill`, **reload the agent's skill index / restart
+the agent** so it picks up the new files.
+
+### Introspection helpers
+
+```bash
+# Where are the 9 skill files?
 xu skills path
 # → {"status": "success", "data": {"skill_name": "xu-wiki",
 #     "source_dir": "/abs/path/to/site-packages/xu/skills",
-#     "file_count": 8}, ...}
+#     "file_count": 9}, ...}
 
-# What are the 8 files?
+# What are the 9 files?
 xu skills list
 # → {"status": "success", "data": {"skill_name": "xu-wiki",
 #     "source_dir": "...", "files": ["SKILL.md", "create.md", ...,
-#     "reference/error-catalog.md", "reference/pitfalls.md"]}, ...}
+#     "reference/error-catalog.md", "reference/pitfalls.md",
+#     "INSTALL.md"]}, ...}
 ```
 
-**Important:** `xu skills path` returns the 4-key JSON envelope — the
-actual path is at `data.source_dir`. An agent that tries `cp $(xu
-skills path) ~/.hermes/skills/` will copy the JSON string instead of
-the directory. Always parse `data.source_dir` first.
+**Important:** `xu skills path` returns the 4-key JSON envelope —
+the actual path is at `data.source_dir`. An agent that tries
+`cp $(xu skills path) ~/.hermes/skills/` will copy the JSON string
+instead of the directory. Always parse `data.source_dir` first.
 
 ### Agent compatibility matrix
 
-| Agent | Skill discovery dir | Install flow |
-|---|---|---|
-| **Hermes** | `~/.hermes/skills/xu-wiki/` | `mkdir -p` + `cp` 8 files; or use Hermes's own `skills install` if it has one |
-| **Trae IDE** | `<project>/.trae/skills/xu-wiki/` (project-local) | `mkdir -p` + `cp` 8 files; reload Trae's skill index |
-| **Claude Desktop** | `~/Library/Application Support/Claude/skills/xu-wiki/` (macOS); platform-dependent elsewhere | Same `mkdir` + `cp` flow; restart Claude Desktop after |
-| **Cursor** | `<project>/.cursor/skills/xu-wiki/` (project-local) | Same flow; reload Cursor's skill index |
-| **Other (Codex, Aider, …)** | Agent-specific — consult your agent's docs | Same `mkdir` + `cp`; the 8 files are platform-agnostic markdown |
+| Agent | Skill discovery dir |
+|---|---|
+| **Hermes** | `~/.hermes/skills/xu-wiki/` |
+| **Trae IDE** | `<project>/.trae/skills/xu-wiki/` (project-local) |
+| **Claude Desktop** | `~/Library/Application Support/Claude/skills/xu-wiki/` (macOS only) |
+| **Cursor** | `<project>/.cursor/skills/xu-wiki/` (project-local) |
+| **Other (Codex, Aider, …)** | Agent-specific — consult your agent's docs. Same 9 files apply. |
 
-### Copy template (bash, agent-callable)
+### Manual fallback (only if `xu` isn't on PATH yet)
 
-The 8 files live under two directories in the bundle: 6 top-level
-(`SKILL.md`, `create.md`, `ingest.md`, `query.md`, `doctor.md`,
-`config.md`) + 2 under `reference/` (`reference/error-catalog.md`,
-`reference/pitfalls.md`). A naive `cp SRC/{FILES} DEST/` flattens the
-subdirectory and the two reference files end up at the wrong path.
-Use `cp -r` to preserve structure:
+If for some reason `xu deploy skill` isn't available, fall back to:
 
 ```bash
-# 1. Parse the source dir out of the JSON envelope.
 SRC=$(xu skills path | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['source_dir'])")
-
-# 2. Pick the right destination per agent (Hermes shown; swap per the table above).
 DEST="$HOME/.hermes/skills/xu-wiki"
-
-# 3. Copy the WHOLE bundle directory (preserves the reference/ subdir).
 mkdir -p "$DEST"
-cp -r "$SRC/." "$DEST/"
-
-# 4. Verify — should list 6 top-level files + a reference/ subdir with 2 more.
-ls "$DEST"
-ls "$DEST/reference"
+rm -rf "$DEST"/*                                  # clean stale files
+# Copy each file individually (preserves reference/ subdir)
+cp "$SRC"/SKILL.md "$SRC"/create.md "$SRC"/ingest.md "$SRC"/query.md \
+   "$SRC"/doctor.md "$SRC"/config.md "$SRC"/INSTALL.md "$DEST"/
+cp "$SRC"/reference/*.md "$DEST/reference/"
+ls "$DEST" && ls "$DEST/reference"
 ```
 
-**Note**: `cp -r "$SRC/." "$DEST/"` copies the contents (note the
-trailing `/.`) so files land directly under `$DEST/` and
-`reference/` becomes a subdirectory there. If you accidentally write
-`cp -r "$SRC" "$DEST"` (without `/.`), the source dir becomes a
-nested `$DEST/xu/skills/...` — restart and re-do.
+**Don't use `cp -r "$SRC/." "$DEST/"`** as the primary flow: it
+copies `__init__.py` and `__pycache__/` from the source Python
+package into the agent's discovery dir. The per-file `cp` above
+excludes them by construction.
 
-The 9th file `INSTALL.md` (post-install checklist) is included in
-the same bundle and copied by the same `cp -r`. The agent loads it
-alongside the other 8 files.
-
-**After deploying the skill**, restart the agent (or reload its skill
-index) so `/xu-wiki <verb>` is recognised.
+**After deploying the skill**, restart the agent (or reload its
+skill index) so `/xu-wiki <verb>` is recognised.
 
 ## Quick start
 
@@ -404,7 +513,8 @@ bash tests/e2e_verify.sh                # full M1->M5 run against sample files
 | `doctor*` | health checks (`--fix` for mechanical repairs) |
 | `delete-node` | ref-safe physical delete |
 | `rebuild` | rebuild derived layers from L1 |
-| `skills path\|list` | locate the bundled skill source dir (for the agent's skill manager) |
+| `skills path\|list` | locate the bundled skill source dir (Python artifacts filtered); for agent's skill manager |
+| `deploy skill --target <agent>` | one-step copy of the 9-file bundle to the agent's discovery dir (replaces hand-rolled `cp -r`) |
 | `alias set\|unset\|show` | wiki registry alias management |
 | `register` / `unregister` | wiki registry management |
 | `config set-mineru-key\|show\|path` | global config management |

@@ -444,3 +444,84 @@ def test_purge_wikis_failures_has_error_field(xu_home, monkeypatch):
     assert "error" in entry
     assert isinstance(entry["error"], str)
     assert "denied" in entry["error"]
+
+
+# ----------------------------------------------------------------------
+# 9. Installer detection + pipx-aware uninstall (case study v2)
+# ----------------------------------------------------------------------
+
+def test_detect_installer_returns_string(monkeypatch):
+    """_detect_installer always returns one of {pipx, pip, unknown}."""
+    # current sys.prefix doesn't contain /pipx/venvs/ → not pipx
+    import sys as _sys
+    if "/pipx/venvs/" in _sys.prefix:
+        assert cmd_mod._detect_installer() == "pipx"
+    elif _sys.prefix != _sys.base_prefix:
+        assert cmd_mod._detect_installer() == "pip"
+    else:
+        assert cmd_mod._detect_installer() == "unknown"
+
+
+def test_detect_installer_recognizes_pipx_prefix(monkeypatch):
+    """If sys.prefix looks like a pipx venv path, return 'pipx'."""
+    fake_pipx = "/home/user/.local/share/pipx/venvs/xu-wiki"
+    monkeypatch.setattr("sys.prefix", fake_pipx)
+    assert cmd_mod._detect_installer() == "pipx"
+
+
+def test_detect_installer_recognizes_alternative_pipx(monkeypatch):
+    """Pipx can also use ~/.local/pipx/venvs/ as a base."""
+    fake_pipx = "/home/user/.local/pipx/venvs/xu-wiki"
+    monkeypatch.setattr("sys.prefix", fake_pipx)
+    assert cmd_mod._detect_installer() == "pipx"
+
+
+def test_detect_installer_returns_unknown_for_system_python(monkeypatch):
+    """If prefix == base_prefix, return 'unknown'."""
+    monkeypatch.setattr("sys.prefix", "/usr")
+    monkeypatch.setattr("sys.base_prefix", "/usr")
+    assert cmd_mod._detect_installer() == "unknown"
+
+
+def test_uninstall_in_pipx_skips_pip_uninstall(monkeypatch, xu_home):
+    """When installer == pipx, xu uninstall does NOT call pip uninstall
+    itself; it returns next_action for the agent to run `pipx uninstall`."""
+    _seed_wiki(xu_home, "A")
+    monkeypatch.setattr(cmd_mod, "_detect_installer", lambda: "pipx")
+    pip_called = []
+    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
+                        lambda: pip_called.append(True) or {"ok": True})
+    r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
+                                    purge_wikis=False, purge_config=False))
+    # pip was NOT called
+    assert pip_called == []
+    # result.pip reports skipped + next_action
+    assert r["data"]["result"]["pip"]["skipped"] is True
+    assert r["data"]["result"]["pip"]["next_action"] == "pipx uninstall xu-wiki"
+    # plan.installer is reported
+    assert r["data"]["plan"]["installer"] == "pipx"
+
+
+def test_uninstall_in_pip_venv_still_runs_pip_uninstall(monkeypatch, xu_home):
+    """When installer == pip, xu uninstall still calls pip uninstall."""
+    monkeypatch.setattr(cmd_mod, "_detect_installer", lambda: "pip")
+    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
+                        lambda: {"ok": True, "returncode": 0,
+                                 "command": "python3 -m pip uninstall xu-wiki -y",
+                                 "command_redaction_note": "(redacted)",
+                                 "command_full": "/usr/bin/python3 -m pip uninstall xu-wiki -y",
+                                 "stdout_tail": "", "stderr_tail": ""})
+    r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
+                                    purge_wikis=False, purge_config=False))
+    assert r["data"]["result"]["pip"]["ok"] is True
+    assert r["data"]["plan"]["installer"] == "pip"
+
+
+def test_dry_run_reports_installer(monkeypatch, xu_home):
+    """Dry-run should also surface data.plan.installer (so the agent
+    knows upfront which installer owns the program body)."""
+    monkeypatch.setattr(cmd_mod, "_detect_installer", lambda: "pipx")
+    r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
+                                    purge_wikis=False, purge_config=False))
+    # dry-run → data IS the plan
+    assert r["data"]["installer"] == "pipx"

@@ -36,6 +36,7 @@ This skill is split into 6 files per the principles in
 | `query.md` | `/xu-wiki query` SOP — full self-contained | When entering query SOP |
 | `doctor.md` | `/xu-wiki doctor` SOP — full self-contained | When entering doctor SOP |
 | `config.md` | `/xu-wiki config` SOP — full self-contained | When entering config SOP |
+| `INSTALL.md` | post-install checklist for `pipx install` + `xu deploy skill` flow | When the user first asks for xu-wiki |
 
 **No file links to another SOP file** (BAN-SKILL-1). If an SOP file needs to
 mention a CLI from another SOP, it says "see SKILL.md §X" — never links
@@ -111,10 +112,19 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
      for you.
 
 0a. **Uninstall goes through the `/xu-wiki config` SOP, then `xu uninstall`.**
-    Install is intentionally a plain `pip install` (the user / any agent
-    can do it — see rule 0b). Uninstall is non-trivial cleanup so it
-    needs a CLI command — but it lives in the **config** SOP because
-    it's a system-level action, not a wiki-data operation.
+    Install is intentionally a plain `pip install` (or `pipx install`,
+    see rule 0b). Uninstall is non-trivial cleanup so it needs a CLI
+    command — but it lives in the **config** SOP because it's a
+    system-level action, not a wiki-data operation.
+
+    Uninstall has **three independent surfaces** with **three owners**.
+    The CLI owns one of them; the user (via agent) owns the other two:
+
+    | Surface | Owner | Why |
+    |---|---|---|
+    | Program body (`xu` binary + venv) | `pipx uninstall xu-wiki` (or `pip uninstall`) | pipx/pip track their own installs |
+    | Skill bundle (`~/.hermes/skills/xu-wiki/`) | the agent's skill manager | xu and pipx don't know about it |
+    | Wiki data (`~/.xu/` + `<wiki>` dirs) | `xu uninstall --execute --purge-*` | pipx/pip don't know about it |
 
     When the user says anything about uninstalling / removing xu-wiki
     ("把 xu-wiki 卸了", "uninstall xu-wiki", "remove xu-wiki from
@@ -124,33 +134,35 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
        Do NOT invent a `/xu-wiki uninstall` slash command; it does not
        exist.
     2. **Always dry-run first**: `xu uninstall` (no `--execute`).
-       Read the `data.plan` (wikis_found, global_dir_exists, pip_uninstall
-       flag) and show the user what would happen.
+       Read `data.plan` AND `data.installer` (∈ {`pipx`, `pip`,
+       `unknown`}). The installer field tells you who owns the
+       program body.
     3. **Confirm with the user** — list the wikis that would be deleted
        (if `--purge-wikis`), whether the global `~/.xu/` config would
        be wiped (if `--purge-config`), and whether pip would remove the
        package. Wait for explicit "yes" / "确认" / "proceed".
-    4. **Re-run with the user's chosen flags + `--execute`**. Example
-       dialog:
-       ```
-       User: 把 xu-wiki 卸了
-       Agent: 我先看一下当前状态（dry-run）...
-              $ xu uninstall
-              → 发现 2 个 wiki: research, mykb；全局目录 ~/.xu/ 存在
-       Agent: 当前有 2 个 wiki（research、mykb）。卸载有 3 种范围：
-              a) 仅卸 pip 包（wiki 数据和 ~/.xu/ 保留）
-              b) 卸 pip 包 + 删除所有 wiki（加 --purge-wikis）
-              c) 全部清空（加 --purge-wikis --purge-config）
-              选哪个？
-       User: a
-       Agent: 好的，执行 `xu uninstall --execute`...
-       ```
+    4. **Re-run with the user's chosen flags + `--execute`**. The
+       program-body step depends on `data.installer`:
+       - `pipx` → `xu uninstall` cleans data only; agent then runs
+         `pipx uninstall xu-wiki` to remove the program.
+       - `pip` → `xu uninstall --execute` handles everything (program
+         body + data); no separate pip call needed.
+       The skill bundle is always removed separately via the agent's
+        skill manager (NOT `xu uninstall`).
     5. **Translate the 4-key JSON result** back to natural language.
        Don't paste raw JSON at the user.
-    6. **Never run `pip uninstall` directly via your bash tool**. Even
-       though it would technically work, it bypasses SKILL.md
-       discoverability and the dry-run safety contract. Always go
-       through `xu uninstall`.
+    6. **Never run `pip uninstall` or `pipx uninstall` directly via
+       your bash tool**. Even though it would technically work, it
+       bypasses SKILL.md discoverability and the dry-run safety
+       contract. Always:
+       - For program body: `xu uninstall` handles it (and reports
+         `data.installer` so you know which tool owns it). If
+         installer is `pipx`, the response will include
+         `result.pip.next_action = "pipx uninstall xu-wiki"` — at
+         that point you call `pipx uninstall xu-wiki` (NOT
+         `pip uninstall`).
+       - For wiki data: `xu uninstall --execute --purge-*`.
+       - For skill bundle: the agent's own skill manager.
     7. **Independent verification (P0)**: after any `--execute`, you
        MUST independently verify the claim before telling the user
        "done". Do not trust the CLI's word:
@@ -173,6 +185,20 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
        (both preserve wikis because there are no wikis to purge). Do
        not list three options when one is a no-op for the user's data.
        Show only "a (no wikis to worry about) or c (full clean)".
+    10. **Use `xu deploy skill --target <agent>`** instead of writing
+        hand-rolled `cp -r` commands. The deploy command handles three
+        things the manual flow gets wrong: subdir preservation
+        (`reference/` files), Python-artifact filter (no
+        `__init__.py` or `__pycache__/` leaking into the agent's
+        discovery dir), and target→discovery-dir mapping. If `xu` is
+        not yet on PATH (e.g. just installed), run the absolute path
+        (`~/.local/bin/xu deploy skill ...`) — do NOT fall back to
+        `cp -r` unless `xu` truly doesn't exist (very rare).
+    11. **Inspect `data.deployment_status` and `data.next_actions`**
+        from `xu selfcheck` before declaring "install complete". Empty
+        `next_actions` list = nothing left. Any entry means the user
+        (and you) must do more. This catches the case where pip
+        install succeeded but the skill wasn't deployed.
 
     This rule exists because **xu-wiki is a GitHub project, not a
     pre-installed brand**. The user discovers it by reading SKILL.md
@@ -182,11 +208,24 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     **discoverable, SKILL.md-visible, agent-callable** uninstall entry.
     See [PRIN-SOP-8] / [CONST-SOP-3] / design-docs/08-sop-architecture.md.
 
-0b. **Install is just `pip install "xu-wiki[parse,nlp,vision]"`** —
-    no CLI command, no special installer. The user can run this
-    themselves, or you can run it via your bash tool. Either way it is
-    a one-liner; we don't wrap it. (No `/xu-wiki install` slash command
-    exists, and you must not invent one.)
+0b. **Install is `pipx install` (preferred) or `pip install` (alternative)** —
+    no CLI command, no special installer. The user can run it
+    themselves, or you can run it via your bash tool. The recommended
+    one-liner is:
+
+    ```bash
+    pipx install "xu-wiki[parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+    ```
+
+    pipx handles PEP 668, the venv, and the `~/.local/bin/xu` symlink
+    in one step. Use `pip install "xu-wiki[parse,nlp,vision]"` inside
+    a venv if pipx is unavailable.
+
+    NOTE: use the PEP 508 syntax `name[extra] @ git+URL` — the older
+    `git+URL#egg=name[extra]` form is rejected by modern pip.
+
+    (No `/xu-wiki install` slash command exists, and you must not
+    invent one.)
 1. **Never edit L1 markdown body** — it is immutable (PRIN-ARCH-2/3).
    UIDs are retired on delete, never reused (BAN-ARCH-2).
 2. **Report needs evidence** — `--references` must list ≥ 1 existing UIDs

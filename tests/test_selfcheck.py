@@ -213,6 +213,30 @@ def test_cli_palette_includes_selfcheck():
     assert args.func == "selfcheck"
 
 
+def test_cli_palette_includes_deploy_skill():
+    """`xu deploy skill --target <agent>` is wired as a sub-sub-command."""
+    from xu.cli import build_parser
+    p = build_parser()
+    args = p.parse_args(["deploy", "skill", "--target", "hermes"])
+    assert args.func == "deploy_skill"
+    assert args.target == "hermes"
+
+
+def test_cli_deploy_skill_target_default_is_auto():
+    """If --target not passed, default to auto."""
+    from xu.cli import build_parser
+    p = build_parser()
+    args = p.parse_args(["deploy", "skill"])
+    assert args.target == "auto"
+
+
+def test_cli_deploy_skill_rejects_unknown_target():
+    from xu.cli import build_parser
+    p = build_parser()
+    with pytest.raises(SystemExit):
+        p.parse_args(["deploy", "skill", "--target", "vscode"])
+
+
 def test_cli_palette_includes_version_flag():
     """Bug 3: `xu --version` should output the package version."""
     from xu.cli import build_parser
@@ -283,3 +307,59 @@ def test_all_skill_files_includes_install_md():
     from xu.skills import ALL_SKILL_FILES
     assert "INSTALL.md" in ALL_SKILL_FILES
     assert len(ALL_SKILL_FILES) == 9
+
+
+# ----------------------------------------------------------------------
+# 10. deployment_status + next_actions (case study v2)
+# ----------------------------------------------------------------------
+
+def test_selfcheck_returns_deployment_status(xu_home, monkeypatch):
+    _all_ok_patcher(monkeypatch)
+    r = cmd_mod.cmd_selfcheck(_args())
+    assert "deployment_status" in r["data"]
+    ds = r["data"]["deployment_status"]
+    # Required fields
+    assert "installer" in ds
+    assert ds["installer"] in ("pipx", "pip", "unknown")
+    assert "binary_on_path" in ds
+    assert "skill_deployed_to" in ds
+    assert isinstance(ds["skill_deployed_to"], list)
+    assert "smoke_test_run" in ds
+    assert "wiki_data_present" in ds
+
+
+def test_selfcheck_returns_next_actions_list(xu_home, monkeypatch):
+    _all_ok_patcher(monkeypatch)
+    r = cmd_mod.cmd_selfcheck(_args())
+    assert "next_actions" in r["data"]
+    assert isinstance(r["data"]["next_actions"], list)
+
+
+def test_selfcheck_next_actions_contains_deploy_hint(xu_home, monkeypatch):
+    """When agent_skill_deployed fails, next_actions must include the
+    `xu deploy skill` instruction — that's the case study v2 fix."""
+    # Don't apply the all_ok patcher — let the real check run.
+    r = cmd_mod.cmd_selfcheck(_args())
+    actions = " ".join(r["data"]["next_actions"])
+    # If skill isn't deployed (likely in CI), next_actions mentions xu deploy
+    if not r["data"]["checks"]["agent_skill_deployed"]["ok"]:
+        assert "xu deploy skill" in actions
+
+
+def test_selfcheck_next_actions_empty_when_all_green(xu_home, monkeypatch):
+    """When every check passes, next_actions is the empty list."""
+    _all_ok_patcher(monkeypatch)
+    # Make sure ALL checks pass by patching the rest to True too.
+    monkeypatch.setattr(cmd_mod, "_check_optional_extras",
+                        lambda: {"ok": True, "extras": {}, "hint": "all green"})
+    monkeypatch.setattr(cmd_mod, "_check_global_config_chmod",
+                        lambda: {"ok": True, "mode": "0o600",
+                                 "has_secret": False, "hint": "OK"})
+    monkeypatch.setattr(cmd_mod, "_check_ripgrep",
+                        lambda: {"ok": True, "note": "rg not installed but that's OK",
+                                 "hint": "fallback"})
+    monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
+                        lambda: {"ok": True, "path": "/tmp/xu", "hint": "writable"})
+    r = cmd_mod.cmd_selfcheck(_args())
+    assert r["status"] == "success"
+    assert r["data"]["next_actions"] == []

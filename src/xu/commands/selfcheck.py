@@ -264,11 +264,66 @@ def cmd_selfcheck(_args) -> dict:
                           if k not in CRITICAL and not v["ok"]]
     passed = [k for k, v in checks.items() if v["ok"]]
 
+    # Build a high-signal "what's still left to do" list. The agent
+    # uses this to avoid announcing "done" prematurely (case study
+    # review feedback: agent saw green checks and stopped).
+    next_actions: list[str] = []
+    if not checks["cli_on_path"]["ok"]:
+        next_actions.append(
+            "activate the venv (`source .venv/bin/activate`) or use "
+            "the absolute `xu` path. For pipx installs the binary is "
+            "already at ~/.local/bin/xu — check `command -v xu`."
+        )
+    if not checks["skill_bundle_readable"]["ok"]:
+        next_actions.append(
+            "reinstall xu-wiki: `pip install --force-reinstall "
+            "\"xu-wiki[parse,nlp,vision]\"` (or `pipx reinstall xu-wiki`)."
+        )
+    if not checks["agent_skill_deployed"]["ok"]:
+        next_actions.append(
+            "deploy the skill bundle to your agent: `xu deploy skill "
+            "--target <hermes|trae|claude|cursor|auto>`"
+        )
+    if not checks["global_dir_writable"]["ok"]:
+        next_actions.append(
+            "fix XU_HOME / HOME permissions so ~/.xu/ is writable "
+            "(see checks.global_dir_writable.hint)"
+        )
+    if failed_noncritical:
+        for name in failed_noncritical:
+            next_actions.append(
+                f"optional: fix `{name}` — see checks.{name}.hint"
+            )
+
+    # Installer + smoke-test snapshot for the user.
+    # Lazy import to avoid circular dependency: uninstall.py imports
+    # from response.py (which is OK), selfcheck.py imports nothing
+    # from uninstall — but if the import order ever flips, the
+    # deferred call keeps things resilient.
+    try:
+        from .uninstall import _detect_installer
+        installer = _detect_installer()
+    except Exception:
+        installer = "unknown"
+    skill_deployed_to = [
+        f["agent"] for f in checks["agent_skill_deployed"].get("found", [])
+    ]
+
+    deployment_status = {
+        "installer": installer,                            # pipx | pip | unknown
+        "binary_on_path": checks["cli_on_path"]["ok"],
+        "skill_deployed_to": skill_deployed_to,            # e.g. ["hermes"]
+        "smoke_test_run": False,                           # future: auto-run
+        "wiki_data_present": False,                        # future: read registry
+    }
+
     data = {
         "passed": passed,
         "failed_critical": failed_critical,
         "failed_noncritical": failed_noncritical,
         "checks": checks,
+        "deployment_status": deployment_status,
+        "next_actions": next_actions,
         "agent_deployment_hint": _agent_deployment_hint(),
     }
 

@@ -91,6 +91,7 @@ def _plan(args, *, mode: str | None = None) -> dict:
         "global_dir": str(GLOBAL_DIR),
         "global_dir_exists": GLOBAL_DIR.exists(),
         "package": "xu-wiki",
+        "installer": _detect_installer(),
     }
     non_wiki = [w for w in annotated if not w["is_wiki_root"]]
     if non_wiki:
@@ -210,6 +211,29 @@ def _purge_global_dir() -> dict:
         }
 
 
+def _detect_installer() -> str:
+    """Return one of: "pipx", "pip", "unknown".
+
+    Detection heuristics:
+    - pipx: `sys.prefix` is under `<base>/local/share/pipx/venvs/`
+      (pipx default venv layout). Also accepts `~/.local/pipx/venvs/`
+      (alternative path).
+    - pip: `sys.prefix != sys.base_prefix` (we're in a venv) AND the
+      prefix doesn't match pipx layout.
+    - unknown: system Python (`sys.prefix == sys.base_prefix`).
+
+    The function is read-only — it does not modify sys.path or env.
+    """
+    prefix = Path(sys.prefix).resolve()
+    base = Path(sys.base_prefix).resolve()
+    pipx_markers = ("/pipx/venvs/", "/local/share/pipx/venvs/")
+    if any(m in str(prefix) for m in pipx_markers):
+        return "pipx"
+    if prefix != base:
+        return "pip"  # some venv that's not pipx
+    return "unknown"
+
+
 def _pip_uninstall() -> dict:
     """Run `pip uninstall xu-wiki -y`. Capture stdout/stderr + return code.
 
@@ -259,7 +283,12 @@ def cmd_uninstall(args) -> dict:
         )
 
     # ----- execute branch -----
-    result: dict = {"mode": "execute", "pip": None, "wikis": None, "config_dir": None}
+    result: dict = {"mode": "execute", "pip": None, "wikis": None,
+                    "config_dir": None, "installer": None}
+
+    # 0) detect installer context. Already in plan via _plan(); re-read
+    # here so the pipx guard is a single local reference.
+    installer = plan["installer"]
 
     # 1) wikis (only if --purge-wikis)
     if plan["purge_wikis"]:
@@ -277,7 +306,18 @@ def cmd_uninstall(args) -> dict:
 
     # 3) pip uninstall (skip if --keep-pip)
     if plan["pip_uninstall"]:
-        result["pip"] = _pip_uninstall()
+        # If we're inside a pipx-managed venv, refuse to call pip
+        # uninstall ourselves — that's pipx's job. We surface a
+        # `next_action` so the agent runs `pipx uninstall xu-wiki`
+        # separately. Wikis + ~/.xu/ cleanup proceeds normally.
+        if installer == "pipx":
+            result["pip"] = {
+                "skipped": True,
+                "reason": "running inside pipx venv; pipx manages program body",
+                "next_action": "pipx uninstall xu-wiki",
+            }
+        else:
+            result["pip"] = _pip_uninstall()
     else:
         result["pip"] = {"skipped": True,
                          "reason": "--keep-pip set; pip uninstall not run"}
