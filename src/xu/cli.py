@@ -10,6 +10,7 @@ copies the source markdown files (location: `xu skills path`).
 """
 from __future__ import annotations
 
+from . import __version__
 import argparse
 import sys
 import time
@@ -23,6 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="xu",
         description="Relation-driven three-layer wiki engine (xu-wiki)",
     )
+    # Bug 3 fix: every reasonable CLI has `--version`. Without it the
+    # agent (and the user) has no way to confirm "did pip actually
+    # install the package I think it did?" beyond running `--help`.
+    p.add_argument("--version", action="version",
+                   version=f"%(prog)s-wiki {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     # ---- M1: skills / create ----

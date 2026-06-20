@@ -51,7 +51,7 @@ def _global_config() -> Path:
 
 
 CRITICAL = {"cli_on_path", "python_version", "skill_bundle_readable",
-            "global_dir_writable"}
+            "global_dir_writable", "agent_skill_deployed"}
 
 
 def _check_cli_on_path() -> dict:
@@ -124,18 +124,23 @@ def _check_global_config_chmod() -> dict:
 
 
 def _check_optional_extras() -> dict:
-    extras = {"markitdown": "parse (PDF/DOCX/PPTX parsing)",
-              "jieba": "nlp (Chinese noun extraction)",
-              "Pillow": "vision (image EXIF for albums)"}
+    # (name, import_name) — Pillow's import name is PIL, not Pillow.
+    extras = (
+        ("markitdown", "markitdown", "parse (PDF/DOCX/PPTX parsing)"),
+        ("jieba",      "jieba",      "nlp (Chinese noun extraction)"),
+        ("Pillow",     "PIL",        "vision (image EXIF for albums)"),
+    )
     found = {}
-    for name, desc in extras.items():
+    for pip_name, import_name, desc in extras:
         try:
-            importlib.import_module(name)
-            found[name] = {"installed": True, "purpose": desc}
+            importlib.import_module(import_name)
+            found[pip_name] = {"installed": True, "import_name": import_name,
+                                "purpose": desc}
         except ImportError:
-            found[name] = {"installed": False, "purpose": desc,
-                            "hint": f"`pip install xu-wiki[{name.split()[0].lower()}]` "
-                                    f"to enable {desc}"}
+            found[pip_name] = {"installed": False, "import_name": import_name,
+                                "purpose": desc,
+                                "hint": f"`pip install xu-wiki[{pip_name.lower()}]` "
+                                        f"to enable {desc}"}
     all_installed = all(v["installed"] for v in found.values())
     return {"ok": all_installed, "extras": found,
             "hint": "all optional extras installed" if all_installed
@@ -153,8 +158,77 @@ def _check_ripgrep() -> dict:
                     "`brew install ripgrep`"}
 
 
+# Known agent skill discovery directories. The CLI does not know which
+# agent the user is running, so it probes all four. Pass if SKILL.md
+# exists at ANY of them; otherwise surface the full list so the agent
+# can pick the right one for its platform.
+#
+# Override with env var `XU_AGENT_SKILL_DIR=/path/to/skill/dir` to
+# restrict the check to a single location (e.g. non-standard installs).
+KNOWN_AGENT_SKILL_DIRS = (
+    ("hermes",   "~/.hermes/skills/xu-wiki"),
+    ("trae",     "~/.trae/skills/xu-wiki"),
+    ("claude",   "~/Library/Application Support/Claude/skills/xu-wiki"),
+    ("cursor",   "~/.cursor/skills/xu-wiki"),
+)
+
+
+def _check_agent_skill_deployed() -> dict:
+    """Is the skill bundle actually visible to the user's agent?
+
+    Critical check (Bug 4 / review feedback): without this, `pip install`
+    + `xu selfcheck` show green but the agent can't see the skill —
+    exactly the "install complete ≠ usable" failure mode.
+
+    Logic:
+    - If `XU_AGENT_SKILL_DIR` env var is set, only that one location is
+      checked (operator told us which agent to expect).
+    - Otherwise probe all 4 known discovery dirs. Pass if SKILL.md
+      exists in ANY of them.
+    """
+    env_override = os.environ.get("XU_AGENT_SKILL_DIR")
+    if env_override:
+        targets = [("custom", os.path.expanduser(env_override))]
+    else:
+        targets = [(name, os.path.expanduser(p))
+                   for name, p in KNOWN_AGENT_SKILL_DIRS]
+
+    found = []
+    missing = []
+    for name, path in targets:
+        skill_md = Path(path) / "SKILL.md"
+        if skill_md.is_file():
+            found.append({"agent": name, "path": path})
+        else:
+            missing.append({"agent": name, "path": path})
+
+    if found:
+        return {
+            "ok": True,
+            "found": found,
+            "missing": missing,
+            "hint": f"skill deployed at: {[f['path'] for f in found]}",
+        }
+    return {
+        "ok": False,
+        "found": found,
+        "missing": missing,
+        "hint": (
+            "skill bundle NOT deployed to any known agent discovery dir. "
+            "Run the copy_template_bash in data.agent_deployment_hint "
+            "(or set XU_AGENT_SKILL_DIR=<path> to specify a non-standard "
+            "location). Probed: " + ", ".join(f"{m['agent']}={m['path']}" for m in missing)
+        ),
+    }
+
+
 def _agent_deployment_hint() -> dict:
-    """Return a bash template the agent can run to deploy the skill."""
+    """Return a bash template the agent can run to deploy the skill.
+
+    Uses `cp -r SRC/. DEST/` (note the trailing /.) so the bundle's
+    `reference/` subdir is preserved — flattening would put the two
+    reference files at the wrong path inside DEST.
+    """
     src = str(SKILL_SRC_DIR)
     return {
         "skill_name": SKILL_NAME,
@@ -163,10 +237,9 @@ def _agent_deployment_hint() -> dict:
             f"SRC='{src}'\n"
             f"DEST=\"$HOME/.hermes/skills/{SKILL_NAME}\"\n"
             f"mkdir -p \"$DEST\"\n"
-            f"cp \"$SRC\"/{{SKILL.md,create.md,ingest.md,query.md,"
-            f"doctor.md,config.md,reference/error-catalog.md,"
-            f"reference/pitfalls.md}} \"$DEST\"/\n"
-            f"ls \"$DEST\"   # verify 8 files"
+            f"cp -r \"$SRC\"/. \"$DEST\"/\n"
+            f"ls \"$DEST\"            # verify 6 top-level + reference/ subdir\n"
+            f"ls \"$DEST/reference\"  # verify 2 reference files"
         ),
         "hint": "run the copy_template_bash to deploy the skill to Hermes; "
                 "substitute $HOME/.hermes/skills/ for your agent's discovery dir "
@@ -179,6 +252,7 @@ def cmd_selfcheck(_args) -> dict:
         "cli_on_path": _check_cli_on_path(),
         "python_version": _check_python_version(),
         "skill_bundle_readable": _check_skill_bundle_readable(),
+        "agent_skill_deployed": _check_agent_skill_deployed(),
         "global_dir_writable": _check_global_dir_writable(),
         "global_config_chmod": _check_global_config_chmod(),
         "optional_extras": _check_optional_extras(),

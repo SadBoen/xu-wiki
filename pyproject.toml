@@ -39,6 +39,7 @@ where = ["src"]
     "query.md",
     "doctor.md",
     "config.md",
+    "INSTALL.md",
     "reference/error-catalog.md",
     "reference/pitfalls.md",
 ]

@@ -1,4 +1,4 @@
-"""Packaged agent-facing resources (SKILL.md + 5 SOP task files).
+"""Packaged agent-facing resources (SKILL.md + 5 SOP task files + INSTALL.md).
 
 The skill is split per design-docs/09-skill-architecture.md (PRIN-SKILL-1~6,
 BAN-SKILL-1/2): one self-contained `.md` per SOP, plus SKILL.md as the only
@@ -27,4 +27,9 @@ REFERENCE_FILES = (
     "reference/error-catalog.md",
     "reference/pitfalls.md",
 )
-ALL_SKILL_FILES = ("SKILL.md",) + SOP_TASK_FILES + REFERENCE_FILES
+# Post-install checklist for the agent. Loaded by the Agent alongside
+# the other 8 files when it first meets xu-wiki, so it knows the
+# install/verify/deploy sequence instead of guessing.
+INSTALL_FILES = ("INSTALL.md",)
+ALL_SKILL_FILES = (("SKILL.md",) + SOP_TASK_FILES
+                   + REFERENCE_FILES + INSTALL_FILES)

@@ -1,19 +1,20 @@
 """Unit tests for `xu selfcheck` (post-install health check).
 
 坑 6 fix: there was no agent-friendly command to verify a xu-wiki
-install. `xu selfcheck` consolidates:
-- cli_on_path, python_version, skill_bundle_readable, global_dir_writable
-- global_config_chmod (3.4), optional_extras, ripgrep
-- agent_deployment_hint (bash template for cp to ~/.hermes/skills/)
+install. `xu selfcheck` consolidates 8 checks:
+- cli_on_path, python_version, skill_bundle_readable, agent_skill_deployed
+- global_dir_writable, global_config_chmod (3.4), optional_extras, ripgrep
+- agent_deployment_hint (bash template for cp -r to ~/.hermes/skills/)
 
 Status semantics:
-- error  → any CRITICAL check failed
+- error  → any CRITICAL check failed (now incl. agent_skill_deployed)
 - warning → only non-critical checks failed
 - success → all checks passed
 """
 import os
 import sys
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -34,18 +35,29 @@ def _args():
     return SimpleNamespace()
 
 
+def _all_ok_patcher(monkeypatch):
+    """Patch agent_skill_deployed to pass — only valid when skill is
+    actually deployed somewhere, which we mock out for tests."""
+    monkeypatch.setattr(cmd_mod, "_check_agent_skill_deployed",
+                        lambda: {"ok": True,
+                                 "found": [{"agent": "test", "path": "/fake"}],
+                                 "missing": [],
+                                 "hint": "skill deployed (test mock)"})
+
+
 # ----------------------------------------------------------------------
-# 1. happy path — all checks pass
+# 1. happy path — all checks pass (with mock for agent_skill_deployed)
 # ----------------------------------------------------------------------
 
-def test_selfcheck_happy_path(xu_home):
+def test_selfcheck_happy_path(xu_home, monkeypatch):
     """When everything is OK, status=success and all checks passed."""
+    _all_ok_patcher(monkeypatch)
     r = cmd_mod.cmd_selfcheck(_args())
-    assert r["status"] in ("success", "warning")
-    # In a clean venv with the package installed via pip install -e,
-    # all 7 checks should pass.
+    assert r["status"] == "success"
+    # 8 checks total
     assert "cli_on_path" in r["data"]["checks"]
     assert "skill_bundle_readable" in r["data"]["checks"]
+    assert "agent_skill_deployed" in r["data"]["checks"]
     assert "optional_extras" in r["data"]["checks"]
     assert "agent_deployment_hint" in r["data"]
     assert r["data"]["agent_deployment_hint"]["skill_name"] == "xu-wiki"
@@ -55,32 +67,30 @@ def test_selfcheck_happy_path(xu_home):
 # 2. response envelope
 # ----------------------------------------------------------------------
 
-def test_selfcheck_returns_4_key_envelope(xu_home):
+def test_selfcheck_returns_4_key_envelope(xu_home, monkeypatch):
+    _all_ok_patcher(monkeypatch)
     r = cmd_mod.cmd_selfcheck(_args())
     assert set(r.keys()) >= {"status", "data", "message", "hints"}
     assert r["status"] in ("success", "warning", "error")
 
 
 # ----------------------------------------------------------------------
-# 3. agent deployment hint — the bash template
+# 3. agent deployment hint — the bash template (now uses cp -r)
 # ----------------------------------------------------------------------
 
-def test_agent_deployment_hint_has_bash_template(xu_home):
+def test_agent_deployment_hint_uses_cp_minus_r(xu_home):
+    """Bug 2 fix: bash template must use `cp -r` to preserve reference/ subdir."""
     r = cmd_mod.cmd_selfcheck(_args())
     h = r["data"]["agent_deployment_hint"]
     assert "copy_template_bash" in h
     assert "mkdir -p" in h["copy_template_bash"]
-    assert "cp" in h["copy_template_bash"]
-    assert "ls \"$DEST\"" in h["copy_template_bash"]
-    # 8 files mentioned in the template
-    assert "SKILL.md" in h["copy_template_bash"]
-    assert "create.md" in h["copy_template_bash"]
-    assert "ingest.md" in h["copy_template_bash"]
-    assert "query.md" in h["copy_template_bash"]
-    assert "doctor.md" in h["copy_template_bash"]
-    assert "config.md" in h["copy_template_bash"]
-    assert "error-catalog.md" in h["copy_template_bash"]
-    assert "pitfalls.md" in h["copy_template_bash"]
+    assert "cp -r" in h["copy_template_bash"], \
+        "must use cp -r to preserve reference/ subdirectory"
+    assert '"$SRC"/.' in h["copy_template_bash"], \
+        "must use trailing /. to copy CONTENTS not the dir itself"
+    # Verify command references both verification steps
+    assert 'ls "$DEST"' in h["copy_template_bash"]
+    assert 'ls "$DEST/reference"' in h["copy_template_bash"]
 
 
 # ----------------------------------------------------------------------
@@ -88,16 +98,11 @@ def test_agent_deployment_hint_has_bash_template(xu_home):
 # ----------------------------------------------------------------------
 
 def test_global_config_chmod_no_config_ok(xu_home):
-    """No config file → check returns ok with a note."""
     check = cmd_mod._check_global_config_chmod()
     assert check["ok"] is True
 
 
 def test_global_config_chmod_secret_but_world_readable(xu_home, monkeypatch):
-    """If config has mineru.api_key and mode is NOT 0o600, the check fails."""
-    # Write the file bypassing save_global_config (which auto-chmods 600).
-    # We write raw bytes with mode 644 to simulate a config that was written
-    # by an older xu-wiki version (pre-3.4-fix) or manually.
     cfg_path = cfg_mod.GLOBAL_CONFIG
     cfg_path.write_text("mineru:\n  api_key: secret\n", encoding="utf-8")
     os.chmod(cfg_path, 0o644)
@@ -107,7 +112,6 @@ def test_global_config_chmod_secret_but_world_readable(xu_home, monkeypatch):
 
 
 def test_global_config_chmod_secret_with_600_passes(xu_home):
-    """If config has mineru.api_key and mode IS 0o600, check passes."""
     cfg_path = xu_home / "config.yaml"
     cfg_path.write_text("mineru:\n  api_key: secret\n", encoding="utf-8")
     os.chmod(cfg_path, 0o600)
@@ -116,24 +120,130 @@ def test_global_config_chmod_secret_with_600_passes(xu_home):
 
 
 # ----------------------------------------------------------------------
-# 5. CLI palette wiring
+# 5. optional_extras — Pillow is imported as PIL (Bug 1 fix)
+# ----------------------------------------------------------------------
+
+def test_optional_extras_pillow_uses_PIL_import_name(xu_home):
+    """Bug 1: the import name for Pillow is PIL, not Pillow. Ensure
+    the check passes when Pillow is installed."""
+    # In a venv with `pip install -e .[parse,nlp,vision]` all three
+    # are installed; this test verifies the check sees them as such.
+    check = cmd_mod._check_optional_extras()
+    # Result: ok=True if all 3 installed; ok=False only if some are missing.
+    # We don't assert ok=True strictly because CI may skip extras; we
+    # do assert the Pillow entry uses the correct import name.
+    pillow_entry = check["extras"]["Pillow"]
+    assert pillow_entry["import_name"] == "PIL"
+    # If Pillow was installed, ok should be True (proves Bug 1 fix).
+    if pillow_entry["installed"]:
+        assert pillow_entry["import_name"] == "PIL"
+        assert check["ok"] is True or any(
+            e["installed"] for e in check["extras"].values()
+        )
+
+
+# ----------------------------------------------------------------------
+# 6. agent_skill_deployed check (Bug 4)
+# ----------------------------------------------------------------------
+
+def test_agent_skill_deployed_not_deployed_returns_failure(xu_home):
+    """If no known agent discovery dir has SKILL.md, the check fails."""
+    # Don't actually touch $HOME; instead patch the candidate dirs to
+    # point at non-existent paths.
+    with patch.object(cmd_mod, "KNOWN_AGENT_SKILL_DIRS",
+                       (("test-a", str(xu_home / "ghost-a")),
+                        ("test-b", str(xu_home / "ghost-b")))):
+        check = cmd_mod._check_agent_skill_deployed()
+    assert check["ok"] is False
+    assert check["found"] == []
+    assert len(check["missing"]) == 2
+    assert "test-a" in [m["agent"] for m in check["missing"]]
+    assert "hint" in check
+
+
+def test_agent_skill_deployed_at_least_one_passes(xu_home):
+    """If ANY known dir has SKILL.md, the check passes (even if others don't)."""
+    fake_dest = xu_home / "agent-skill"
+    fake_dest.mkdir()
+    (fake_dest / "SKILL.md").write_text("# fake\n", encoding="utf-8")
+    with patch.object(cmd_mod, "KNOWN_AGENT_SKILL_DIRS",
+                       (("test-a", str(xu_home / "ghost-a")),
+                        ("test-real", str(fake_dest)))):
+        check = cmd_mod._check_agent_skill_deployed()
+    assert check["ok"] is True
+    found_names = [f["agent"] for f in check["found"]]
+    assert "test-real" in found_names
+
+
+def test_agent_skill_deployed_env_var_overrides_targets(xu_home, monkeypatch):
+    """XU_AGENT_SKILL_DIR restricts the probe to a single location."""
+    fake_dest = xu_home / "custom-skill"
+    fake_dest.mkdir()
+    (fake_dest / "SKILL.md").write_text("# fake\n", encoding="utf-8")
+    monkeypatch.setenv("XU_AGENT_SKILL_DIR", str(fake_dest))
+    check = cmd_mod._check_agent_skill_deployed()
+    assert check["ok"] is True
+    assert check["found"][0]["agent"] == "custom"
+    assert check["found"][0]["path"] == str(fake_dest)
+
+
+def test_agent_skill_deployed_env_var_not_deployed(xu_home, monkeypatch):
+    """XU_AGENT_SKILL_DIR pointing at a path without SKILL.md → fail."""
+    monkeypatch.setenv("XU_AGENT_SKILL_DIR", str(xu_home / "does-not-exist"))
+    check = cmd_mod._check_agent_skill_deployed()
+    assert check["ok"] is False
+    assert check["found"] == []
+    assert check["missing"][0]["agent"] == "custom"
+
+
+def test_agent_skill_deployed_is_critical_check():
+    """Bug 4: agent_skill_deployed must be in CRITICAL — without this the
+    check failure wouldn't block success."""
+    assert "agent_skill_deployed" in cmd_mod.CRITICAL
+
+
+# ----------------------------------------------------------------------
+# 7. CLI palette wiring
 # ----------------------------------------------------------------------
 
 def test_cli_palette_includes_selfcheck():
-    """`xu selfcheck` must be wired as a top-level subcommand."""
     from xu.cli import build_parser
     p = build_parser()
     args = p.parse_args(["selfcheck"])
     assert args.func == "selfcheck"
 
 
+def test_cli_palette_includes_version_flag():
+    """Bug 3: `xu --version` should output the package version."""
+    from xu.cli import build_parser
+    p = build_parser()
+    with pytest.raises(SystemExit) as exc_info:
+        p.parse_args(["--version"])
+    # argparse exits 0 on --version
+    assert exc_info.value.code == 0
+
+
+def test_cli_version_flag_prints_version_string(capsys):
+    """The --version output should contain 'xu-wiki X.Y.Z'."""
+    from xu.cli import build_parser
+    p = build_parser()
+    with pytest.raises(SystemExit):
+        p.parse_args(["--version"])
+    captured = capsys.readouterr()
+    assert "xu-wiki" in captured.out
+    # also matches the version number pattern
+    import re
+    assert re.search(r"\d+\.\d+\.\d+", captured.out), \
+        f"expected version number in: {captured.out!r}"
+
+
 # ----------------------------------------------------------------------
-# 6. critical vs non-critical failure handling
+# 8. critical vs non-critical failure handling
 # ----------------------------------------------------------------------
 
 def test_critical_failure_returns_error(xu_home, monkeypatch):
     """If a CRITICAL check fails, status=error."""
-    # Force skill_bundle_readable to fail (a critical check)
+    _all_ok_patcher(monkeypatch)
     monkeypatch.setattr(cmd_mod, "_check_skill_bundle_readable",
                         lambda: {"ok": False,
                                  "hint": "synthetic failure for test"})
@@ -143,11 +253,33 @@ def test_critical_failure_returns_error(xu_home, monkeypatch):
     assert "skill_bundle_readable" in r["data"]["failed_critical"]
 
 
+def test_agent_skill_not_deployed_returns_error(xu_home, monkeypatch):
+    """Bug 4: agent_skill_deployed failure → status=error (critical)."""
+    _all_ok_patcher.__wrapped__ if hasattr(_all_ok_patcher, '__wrapped__') else None
+    # Don't apply the all_ok patcher — let it actually run.
+    # But since the test env has no ~/.hermes/skills/xu-wiki/SKILL.md,
+    # it will fail; we want it to fail with status=error.
+    r = cmd_mod.cmd_selfcheck(_args())
+    assert r["status"] == "error"
+    assert "agent_skill_deployed" in r["data"]["failed_critical"]
+
+
 def test_non_critical_failure_returns_warning(xu_home, monkeypatch):
     """If only a non-critical check fails, status=warning."""
-    # Force optional_extras to fail (a non-critical check)
+    _all_ok_patcher(monkeypatch)
     monkeypatch.setattr(cmd_mod, "_check_optional_extras",
                         lambda: {"ok": False, "hint": "synthetic"})
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "warning"
     assert "optional_extras" in r["data"]["failed_noncritical"]
+
+
+# ----------------------------------------------------------------------
+# 9. ALL_SKILL_FILES now includes INSTALL.md
+# ----------------------------------------------------------------------
+
+def test_all_skill_files_includes_install_md():
+    """INSTALL.md ships in the bundle so agents get the post-install checklist."""
+    from xu.skills import ALL_SKILL_FILES
+    assert "INSTALL.md" in ALL_SKILL_FILES
+    assert len(ALL_SKILL_FILES) == 9

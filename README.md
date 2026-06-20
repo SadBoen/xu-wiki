@@ -238,21 +238,38 @@ the directory. Always parse `data.source_dir` first.
 
 ### Copy template (bash, agent-callable)
 
+The 8 files live under two directories in the bundle: 6 top-level
+(`SKILL.md`, `create.md`, `ingest.md`, `query.md`, `doctor.md`,
+`config.md`) + 2 under `reference/` (`reference/error-catalog.md`,
+`reference/pitfalls.md`). A naive `cp SRC/{FILES} DEST/` flattens the
+subdirectory and the two reference files end up at the wrong path.
+Use `cp -r` to preserve structure:
+
 ```bash
 # 1. Parse the source dir out of the JSON envelope.
 SRC=$(xu skills path | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['source_dir'])")
 
-# 2. Parse the file list out of the JSON envelope.
-mapfile -t FILES < <(xu skills list | python3 -c "import sys,json; print('\n'.join(json.load(sys.stdin)['data']['files']))")
-
-# 3. Pick the right destination per agent (Hermes shown; swap per the table above).
+# 2. Pick the right destination per agent (Hermes shown; swap per the table above).
 DEST="$HOME/.hermes/skills/xu-wiki"
-mkdir -p "$DEST"
-cp "${SRC}/${FILES[@]}" "$DEST/"
 
-# 4. Verify
-ls "$DEST"   # should list 8 files
+# 3. Copy the WHOLE bundle directory (preserves the reference/ subdir).
+mkdir -p "$DEST"
+cp -r "$SRC/." "$DEST/"
+
+# 4. Verify — should list 6 top-level files + a reference/ subdir with 2 more.
+ls "$DEST"
+ls "$DEST/reference"
 ```
+
+**Note**: `cp -r "$SRC/." "$DEST/"` copies the contents (note the
+trailing `/.`) so files land directly under `$DEST/` and
+`reference/` becomes a subdirectory there. If you accidentally write
+`cp -r "$SRC" "$DEST"` (without `/.`), the source dir becomes a
+nested `$DEST/xu/skills/...` — restart and re-do.
+
+The 9th file `INSTALL.md` (post-install checklist) is included in
+the same bundle and copied by the same `cp -r`. The agent loads it
+alongside the other 8 files.
 
 **After deploying the skill**, restart the agent (or reload its skill
 index) so `/xu-wiki <verb>` is recognised.
