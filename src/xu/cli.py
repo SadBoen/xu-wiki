@@ -205,10 +205,10 @@ def build_parser() -> argparse.ArgumentParser:
     g_dry.add_argument("--execute", dest="execute", action="store_true",
                        default=None,
                        help="actually perform the uninstall")
+    sp.add_argument("--preserve-config", action="store_true",
+                    help="keep ~/.xu/ config dir after uninstall (default: remove it)")
     sp.add_argument("--purge-wikis", action="store_true",
-                    help="also wipe all registered wiki data (default: keep wiki data intact)")
-    sp.add_argument("--purge-config", action="store_true",
-                    help="also remove the global config dir (default: keep ~/.xu/)")
+                    help="[DEPRECATED/IGNORED] wiki data is NEVER deleted — this flag is a no-op")
     sp.add_argument("--keep-pip", action="store_true",
                     help="do NOT call pip uninstall (test / dev escape hatch)")
     sp.set_defaults(func="uninstall")

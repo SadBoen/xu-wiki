@@ -126,12 +126,12 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     | Surface | Owner | How |
     |---|---|---|
     | Skill bundle (`~/.hermes/skills/xu-wiki/`) | **the agent** (self) | Agent uses its own skill manager to delete this dir |
-    | Program body (`xu` binary + venv) | **xu CLI** | `xu uninstall --execute` |
+    | Program body (`xu` binary + venv) + `~/.xu/` config | **xu CLI** | `xu uninstall --execute` |
 
-    **Wiki data (`<wiki>` dirs + `~/.xu/`) is knowledge — it is NEVER
-    deleted by the Agent, and NO option to delete it is ever presented
-    to the user. The Agent must not ask about this, must not propose
-    it, must not implement it.**
+    **Wiki data (`<wiki>` dirs) is the user's knowledge — it is NEVER
+    deleted. No flag, no option, no branch of any flow ever touches it.
+    The Agent must not ask about it, must not propose it, must not
+    implement it.**
 
     When the user says anything about uninstalling / removing xu-wiki
     ("把 xu-wiki 卸了", "uninstall xu-wiki", "remove xu-wiki from
@@ -141,22 +141,24 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
        use the agent's own skill manager to delete
        `~/.hermes/skills/xu-wiki/`. This is the Agent's own resource,
        not the user's knowledge.
-    2. **Run `xu uninstall --execute`** (dry-run is not required for the
-       program-body step — the CLI's own `--execute` flag IS the safety
-       gate). Read `data.installer` (∈ {`pipx`, `pip`, `unknown`}):
-       - `pipx` → `xu uninstall --execute` cleans data only;
-         then run `pipx uninstall xu-wiki` to remove the program.
+    2. **Run `xu uninstall --execute`** (no dry-run needed — `--execute`
+       is the safety gate). This removes the program body AND `~/.xu/`
+       config directory. Wiki data (`<wiki>` dirs) is NEVER touched.
+       Read `data.installer` (∈ {`pipx`, `pip`, `unknown`}):
+       - `pipx` → after `xu uninstall --execute`, run
+         `pipx uninstall xu-wiki` to remove the program.
        - `pip` / `unknown` → `xu uninstall --execute` handles everything.
     3. **Translate the 4-key JSON result** back to natural language.
        Don't paste raw JSON at the user.
     4. **Never run `pip uninstall` or `pipx uninstall` directly via
-       your bash tool** (rule 6 above applies to install too).
+       your bash tool** — always go through `xu uninstall`.
     5. **Independent verification**: after `--execute`, verify
-       `command -v xu` fails (program removed). Do not trust the JSON
-       alone — check it.
-    6. **Wiki data is never touched.** The `xu uninstall --execute`
-       default preserves wiki data. Do NOT add `--purge-wikis` or
-       `--purge-config` flags. The user's knowledge is not yours to delete.
+       `command -v xu` fails (program removed) and `~/.xu/` is gone
+       (config directory cleaned). Do not trust the JSON alone — check it.
+    6. **Wiki data is NEVER touched, no exceptions.** There is no flag,
+       no option, no branch that ever deletes wiki data. Do NOT add
+       `--purge-wikis` or any flag that could touch `<wiki>` directories.
+       The user's knowledge is not yours to delete.
     7. **Watch for contradictions**: if `result.config_dir.ok == false`
        but the path still exists, tell the user and suggest manual
        inspection.

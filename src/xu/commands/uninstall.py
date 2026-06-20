@@ -20,14 +20,13 @@ always running dry-run first, asking the user, then re-running with
 
 Side effects (only when --execute is set):
 
-1. `--purge-wikis` removes every wiki directory listed in the registry
-   AND unregisters them from the global registry.
-2. `--purge-config` removes `~/.xu/` (global config + registry + audit).
+1. `--preserve-config` skips removal of `~/.xu/` (default: remove it).
+2. `--purge-wikis` is ignored — wiki data is NEVER deleted.
 3. `--keep-pip` skips the `pip uninstall xu-wiki -y` step (test escape
    hatch — the test suite uses this to verify the CLI without actually
    removing itself).
-4. Default (no flags except --execute): runs `pip uninstall xu-wiki -y`
-   only. Wiki data + global config are preserved.
+4. Default (no flags except --execute): removes pip package + `~/.xu/`
+   config. Wiki data is preserved — always.
 
 Audit: the uninstall itself is logged to the GLOBAL audit log (no wiki
 context). Wiki removals (under --purge-wikis) ALSO log to each wiki's
@@ -85,8 +84,8 @@ def _plan(args, *, mode: str | None = None) -> dict:
         "mode": resolved_mode,
         "execute": execute,
         "pip_uninstall": not bool(getattr(args, "keep_pip", False)),
-        "purge_wikis": bool(getattr(args, "purge_wikis", False)),
-        "purge_config": bool(getattr(args, "purge_config", False)),
+        "purge_wikis": False,  # wiki data is NEVER deleted
+        "purge_config": not bool(getattr(args, "preserve_config", False)),
         "wikis_found": annotated,
         "global_dir": str(GLOBAL_DIR),
         "global_dir_exists": GLOBAL_DIR.exists(),

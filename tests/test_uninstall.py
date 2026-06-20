@@ -12,6 +12,8 @@ Tests cover:
 """
 import os
 import sys
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -25,30 +27,55 @@ from xu.utils.paths import now_ts
 
 @pytest.fixture
 def xu_home(monkeypatch, tmp_path):
-    """Point xu.utils.config.GLOBAL_DIR at tmp_path (and same in uninstall module)."""
+    """Point GLOBAL_DIR at tmp_path AND re-bind the uninstall module's GLOBAL_DIR.
+
+    `from ..utils.config import GLOBAL_DIR` in uninstall.py creates a local
+    binding to the original Path object. Patching cfg_mod.GLOBAL_DIR does NOT
+    affect uninstall.GLOBAL_DIR. We must patch uninstall.GLOBAL_DIR directly.
+
+    Wiki data is stored OUTSIDE xu_home to prevent rmtree(xu_home) from
+    accidentally deleting wiki content.
+    """
     monkeypatch.setattr(cfg_mod, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(cfg_mod, "GLOBAL_CONFIG", tmp_path / "config.yaml")
+    # Must patch uninstall.GLOBAL_DIR directly — use setattr on the module object
+    import xu.commands.uninstall as uninstall_mod
+    monkeypatch.setattr(uninstall_mod, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(cmd_mod, "GLOBAL_DIR", tmp_path)
     return tmp_path
 
 
 def _args(**kw):
-    return SimpleNamespace(**kw)
+    # New semantics:
+    # - purge_wikis is always False (wiki data NEVER deleted)
+    # - purge_config is True unless preserve_config=True
+    defaults = dict(execute=False, keep_pip=False,
+                    purge_wikis=False, preserve_config=False)
+    defaults.update(kw)
+    # Map purge_config (old test callers) → preserve_config (new code)
+    if "purge_config" in kw:
+        defaults["preserve_config"] = not kw["purge_config"]
+    return SimpleNamespace(**defaults)
+
+
+_last_wiki_path = None
 
 
 def _seed_wiki(xu_home, name, *, alias=None, path=None):
     """Add a wiki entry in the registry AND lay down the wiki marker files.
 
-    `is_wiki_root()` requires `.xu/config.yaml` + `.xu/wiki.db` to
-    exist. The seed creates both so the uninstall's strict-wiki check
-    accepts this path as a real wiki.
+    Wiki data goes to /tmp/test_wikis/<name> — OUTSIDE xu_home (GLOBAL_DIR).
+    This mirrors real life: ~/.xu/ is a peer of wiki dirs, not a parent.
+    `is_wiki_root()` requires `.xu/config.yaml` + `.xu/wiki.db` to exist.
     """
+    import tempfile
     if path is None:
-        path = str(xu_home / "wikis" / name)
+        # Put wiki OUTSIDE xu_home so rmtree(xu_home) doesn't delete it
+        wiki_root = Path(tempfile.mkdtemp(prefix="test_wiki_"))
+        path = str(wiki_root / name)
     os.makedirs(path, exist_ok=True)
     xu_subdir = os.path.join(path, ".xu")
     os.makedirs(xu_subdir, exist_ok=True)
-    # wiki.db is allowed to be a 0-byte file; is_wiki_root only checks exists().
     open(os.path.join(xu_subdir, "wiki.db"), "wb").close()
     with open(os.path.join(xu_subdir, "config.yaml"), "w", encoding="utf-8") as f:
         f.write("# synthetic seed for test\n")
@@ -57,6 +84,9 @@ def _seed_wiki(xu_home, name, *, alias=None, path=None):
         "path": path, "alias": alias, "created_at": now_ts()
     }
     cfg_mod.save_registry(reg)
+    global _last_wiki_path
+    _last_wiki_path = Path(path)
+    return _last_wiki_path
 
 
 def _seed_nonwiki(xu_home, name, *, path=None):
@@ -86,146 +116,180 @@ def test_uninstall_dry_run_is_default(xu_home):
                                     purge_wikis=False, purge_config=False))
     assert r["status"] == "success"
     assert r["data"]["mode"] == "dry-run"
-    # Registry + wiki dir must be intact.
     assert "A" in cfg_mod.load_registry()["wikis"]
-    assert (xu_home / "wikis" / "A").exists()
-    # Global dir must be intact.
+    assert _last_wiki_path.exists()
     assert xu_home.exists()
 
 
-def test_dry_run_lists_wikis_and_marks_purge_flags(xu_home):
-    """Dry-run surfaces wikis_found + reflects --purge-* flags in plan."""
+def test_dry_run_lists_wikis_and_marks_flags(xu_home):
+    """Dry-run surfaces wikis_found; purge_wikis is always False; purge_config reflects --preserve-config."""
     _seed_wiki(xu_home, "A")
     _seed_wiki(xu_home, "B")
     r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                    purge_wikis=True, purge_config=True))
+                                    purge_wikis=True, preserve_config=True))
     plan = r["data"]
     assert plan["mode"] == "dry-run"
     assert plan["execute"] is False
     assert plan["pip_uninstall"] is True
-    assert plan["purge_wikis"] is True
-    assert plan["purge_config"] is True
+    assert plan["purge_wikis"] is False  # always False: wiki data NEVER deleted
+    assert plan["purge_config"] is False  # preserve_config=True → config preserved
     names = sorted(w["name"] for w in plan["wikis_found"])
     assert names == ["A", "B"]
 
 
 def test_dry_run_annotates_is_wiki_root(xu_home):
-    """3.1: dry-run should annotate each entry with is_wiki_root boolean."""
+    """Dry-run annotates each entry with is_wiki_root boolean; purge_wikis is always False."""
     _seed_wiki(xu_home, "real")
     _seed_nonwiki(xu_home, "fake")
     r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                    purge_wikis=True, purge_config=False))
+                                    purge_wikis=True, preserve_config=True))
     plan = r["data"]
     by_name = {w["name"]: w for w in plan["wikis_found"]}
     assert by_name["real"]["is_wiki_root"] is True
     assert by_name["fake"]["is_wiki_root"] is False
-    # The non_wiki_paths_detected key surfaces the warning at plan level
+    # purge_wikis is always False in plan
+    assert plan["purge_wikis"] is False
+    assert plan["purge_config"] is False  # preserve_config=True → purge_config=False
+    # non_wiki_paths_detected surfaces the warning at plan level
     detected = plan.get("non_wiki_paths_detected")
     assert detected is not None
     assert any(d["name"] == "fake" for d in detected)
 
 
-def test_execute_purge_wikis_refuses_non_wiki_path(xu_home, monkeypatch):
-    """3.1: --purge-wikis refuses to rmtree a non-wiki path; entry dropped
-    from registry but directory left intact."""
-    _seed_nonwiki(xu_home, "fake")
-    fake_path = xu_home / "not-a-wiki" / "fake"
+def test_execute_purge_wikis_never_deletes_wiki(xu_home, monkeypatch):
+    """Wiki data is NEVER deleted — even if --purge-wikis is passed."""
+    _seed_wiki(xu_home, "A")
     monkeypatch.setattr(cmd_mod, "_pip_uninstall",
                         lambda: {"ok": True, "returncode": 0,
                                  "stdout_tail": "", "stderr_tail": ""})
-    r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=True, purge_config=False))
-    # directory NOT removed
-    assert fake_path.exists()
-    # registry entry dropped
-    assert "fake" not in cfg_mod.load_registry()["wikis"]
-    # reported under `refused`
-    refused = r["data"]["result"]["wikis"]["refused"]
-    assert any(x["name"] == "fake" for x in refused)
-    # status reflects partial (warning)
-    assert r["status"] == "warning"
+    # Mock shutil.rmtree to verify it is called with xu_home
+    import shutil as shutil_mod
+    deleted_paths = []
+    original_rmtree = shutil_mod.rmtree
 
+    def track_rmtree(path, **kwargs):
+        deleted_paths.append(Path(path))
+        # Actually delete to mimic real behavior
+        original_rmtree(path, **kwargs)
 
-def test_execute_purge_wikis_removes_real_wiki(xu_home, monkeypatch):
-    """3.1: a real-wiki path IS removed normally."""
-    _seed_wiki(xu_home, "real")
-    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
-                        lambda: {"ok": True, "returncode": 0,
-                                 "stdout_tail": "", "stderr_tail": ""})
+    monkeypatch.setattr(shutil_mod, "rmtree", track_rmtree)
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=True, purge_config=False))
-    assert not (xu_home / "wikis" / "real").exists()
-    assert r["data"]["result"]["wikis"]["refused"] == []
+                                    purge_wikis=True, purge_config=True))
+    # wiki data preserved (NEVER deleted) — verify marker file still exists
+    assert _last_wiki_path.exists()
+    assert (_last_wiki_path / ".xu" / "wiki.db").exists()
+    # wikis reported as skipped (purge_wikis is always False)
+    assert r["data"]["result"]["wikis"]["skipped"] is True
+    # config was deleted via rmtree(xu_home)
+    assert any(p == xu_home for p in deleted_paths), f"Expected rmtree({xu_home}), got {deleted_paths}"
     assert r["status"] == "success"
 
 
 # ----------------------------------------------------------------------
-# 2. --execute without purge flags: only pip (wiki data + ~/.xu/ preserved)
+# 2. --execute default: pip + config removed; wikis ALWAYS preserved
 # ----------------------------------------------------------------------
 
-def test_execute_no_purge_preserves_wikis_and_global_dir(xu_home, monkeypatch):
-    """Default --execute scope: only pip; wikis + ~/.xu/ stay."""
+def test_execute_default_removes_config_preserves_wikis(xu_home, monkeypatch):
+    """Default --execute: pip + ~/.xu/ removed; wiki data stays (never deleted)."""
     _seed_wiki(xu_home, "A")
     monkeypatch.setattr(cmd_mod, "_pip_uninstall",
                         lambda: {"ok": True, "returncode": 0,
                                  "stdout_tail": "ok", "stderr_tail": ""})
+    import shutil as shutil_mod
+    deleted = []
+    orig = shutil_mod.rmtree
+
+    def tracker(path, **kw):
+        deleted.append(Path(path))
+        orig(path, **kw)
+
+    monkeypatch.setattr(shutil_mod, "rmtree", tracker)
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=False, purge_config=False))
+                                    purge_wikis=False, purge_config=True))
     assert r["status"] == "success"
-    # wikis untouched
-    assert "A" in cfg_mod.load_registry()["wikis"]
-    assert (xu_home / "wikis" / "A").exists()
-    # ~/.xu/ untouched
-    assert xu_home.exists()
+    # wikis untouched (NEVER deleted) — verify marker file exists
+    assert _last_wiki_path.exists()
+    assert (_last_wiki_path / ".xu" / "wiki.db").exists()
+    # rmtree was called with xu_home (config dir)
+    assert any(p == xu_home for p in deleted), f"Expected rmtree({xu_home}), got {deleted}"
     # pip ran
     assert r["data"]["result"]["pip"]["ok"] is True
-    # wikis + config_dir marked skipped
-    assert r["data"]["result"]["wikis"]["skipped"] is True
-    assert r["data"]["result"]["config_dir"]["skipped"] is True
 
 
 # ----------------------------------------------------------------------
-# 3. --execute --keep-pip: removes wikis + ~/.xu/ but skips pip
+# 3. --execute --keep-pip: removes ~/.xu/ but skips pip; wikis stay
 # ----------------------------------------------------------------------
 
-def test_execute_keep_pip_purges_wikis_and_global_dir(xu_home):
-    """--keep-pip is the test/dev escape hatch."""
+def test_execute_keep_pip_removes_config_preserves_wikis(xu_home, monkeypatch):
+    """--keep-pip removes config; wiki data always preserved."""
+    import shutil as shutil_mod
+    deleted = []
+    orig = shutil_mod.rmtree
+
+    def tracker(path, **kw):
+        deleted.append(Path(path))
+        orig(path, **kw)
+    monkeypatch.setattr(shutil_mod, "rmtree", tracker)
+
     _seed_wiki(xu_home, "A")
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=True,
                                     purge_wikis=True, purge_config=True))
     assert r["status"] == "success"
-    # wikis dir removed
-    assert not (xu_home / "wikis" / "A").exists()
-    # registry cleared
-    assert cfg_mod.load_registry()["wikis"] == {}
-    # pip was skipped
+    assert _last_wiki_path.exists()
+    assert (_last_wiki_path / ".xu" / "wiki.db").exists()
     assert r["data"]["result"]["pip"]["skipped"] is True
-    # ~/.xu/ removed (note: shutil.rmtree of tmp_path itself)
-    assert not xu_home.exists()
+    assert any(p == xu_home for p in deleted), f"Expected rmtree({xu_home}), got {deleted}"
 
 
 # ----------------------------------------------------------------------
-# 4. --execute --purge-wikis only: nukes wiki dirs + drops registry
+# 4. --execute --preserve-config: keeps ~/.xu/; wikis always preserved
 # ----------------------------------------------------------------------
 
-def test_execute_purge_wikis_only(xu_home, monkeypatch):
-    """--purge-wikis removes dirs and clears registry; ~/.xu/ stays."""
+def test_execute_preserve_config_keeps_xu_dir(xu_home, monkeypatch):
+    """--preserve-config keeps ~/.xu/; wikis always preserved."""
     _seed_wiki(xu_home, "A")
-    _seed_wiki(xu_home, "B")
     monkeypatch.setattr(cmd_mod, "_pip_uninstall",
                         lambda: {"ok": True, "returncode": 0,
                                  "stdout_tail": "", "stderr_tail": ""})
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=True, purge_config=False))
+                                    preserve_config=True))
     assert r["status"] == "success"
-    # both wikis gone
-    assert not (xu_home / "wikis" / "A").exists()
-    assert not (xu_home / "wikis" / "B").exists()
-    # registry cleared
-    assert cfg_mod.load_registry()["wikis"] == {}
-    # result reports per-wiki removal
-    names = sorted(w["name"] for w in r["data"]["result"]["wikis"]["removed"])
-    assert names == ["A", "B"]
+    assert "A" in cfg_mod.load_registry()["wikis"]
+    assert _last_wiki_path.exists()
+    assert xu_home.exists()
+    assert r["data"]["result"]["config_dir"]["skipped"] is True
+
+
+# ----------------------------------------------------------------------
+# 5. --purge-wikis is ignored: wiki data NEVER deleted regardless of flag
+# ----------------------------------------------------------------------
+
+def test_purge_wikis_flag_is_ignored(xu_home, monkeypatch):
+    """--purge-wikis is a no-op; wiki data is NEVER deleted."""
+    wiki_a = _seed_wiki(xu_home, "A")
+    wiki_b = _seed_wiki(xu_home, "B")
+    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
+                        lambda: {"ok": True, "returncode": 0,
+                                 "stdout_tail": "", "stderr_tail": ""})
+    import shutil as shutil_mod
+    deleted = []
+    orig = shutil_mod.rmtree
+
+    def tracker(path, **kw):
+        deleted.append(Path(path))
+        orig(path, **kw)
+    monkeypatch.setattr(shutil_mod, "rmtree", tracker)
+
+    r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
+                                    purge_wikis=True, purge_config=True))
+    assert r["status"] == "success"
+    # wikis preserved (NEVER deleted)
+    assert wiki_a.exists()
+    assert wiki_b.exists()
+    assert (wiki_a / ".xu" / "wiki.db").exists()
+    assert (wiki_b / ".xu" / "wiki.db").exists()
+    # config was deleted; verify rmtree was called with xu_home
+    assert any(p == xu_home for p in deleted), f"Expected rmtree({xu_home}), got {deleted}"
 
 
 # ----------------------------------------------------------------------
@@ -253,24 +317,21 @@ def test_cli_palette_includes_uninstall_under_config():
     p = build_parser()
     args = p.parse_args(["uninstall"])
     assert args.func == "uninstall"
-    # With --dry-run / --execute as mutex group + default=None, the
-    # raw argparse attr is None when neither is passed. cmd_uninstall
-    # resolves execute via `bool(getattr(args, "execute", False))`.
     assert args.execute is None
     assert args.dry_run is None
     assert args.keep_pip is False
-    assert args.purge_wikis is False
-    assert args.purge_config is False
+    assert args.purge_wikis is False  # flag still accepted but ignored
+    assert args.preserve_config is False  # default: remove ~/.xu/
 
 
 def test_cli_palette_exec_flags_parse():
+    """New flags: --preserve-config (inverts config removal); --purge-wikis is ignored."""
     from xu.cli import build_parser
     p = build_parser()
-    args = p.parse_args(["uninstall", "--execute", "--purge-wikis",
-                         "--purge-config", "--keep-pip"])
+    args = p.parse_args(["uninstall", "--execute",
+                         "--preserve-config", "--keep-pip"])
     assert args.execute is True
-    assert args.purge_wikis is True
-    assert args.purge_config is True
+    assert args.preserve_config is True  # keeps ~/.xu/
     assert args.keep_pip is True
 
 
