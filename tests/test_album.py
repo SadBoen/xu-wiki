@@ -126,8 +126,7 @@ def test_album_happy_list(wiki, tmp_path):
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="List layout album",
         files=",".join(files), node_path="",
-        layout="list", vision=False, captions="",
-        digest="D-album-list", author="tester",
+        layout="list", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "success", r
     md = root / r["data"]["md_path"]
@@ -148,8 +147,7 @@ def test_album_missing_wiki(xu_home, tmp_path):
     _write_fake_jpeg(p)
     r = album_mod.cmd_ingest_album(_args(
         wiki="no-such-wiki", title="t", files=str(p), node_path="",
-        layout="table", vision=False, captions="",
-        digest="", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "WikiNotFound"
@@ -161,8 +159,7 @@ def test_album_missing_title(wiki, tmp_path):
     _write_fake_jpeg(p)
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="", files=str(p), node_path="",
-        layout="table", vision=False, captions="",
-        digest="", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "MissingTitle"
@@ -173,8 +170,7 @@ def test_album_missing_files(wiki):
     name, _ = wiki
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="t", files="", node_path="",
-        layout="table", vision=False, captions="",
-        digest="", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "MissingFiles"
@@ -186,8 +182,7 @@ def test_album_relative_path(wiki, tmp_path):
     _write_fake_jpeg(rel)
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="t", files=f"./{rel.name}", node_path="",
-        layout="table", vision=False, captions="",
-        digest="", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "PathNotAbsolute"
@@ -199,8 +194,7 @@ def test_album_invalid_layout(wiki, tmp_path):
     _write_fake_jpeg(p)
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="t", files=str(p), node_path="",
-        layout="yaml", vision=False, captions="",
-        digest="", author="tester",
+        layout="yaml", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "InvalidLayout"
@@ -211,8 +205,7 @@ def test_album_file_not_found(wiki, tmp_path):
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="t",
         files=str(tmp_path / "missing.jpeg"),
-        node_path="", layout="table", vision=False, captions="",
-        digest="", author="tester",
+        node_path="", layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "FileNotFound"
@@ -232,8 +225,7 @@ def test_album_source_collision_rejected(wiki, tmp_path):
     _write_fake_jpeg(p1, body=b"uniquely-stable-bytes-for-collision-test")
     r1 = album_mod.cmd_ingest_album(_args(
         wiki=name, title="first album", files=str(p1),
-        node_path="", layout="table", vision=False, captions="",
-        digest="D1", author="tester",
+        node_path="", layout="table", vision=False, captions="", author="tester",
     ))
     assert r1["status"] == "success", r1
     first_hash = r1["data"]["sources"][0]["source_hash"]
@@ -244,8 +236,7 @@ def test_album_source_collision_rejected(wiki, tmp_path):
     r2 = album_mod.cmd_ingest_album(_args(
         wiki=name, title="second album collision",
         files=f"{p1},{p2}", node_path="",
-        layout="table", vision=False, captions="",
-        digest="D2", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r2["status"] == "warning", r2
     assert r2["data"]["checked"] == 2
@@ -271,7 +262,7 @@ def test_album_captions_inline_json(wiki, tmp_path):
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="captions test", files=",".join(files),
         node_path="", layout="table", vision=False,
-        captions=captions, digest="D-cap", author="tester",
+        captions=captions, author="tester",
     ))
     assert r["status"] == "success", r
     md = root / r["data"]["md_path"]
@@ -286,8 +277,7 @@ def test_album_captions_bad_json(wiki, tmp_path):
     _write_fake_jpeg(p)
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="t", files=str(p), node_path="",
-        layout="table", vision=False, captions="{not-json",
-        digest="", author="tester",
+        layout="table", vision=False, captions="{not-json", author="tester",
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "BadCaptionsJSON"
@@ -300,8 +290,7 @@ def test_album_vision_flag_recorded(wiki, tmp_path):
     _write_fake_jpeg(p)
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="vision test", files=str(p), node_path="",
-        layout="table", vision=True, captions="",
-        digest="D-vision", author="tester",
+        layout="table", vision=True, captions="", author="tester",
     ))
     assert r["status"] == "success", r
     md = root / r["data"]["md_path"]
@@ -330,8 +319,7 @@ def test_album_runs_without_pillow(wiki, tmp_path, monkeypatch):
     # the module attr is enough)
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="no pillow test", files=str(p), node_path="",
-        layout="table", vision=False, captions="",
-        digest="D-np", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "success", r
     src = r["data"]["sources"][0]
@@ -359,8 +347,7 @@ def test_album_sources_copied_to_raws(wiki, tmp_path):
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="raws copy test",
         files=f"{p1},{p2}", node_path="嵌套/路径/段",
-        layout="table", vision=False, captions="",
-        digest="D-raws", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "success", r
     raws_root = root / "raws" / "嵌套" / "路径" / "段"
@@ -381,8 +368,7 @@ def test_resolve_wiki_after_album_creation(wiki, tmp_path):
     _write_fake_jpeg(p)
     r = album_mod.cmd_ingest_album(_args(
         wiki=name, title="resolve test", files=str(p), node_path="",
-        layout="table", vision=False, captions="",
-        digest="D-res", author="tester",
+        layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "success", r
     # Re-resolve and confirm the L1 is queryable via raw SQL

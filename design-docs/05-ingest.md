@@ -32,7 +32,7 @@ Ingest 把外部信息（文件/URL/文本）变成 wiki 里的 **Node_Page**。
 ```
 Phase 1: 原始内容 → 解析为 markdown → 写暂存
    ↓
-Agent 读暂存、提取元数据（title / digest / relations / node_path / 层级字段 / 形态字段 等）
+Agent 读暂存、提取元数据（title / relations / node_path / content_type / 层级字段 等）
    ↓
 Phase 2: 元数据 + 暂存内容 → 校验 → 原子写 Page + 写 patches 表初值 + 入 IDF
 ```
@@ -204,7 +204,7 @@ xu-wiki ingest-album \
   --layout table|list \
   [--vision] \
   [--captions '{"001.jpeg":"船头整体完工",...}'] \
-  --digest <D> --author <A>
+  --author <A>
 ```
 
 **9 步内部流程**:
