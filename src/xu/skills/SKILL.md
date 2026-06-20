@@ -108,6 +108,35 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
      "try a different way"), re-interpret their intent through the SOP
      and pick a new CLI — they will not retype a corrected command
      for you.
+
+0a. **Software lifecycle (install / uninstall / upgrade) is OUTSIDE the
+    5 SOPs.** There is **no `/xu-wiki install`**, **no `/xu-wiki uninstall`**,
+    and **no `/xu-wiki upgrade`** slash command — they do not exist and
+    you must not invent them. When the user says anything about installing,
+    uninstalling, or upgrading xu-wiki:
+    - **Recognise the intent** ("uninstall xu-wiki", "remove xu-wiki",
+      "升级一下 xu-wiki", "把 xu-wiki 删了", "I want to get rid of
+      xu-wiki", etc.) and respond in natural language.
+    - **Route to your own bash / shell tool** — **NOT** to `xu` (the
+      `xu` CLI has no install / uninstall / upgrade subcommand; calling
+      `xu install` will return an `ArgParseError`).
+    - **Run the corresponding pip command**:
+      - install   → `pip install "xu-wiki[parse,nlp,vision]"`
+      - upgrade   → `pip install --upgrade "xu-wiki[parse,nlp,vision]"`
+      - uninstall → `pip uninstall xu-wiki -y`
+    - **Translate pip's stdout/stderr back to the user** in natural
+      language. Example: pip prints "Successfully uninstalled
+      xu-wiki-0.1.0" → tell the user "已卸载 xu-wiki 0.1.0".
+    - **Confirm destructive operations** before running them (especially
+      uninstall) — show what will be removed and wait for explicit "yes"
+      from the user. This is the same safety contract you apply to
+      any other destructive xu CLI (see `delete-node` / `rebuild`).
+    - **Never ask the user to run pip themselves** — that violates
+      PRIN-SOP-8 ("User never touches CLI"). You run it on their behalf.
+
+    PRIN-SOP-8 still holds: you are the only legitimate caller of `xu`
+    AND you are the only legitimate executor of pip on the user's behalf.
+    The user only ever types natural language into your UI.
 1. **Never edit L1 markdown body** — it is immutable (PRIN-ARCH-2/3).
    UIDs are retired on delete, never reused (BAN-ARCH-2).
 2. **Report needs evidence** — `--references` must list ≥ 1 existing UIDs

@@ -57,17 +57,37 @@ That single command installs:
 - the bundled skill source (8 files under `<site-packages>/xu/skills/`)
 - the 3 optional parser groups
 
-To **uninstall**:
-
-```bash
-pip uninstall xu-wiki
-```
-
-That's it — no `xu install`, no `xu uninstall`, no separate `install.sh`,
-no venv management, no symlink config. Pip handles all of it.
+That's it — no `xu install`, no separate `install.sh`, no venv
+management, no symlink config. Pip handles all of it.
 
 Set `XU_HOME` to relocate the global config / registry directory (defaults to
 `~/.xu`).
+
+## Uninstall / upgrade (handled by the agent, not by `xu`)
+
+**The user never types `pip uninstall` in a terminal.** Under
+[PRIN-SOP-8], the user only communicates through the agent UI. The
+agent runs pip on the user's behalf via its own bash / shell tool —
+`xu` CLI is never involved.
+
+What the user says vs what the agent does:
+
+| User says (any phrasing) | Agent runs (via bash tool, NOT `xu`) |
+|---|---|
+| "装一下 xu-wiki" / "install xu-wiki" | `pip install "xu-wiki[parse,nlp,vision]"` |
+| "升级 xu-wiki" / "upgrade xu-wiki" | `pip install --upgrade "xu-wiki[parse,nlp,vision]"` |
+| "把 xu-wiki 卸了" / "uninstall xu-wiki" | `pip uninstall xu-wiki -y` |
+| "xu-wiki 是不是最新版" / "what version" | `pip show xu-wiki` |
+
+There is **no `/xu-wiki install`** / **`/xu-wiki uninstall`** /
+**`/xu-wiki upgrade`** slash command — they don't exist (see
+[CONST-SOP-3] in `design-docs/08-sop-architecture.md` and SKILL.md
+hard rule 0a).
+
+`pip uninstall xu-wiki` only removes the package and the `xu` binary.
+Wiki data on disk (`raws/`, `nodes/`, `.xu/`) is untouched. To wipe
+wiki data, that's a separate request — `xu delete-node` for individual
+nodes, or `rm -rf` for whole wikis (after `pip uninstall`).
 
 > **What the CLI does NOT do**: install / uninstall the package itself. The
 > CLI only manages wiki data — it never touches venv / symlink / system PATH.

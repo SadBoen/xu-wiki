@@ -51,6 +51,48 @@ xu skills list                                 # list files in the xu-wiki skill
 > exist so the agent can locate the bundled skill source dir for its own
 > skill manager — they do not deploy anything to any agent.
 
+## Workflow — software lifecycle (install / uninstall / upgrade)
+
+**This workflow is NOT a SOP. It has no slash command.** The user
+addresses software lifecycle through plain natural language in the
+agent UI ("装一下 xu-wiki" / "把 xu-wiki 卸了" / "升级 xu-wiki").
+The agent handles it via its own bash / shell tool, **NOT** via `xu`.
+
+The complete end-to-end flow:
+
+| User says (any phrasing) | Agent routes to | Agent runs | Agent replies to user |
+|---|---|---|---|
+| "装一下 xu-wiki" / "install xu-wiki" | bash tool | `pip install "xu-wiki[parse,nlp,vision]"` | "已安装 xu-wiki X.Y.Z" |
+| "升级 xu-wiki" / "upgrade xu-wiki" | bash tool | `pip install --upgrade "xu-wiki[parse,nlp,vision]"` | "已升级到 X.Y.Z" |
+| "把 xu-wiki 卸了" / "uninstall xu-wiki" | bash tool | `pip uninstall xu-wiki -y` | "已卸载 xu-wiki X.Y.Z" |
+| "xu-wiki 是不是最新版" / "what version of xu-wiki is installed" | bash tool | `pip show xu-wiki` | "当前版本 X.Y.Z" |
+
+**Critical rules for the agent when handling these flows:**
+
+1. **Never call `xu install` / `xu uninstall` / `xu upgrade`** — those
+   subcommands do not exist. Calling them returns `ArgParseError`, which
+   is a wasted round trip.
+2. **Never ask the user to run pip in a terminal** — PRIN-SOP-8 / rule 0
+   forbid it. The agent is the only legitimate executor of pip on the
+   user's behalf.
+3. **Confirm destructive operations** — uninstall is destructive; show
+   the user what will be removed (xu-wiki + transitive deps) and wait
+   for explicit "yes" before running `pip uninstall -y`.
+4. **Translate pip output back to natural language** — never paste raw
+   pip stdout / stderr at the user. Summarise ("Successfully uninstalled
+   xu-wiki-0.1.0" → "已卸载").
+5. **Do not touch the wiki on uninstall** — `pip uninstall xu-wiki`
+   removes the package and the `xu` binary; the wiki data on disk
+   (raws/, nodes/, .xu/) is untouched. If the user wants the wiki data
+   gone too, that's a separate request handled by `xu delete-node` /
+   `rm -rf` — not by uninstall.
+
+The **5 SOPs** (create / ingest / query / doctor / config) all live in
+the user → agent → `xu CLI` path. Software lifecycle lives in the
+user → agent → bash tool path. Both paths share the same agent and the
+same UI, but they use different tools — see the table in
+[CONST-SOP-3] of `design-docs/08-sop-architecture.md`.
+
 ## Workflow — first-time setup
 
 1. **Install the package once per machine**:

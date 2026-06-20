@@ -127,13 +127,31 @@ SOP recipe 必须覆盖**意图 → CLI** 的映射，不仅列 CLI 步骤。本
 User (通过 Agent UI / 自然语言)
     ↓ chat / 语音 / 文字
 Agent (LLM + SKILL.md + SOP 编排)
-    ↓ subprocess.run(["xu", ...])
+    ↓ 多个工具，按意图路由：
+    ├─ subprocess.run(["xu", ...])  →  xu CLI（动 wiki 数据，5 SOP 全走这条）
+    └─ bash / shell 工具             →  系统命令（pip install / uninstall / ...）
 CLI (确定性引擎)
     ↓ 文件 / DB
 Wiki data
 ```
 
-**用户**与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、IM 客户端……），用户的输入永远是自然语言意图，不是 shell 命令。**Agent** 是 CLI 的**唯一合法调用方**——CLI 看不到 User、只看到 Agent；User 看不到 CLI、只看到 Agent。
+**用户**与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、IM 客户端……），用户的输入永远是自然语言意图，不是 shell 命令。**Agent** 是 **xu CLI** 的**唯一合法调用方**——CLI 看不到 User、只看到 Agent；User 看不到 CLI、只看到 Agent。
+
+关键澄清：**PRIN-SOP-8 的管辖范围是 `xu` CLI，不是 Agent 的所有工具**。Agent 通常自带一整套工具：
+
+| Agent 的工具 | 用途 | 是否属 PRIN-SOP-8 管辖 |
+|---|---|---|
+| `xu` CLI（subprocess） | 5 SOP 全走这条：建库 / 入库 / 查 / 修 / config | ✅ 是 — User 绝不直接调 |
+| bash / shell 工具 | pip install / pip uninstall / 系统命令 | ❌ 否 — pip 是 pip 的事 |
+| 文件读写工具 | 读 wiki 文件（只读场景） | ❌ 否 — 仅在 SOP 编排内使用 |
+| 网络工具 | （xu 不应使用） | n/a |
+
+具体到**软件生命周期（install / uninstall / upgrade）**：用户在人话里说"装 / 卸 / 升级 xu-wiki"，Agent 用自己的 **bash 工具**（不是 xu CLI）跑 `pip install` / `pip uninstall` / `pip install --upgrade`。这条路径**完全不经过 xu CLI**——所以：
+
+- 没有 `/xu-wiki install` / `/xu-wiki uninstall` slash 命令——它们不在 5 SOP 里
+- 没有 `xu install` / `xu uninstall` 子命令——CLI 不重复造轮子（[CONST-SOP-3]）
+- User 永远不会去 terminal 敲 pip 命令——User 只在 chat 里说人话
+- Agent 自己有 shell 工具，PRIN-SOP-8（User 不调 xu CLI）依然成立——Agent 调的不是 xu CLI、是 bash
 
 由此推导的设计约束：
 
@@ -210,6 +228,26 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 ### [CONST-SOP-3] install / uninstall 由 pip 处理，不属于本 CLI
 
 `pip install xu-wiki[parse,nlp,vision]` 与 `pip uninstall xu-wiki` 由 pip 处理，不在 xu CLI 范围内。xu-wiki CLI 只动 wiki 数据，不动软件本体的安装 / 卸载。
+
+**调用入口**：Agent 用自己的 bash / shell 工具（不是 `xu` CLI）执行 pip 命令。例如 User 说"卸载 xu-wiki"，Agent 调 `pip uninstall xu-wiki -y`，把 pip 的 stdout 翻译成自然语言回复 User。**User 永远不直接调 pip**——这与 PRIN-SOP-8 一致：User 的所有动作都经 Agent UI 中转，包括 pip 这种"非 xu CLI"的系统命令。
+
+**没有 `/xu-wiki install` / `/xu-wiki uninstall` slash 命令**——因为：
+1. 它们不在 5 SOP（create / ingest / query / doctor / config）的范围内
+2. 它们的执行路径**不经过 xu CLI**——做一个空壳 slash 命令只会把 Agent 路由到 shell 工具，不如直接路由
+3. User 在 chat 里说人话已足够，不需要额外的 slash 入口
+
+User 在 Agent UI 里的输入分工：
+
+| 输入形式 | 意图类型 | Agent 的工具 |
+|---|---|---|
+| `/xu-wiki create` ... | 5 SOP 之一（wiki 数据） | `xu` CLI |
+| `/xu-wiki ingest` ... | 5 SOP 之一（wiki 数据） | `xu` CLI |
+| `/xu-wiki query` ... | 5 SOP 之一（wiki 数据） | `xu` CLI |
+| `/xu-wiki doctor` ... | 5 SOP 之一（wiki 数据） | `xu` CLI |
+| `/xu-wiki config` ... | 5 SOP 之一（wiki 数据 / 配置） | `xu` CLI |
+| `装一下 xu-wiki` / `把 xu-wiki 卸了` / `升级 xu-wiki` | 软件生命周期 | bash / shell 工具（pip） |
+| `给维基起个新名字` | wiki 数据 | `xu` CLI |
+| 任何 wiki 数据问题 | wiki 数据 | `xu` CLI |
 
 ### [CONST-SOP-4] 5 SOP 数量固定，不轻易增减
 
