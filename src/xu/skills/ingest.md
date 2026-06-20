@@ -80,12 +80,23 @@ xu report create --wiki <w> --title <t> --body <md> \
 3. **Phase 1 — `ingest-file`**: parses the file via the offline-first
    fallback chain (MinerU → markitdown → text → image, CONST-ING-1) and
    writes a pending file. Returns the pending file path.
-4. **(Optional) Review the pending file** with `read --wiki W --uid <pending-uid>`.
-5. **Phase 2 — `ingest-commit`**: promotes pending to L1. Required:
+4. **取证副本 (PRIN-ING-6)**: after `ingest-commit` succeeds, the CLI copies
+   the source file to `raws/<node_path>/<original_name>` (first page only).
+   **This is mandatory for all document types** — `.md / .pdf / .docx / .pptx`
+   must all be physically stored. The response `data.created[].raw_path` should
+   be non-null. If it is null, PRIN-ING-6 was bypassed — stop and investigate.
+   > **Exception**: `--native` mode has no source file (agent-synthesized text),
+   > so `raw_path` is null by design. But `--native` still requires `--source`
+   > (a reference path) for dedup. Use `--pending` for any external document.
+5. **(Optional) Review the pending file** with `read --wiki W --uid <pending-uid>`.
+6. **Phase 2 — `ingest-commit`**: promotes pending to L1. Required:
    `--title`. Optional: `--template`, `--node-path`, `--relations`,
    `--digest`, `--author`.
-6. **(Optional) Wire relations** with `query-relation add`.
-7. **(Optional) Group into L2/L3** with `list create` / `report create`.
+7. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
+   An empty `raws/` directory with populated `nodes/page/` = PRIN-ING-6 was
+   bypassed (usually from `--native` on a document).
+8. **(Optional) Wire relations** with `query-relation add`.
+9. **(Optional) Group into L2/L3** with `list create` / `report create`.
 
 ## Workflow — album (multiple images, one theme)
 
@@ -101,6 +112,25 @@ xu report create --wiki <w> --title <t> --body <md> \
 1. **Verify content-form**: "this is a code block, OK?"
 2. **Single `ingest-commit --native "<code>"`**: skips Phase 1 (no parse),
    goes through dedup / patches v1 / IDF directly.
+   > **Warning — PRIN-ING-6 bypass**: `--native` has **no physical source file**
+   > (it is agent-synthesized text), so `raw_path` in the response is null by
+   > design. **Do NOT use `--native` for external `.md / .pdf / .docx / .pptx**
+   > ingestion** — that silently skips the raws/ forensic copy. Use the
+    > `--pending` path (Phase 1 + Phase 2) for any external document.
+
+## Pending lifecycle (PRIN-ING-7)
+
+`nodes/pending/` is the Phase 1 staging area. Its lifecycle:
+
+| Event | What happens |
+|---|---|
+| `ingest-file` runs | Creates `nodes/pending/<name>-pre.md` |
+| `ingest-commit` succeeds | CLI deletes pending file immediately (PRIN-ING-7) |
+| `ingest-commit` fails | Pending file **retained** (debug / retry evidence) |
+| Any残留 | **Bug** — run `xu doctor-all --wiki W` to detect |
+
+**An empty `nodes/pending/` directory after a successful ingest is correct.
+A non-empty directory is a signal that something went wrong mid-flow.**
 
 ## Post-commit reflection (PRIN-CR-1, asymmetric bias)
 
@@ -178,6 +208,13 @@ xu ingest-album --wiki research \
   the album" use `ingest-album` with a fresh `ingest-album` call — wait,
   see `ingest-add` (album-add CLI; see 02-album-scenario.md for the
   pattern; otherwise just use `ingest-album` against the existing node-path).
+- **Empty raws/ despite L1 pages** — if `nodes/page/` has content but
+  `raws/` is empty, PRIN-ING-6 was bypassed (usually from using `--native`
+  on a document). `data.created[].raw_path` in the response would be null.
+  Fix: delete the L1 and re-ingest via `--pending` path.
+- **`nodes/pending/` has leftover files** — pending files should not exist
+  after a successful `ingest-commit` (PRIN-ING-7). If they do, something
+  crashed mid-flow. Run `xu doctor-all --wiki W` to detect and fix.
 
 ## Cross-references
 

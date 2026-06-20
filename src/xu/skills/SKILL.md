@@ -267,8 +267,31 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
     Full reflection checklist → `ingest.md §Post-commit reflection`
     and `query.md §Workflow` step 5.
 
+13. **Pending lifecycle (PRIN-ING-7)**: `nodes/pending/` is Phase 1 staging.
+   After `ingest-commit` **succeeds**, the CLI deletes the pending file immediately.
+   After `ingest-commit` **fails**, the pending file is retained (debug evidence).
+   An empty `nodes/pending/` directory after a successful ingest is correct.
+   **Any leftover pending file is a bug signal** — run `xu doctor-all --wiki W`
+   to detect. The agent should treat a non-empty pending directory as a stop
+   signal: do not continue ingesting until the leftover is investigated.
+
 > **Ingest-specific rule** (PRIN-ING-13, the body-form decision tree) lives
 > in `ingest.md` since it only applies to the ingest SOP.
+
+## Quick safety checklist
+
+Before declaring an ingest done, run through this every time:
+
+1. **`raws/<node_path>/` has the source file copy?** (PRIN-ING-6) — if empty but
+   `nodes/page/` has content, PRIN-ING-6 was bypassed. Stop and re-investigate.
+2. **`nodes/pending/` is empty?** (PRIN-ING-7) — any file here means a commit
+   did not finish cleanly. Run `xu doctor-all --wiki W` before continuing.
+3. **`data.created[].raw_path` is non-null?** — if null, explains why raws/ is
+   empty. Null is expected only for `--native` (agent-synthesized text).
+4. **`xu doctor-all --wiki W` returns zero issues?** — do not proceed to the next
+   batch if doctor reports pending leftovers or other ingest anomalies.
+
+**Any NO answer means: stop, investigate, fix before continuing.**
 
 ## Process-layer audit log (CONST-ARCH-6 / PRIN-ARCH-26)
 
@@ -309,9 +332,9 @@ act on its own (PRIN-QRY-1).
 # 1. create a wiki
 xu create --name research --path /abs/path/to/wiki
 
-# 2. ingest L1 — two phases (PRIN-ING-1)
+# 2. ingest L1 — two phases (PRIN-ING-1); verify raws/ has copy after (PRIN-ING-6)
 xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → pending
-xu ingest-commit --wiki research --title "BERT" --template article # → L1 entry
+xu ingest-commit --wiki research --pending <pending-path> --title "BERT" --template article # → L1 entry
 
 # 3. query (Agent grades the keywords into core vs expansion)
 xu query --wiki research --core "transformer,attention" \

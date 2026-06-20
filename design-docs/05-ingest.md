@@ -92,7 +92,7 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 
 任何被 ingest 的源文件必须在 `raws/` 留一份副本,保证「这页从哪来」可溯源、可校验。
 
-**图片例外**:需要压缩的图片,其「原样可追溯」由 [PRIN-ING-12] 的双 SHA256 保证,不强求物理保留未压缩字节。
+**图片例外**:需要压缩的图片,其「原样可追溯」由 [PRIN-ING-12] 的双 SHA256 保证,不强求物理保留未压缩字节（压缩后的文件仍须进 raws/）。
 
 ### [PRIN-ING-7] 暂存是中间产物——生命周期原则
 
@@ -325,6 +325,11 @@ ingest-commit 是纯确定性逻辑：
 - 写暂存（即使是 markdown 原样）
 - 走 commit 流程
 - 写 DB / 关系 / patches / IDF
+
+> **警告**：`--native` 模式**不满足 PRIN-ING-6**（无源文件可 copy 进 raws/）。
+> 设计用途：Agent 合成的代码片段、终端输出等**无外部源**的纯文本。
+> **禁止**用 `--native` 摄取外部 `.md / .pdf / .docx / .pptx` 文档——会静默绕过取证副本。
+> 必须使用 `--pending` 路径（Phase 1 + Phase 2）。
 
 **不允许**「Agent 在 Phase 2 之前直接拼好 frontmatter 然后调用 ingest-commit 跳校验」——校验是 commit 的**入口**。
 

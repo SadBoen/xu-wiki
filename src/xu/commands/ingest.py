@@ -91,11 +91,15 @@ def cmd_ingest_file(args) -> dict:
     pending_path = ctx.pending_dir / pending_name
     ctx.pending_dir.mkdir(parents=True, exist_ok=True)
 
+    # Strip YAML frontmatter from source to avoid double-frontmatter in pending.
+    # A source .md with `---title:...---` would produce two frontmatter blocks
+    # in the pending file otherwise.
+    text = _strip_frontmatter(res.text)
     meta_header = (
         f"<!-- xu-pending source={src} parser={res.parser} "
         f"source_hash={sha256_file(src)} node_path={node_path} -->\n\n"
     )
-    atomic_write_text(pending_path, meta_header + res.text)
+    atomic_write_text(pending_path, meta_header + text)
 
     return success(
         {
@@ -104,7 +108,7 @@ def cmd_ingest_file(args) -> dict:
             "source": str(src),
             "source_hash": sha256_file(src),
             "node_path": node_path,
-            "chars": len(res.text),
+            "chars": len(text),
         },
         f"parsed via {res.parser} → pending (Phase 1). No node created yet.",
         hints=[
@@ -129,6 +133,15 @@ def _parse_pending_header(text: str) -> tuple[dict, str]:
     return meta, body
 
 
+def _strip_frontmatter(text: str) -> str:
+    """Strip leading YAML frontmatter (---...---) from markdown text."""
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            return text[end + 4:].lstrip("\n")
+    return text
+
+
 def cmd_ingest_commit(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
@@ -140,7 +153,18 @@ def cmd_ingest_commit(args) -> dict:
     raw_src_path = None
     parser_used = "native"
     if args.native:
+        if not args.source:
+            return error(
+                "--native requires --source <abs-path> (PRIN-ING-6: every ingested source must be copyable to raws/)",
+                "MissingSource",
+                hints=["--source must be an absolute path to the source file"],
+            )
+        src_path = Path(args.source).expanduser()
+        if not src_path.is_file():
+            return error(f"source file not found: {src_path}", "FileNotFound")
         content = args.native
+        raw_src_path = str(src_path)
+        source_hash = sha256_text(args.native)
         node_path = args.node_path
     elif args.pending:
         pending_path = Path(args.pending).expanduser()
@@ -279,6 +303,7 @@ def cmd_ingest_commit(args) -> dict:
             _update_idf(conn, page_body)
 
             created.append({"uid": uid, "title": title, "md_path": str(rel_md),
+                            "raw_path": str(rel_raw) if rel_raw else None,
                             "lines": len(page_body.splitlines())})
 
         # relations: attach to the first created page (CONST-ING-5)
@@ -313,14 +338,18 @@ def cmd_ingest_commit(args) -> dict:
         if invalid_relations:
             return warning(data, f"created {len(created)} page(s); some relations invalid",
                            hints=["fix invalid_relations and retry via query-relation add"])
-        return success(
-            data,
-            f"committed {len(created)} Node_Page (L1) via {parser_used}",
-            hints=["query to retrieve; read --uid for full body"],
-        )
+        hints = ["query to retrieve; read --uid for full body"]
+        if parser_used == "native":
+            hints.insert(0, "DEPRECATED: --native is deprecated; use --pending for external documents (PRIN-ING-6)")
+        return success(data, f"committed {len(created)} Node_Page (L1) via {parser_used}", hints=hints)
     except Exception as e:
         conn.rollback()
-        return error(f"commit failed, rolled back: {e}", type(e).__name__)
+        uncommitted_pending = str(args.pending) if args.pending else None
+        return error(
+            f"commit failed, rolled back: {e}", type(e).__name__,
+            data={"uncommitted_pending": uncommitted_pending},
+            hints=["pending file retained — fix the error and re-run ingest-commit"]
+        )
     finally:
         conn.close()
 

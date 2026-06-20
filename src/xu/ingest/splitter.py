@@ -107,18 +107,19 @@ def extract_nouns(text: str) -> dict[str, int]:
             os.dup2(_rnul, 1)
             os.dup2(_rnul, 2)
             import jieba.posseg as pseg
-            for word, flag in pseg.cut(text):
-                w = word.strip().lower()
-                if len(w) < 2:
-                    continue
-                if flag in _NOUN_FLAGS:
-                    counts[w] = counts.get(w, 0) + 1
+            words_and_flags = list(pseg.cut(text))
         finally:
             os.dup2(_so, 1)
             os.dup2(_se, 2)
             os.close(_so)
             os.close(_se)
             os.close(_rnul)
+        for word, flag in words_and_flags:
+            w = word.strip().lower()
+            if len(w) < 2:
+                continue
+            if flag in _NOUN_FLAGS:
+                counts[w] = counts.get(w, 0) + 1
         if counts:
             return counts
     except Exception:

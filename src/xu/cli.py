@@ -63,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--digest", default="")
     sp.add_argument("--relations", default="", help="JSON array of {to, relation_name, comment?}")
     sp.add_argument("--native", default="", help="raw markdown string (bypass parse, still validate)")
+    sp.add_argument("--source", default="", help="abs path to source file (required when --native is used, for PRIN-ING-6 raws copy)")
     sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_commit")
 

@@ -23,6 +23,7 @@ xu doctor-relations      --wiki <w> [--fix]   # 50-edge LRU invariants
 xu doctor-l1-immutable   --wiki <w> [--fix]   # L1 markdown body never modified
 xu doctor-report-evidence --wiki <w> [--fix]  # L3 reports have ≥ 1 evidence ref
 xu doctor-idf            --wiki <w> [--fix]   # IDF table consistency
+xu doctor-pending        --wiki <w> [--fix]   # pending leftover: nodes/pending/ should be empty after success
 
 # Destructive ops (NEVER auto-invoked — explicit command, not a flag)
 xu delete-node --wiki <w> --uid <uid> [--force]
@@ -41,6 +42,7 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 | `doctor-l1-immutable` | read-only | n/a (always refuses) | no |
 | `doctor-report-evidence` | read-only | reject reports w/o evidence | no |
 | `doctor-idf` | read-only | rebuild IDF from corpus | no |
+| `doctor-pending` | read-only | delete leftover pending files | no |
 | `delete-node` | n/a (always destructive) | n/a | **yes** — `--force` ignores references |
 | `rebuild` | n/a (always destructive) | n/a | **yes** — granularity controls blast radius |
 
@@ -122,6 +124,11 @@ xu delete-node --wiki research --uid 2026-WXYZ5678 --force
 - **Auto-running destructive ops** — never invoke `delete-node` or
   `rebuild` without explicit user confirmation, even if the doctor report
   lists them as candidates.
+- **Pending leftover after ingest** — `nodes/pending/` non-empty after a
+  successful `ingest-commit` means PRIN-ING-7 was violated (commit succeeded
+  but pending not cleaned, or ingest crashed mid-flow). Run `xu doctor-pending --wiki W --fix`
+  to auto-delete safe leftovers. The `doctor-pending` check is included in
+  `doctor-all`.
 - **Rebuilding L1 from raw markdown** — `rebuild --granularity full` is
   destructive for any L2/L3 work done after the L1 ingest. Default
   granularity is `keep-l1`; only escalate if the user really wants to
