@@ -419,7 +419,7 @@ def cmd_ingest_verify(args) -> dict:
     # 1. DB record
     row = conn.execute(
         "SELECT uid, layer, content_type, title, node_path, raw_path, "
-        "content_hash, author, active FROM nodes WHERE uid=?",
+        "content_hash, active FROM nodes WHERE uid=?",
         (args.uid,),
     ).fetchone()
     if not row:
