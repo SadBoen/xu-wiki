@@ -45,7 +45,8 @@ xu ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse �
 xu ingest-commit --wiki <w> --pending <f> --title <t> \
                       [--content-type article|table|gallery] \
                       [--node-path <p>] [--relations '<json>'] \
-                      [--native '<md>'] [--author <a>]
+                      [--native '<md>'] --source <abs-path> [--author <a>]
+                      # NOTE: --source is required when using --native (PRIN-ING-6)
 
 # Album single-shot flow (PRIN-ING-14)
 xu ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
@@ -112,13 +113,14 @@ xu report create --wiki <w> --title <t> --body <md> \
 
 ## Workflow — code block / terminal output
 
-1. **Single `ingest-commit --native "<code>"`**: skips Phase 1 (no parse),
-   goes through dedup / patches v1 / IDF directly.
+1. **`ingest-commit --native "<code>" --source <abs-path>`**: skips Phase 1 (no parse),
+   goes through dedup / patches v1 / IDF directly. `--source` is required even
+   for `--native` (for Level-2 dedup via source_hash, PRIN-ING-6).
    > **Warning — PRIN-ING-6 bypass**: `--native` has **no physical source file**
    > (it is agent-synthesized text), so `raw_path` in the response is null by
-   > design. **Do NOT use `--native` for external `.md / .pdf / .docx / .pptx**
+   > design. **Do NOT use `--native` for external `.md / .pdf / .docx / .pptx`
    > ingestion** — that silently skips the raws/ forensic copy. Use the
-    > `--pending` path (Phase 1 + Phase 2) for any external document.
+   > `--pending` path (Phase 1 + Phase 2) for any external document.
 
 ## Phase 1 temp file lifecycle (PRIN-ING-7)
 
@@ -241,9 +243,9 @@ xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
   `ingest-commit` N times for an album. Use `ingest-album` once.
 - **Editing the L1 body after commit** — the L1 markdown is immutable
   (PRIN-ARCH-2/3, hard rule 1 in `SKILL.md`). To "add another photo to
-  the album" use `ingest-album` with a fresh `ingest-album` call — wait,
-  see `ingest-add` (album-add CLI; see 02-album-scenario.md for the
-  pattern; otherwise just use `ingest-album` against the existing node-path).
+  the album", use `ingest-album` with a fresh call targeting the existing
+  node-path — this creates a new L1 node; there is currently no CLI
+  for appending photos to an existing album node.
 - **Empty raws/ despite L1 pages** — if `nodes/page/` has content but
   `raws/` is empty, PRIN-ING-6 was bypassed (usually from using `--native`
   on a document). `data.created[].raw_path` in the response would be null.

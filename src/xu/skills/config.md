@@ -32,12 +32,12 @@ xu skills path                                 # print source dir of the xu-wiki
 xu skills list                                 # list files in the xu-wiki skill bundle
 
 # Software lifecycle — uninstall xu-wiki itself (PRIN-UNINST-*)
-xu uninstall                                    # DRY-RUN by default; --execute to apply
-xu uninstall --execute                         # actually run pip uninstall (keeps wiki data + ~/.xu-wiki/)
-xu uninstall --execute --purge-wikis           # also remove every registered wiki dir
-xu uninstall --execute --purge-config          # also remove ~/.xu-wiki/ global dir
-xu uninstall --execute --purge-wikis --purge-config   # nuclear: everything gone
-xu uninstall --execute --keep-pip              # test escape hatch; do NOT call pip uninstall
+xu uninstall                                          # DRY-RUN by default; --execute to apply
+xu uninstall --execute                               # remove pip package + skill bundles + ~/.xu-wiki/ config
+xu uninstall --execute --preserve-config             # keep ~/.xu-wiki/ config dir
+xu uninstall --execute --keep-pip                    # skip pip uninstall (test/dev escape hatch)
+xu uninstall --execute --keep-skill                 # keep all skill bundles
+xu uninstall --execute --target hermes --target trae # remove only specific skill bundles
 ```
 
 | Command | Touches wiki data? | Touches pip pkg? | Touches ~/.xu-wiki/? | Reversible? |
@@ -49,8 +49,8 @@ xu uninstall --execute --keep-pip              # test escape hatch; do NOT call 
 | `config set-mineru-key` | no | no | yes (config) | yes |
 | `config show` / `config path` | no (read-only) | no | no | n/a |
 | `skills path` / `skills list` | no (read-only) | no | no | n/a |
-| `uninstall` (dry-run) | no (just reports) | no | no | n/a |
-| `uninstall --execute` | only if `--purge-wikis` | yes (unless `--keep-pip`) | only if `--purge-config` | **no — destructive** |
+| `uninstall` (dry-run) | **never** (always preserved) | no | no | n/a |
+| `uninstall --execute` | **never** (always preserved) | yes (unless `--keep-pip`) | only if `--preserve-config` is absent | **no — destructive** |
 
 ## Hard rule for this SOP
 
@@ -72,17 +72,22 @@ xu uninstall
 ```
 
 The agent reads `data.plan` and **presents it to the user in natural
-language**. The user picks one of three scopes:
+language**. The user picks a scope:
 
 | Scope | Flags | What gets removed |
 |---|---|---|
-| (a) Package only | `--execute` | `pip uninstall xu-wiki` — wiki data + `~/.xu-wiki/` PRESERVED |
-| (b) Package + wikis | `--execute --purge-wikis` | pip + every registered wiki dir + unregister |
-| (c) Nuclear | `--execute --purge-wikis --purge-config` | pip + every wiki + `~/.xu-wiki/` + registry |
+| (a) Standard | `--execute` | pip package + skill bundles + `~/.xu-wiki/` config |
+| (b) Keep config | `--execute --preserve-config` | pip + skill bundles (keep `~/.xu-wiki/`) |
+| (c) Keep pip | `--execute --keep-pip` | skill bundles + `~/.xu-wiki/` (skip pip uninstall) |
+| (d) Keep skill | `--execute --keep-skill` | pip + `~/.xu-wiki/` (keep all skill bundles) |
+| (e) Target specific | `--execute --target <agent>` | only that agent's skill bundle |
+
+**Wiki data is NEVER touched, no matter which flags are used.** `--purge-wikis`
+is accepted but ignored — it is not possible to delete wiki data through uninstall.
 
 ### Step 2 — confirm with the user
 
-The agent shows the dry-run plan and the 3 scope options, then waits
+The agent shows the dry-run plan and the scope options, then waits
 for explicit confirmation. PRIN-UNINST-6: **the user must type "yes"
 / "确认" / "proceed" before any --execute runs.** This is non-negotiable.
 
@@ -109,13 +114,13 @@ the user what happened. The JSON is NOT shown to the user.
 3. **Always dry-run first.** `xu uninstall` without `--execute` is
    the expected entry point. The user's first request → dry-run.
    Confirmation → re-run with `--execute`.
-4. **Confirm destructive operations.** Show the wikis_found list and
-   ask explicitly before running `--purge-wikis` or `--purge-config`.
+4. **Wiki data is NEVER removed, no exceptions.** `--purge-wikis` is accepted
+   but silently ignored — the flag has no effect. Do not propose it,
+   do not confirm it, do not explain it as a capability.
 5. **Translate JSON → natural language.** Never paste the raw 4-key
    JSON at the user.
-6. **Default scope is (a) — package only.** Only escalate to (b) /
-   (c) if the user explicitly asks for wiki data / global config
-   removal.
+6. **Default scope is (a) — standard uninstall.** Only deviate if the user
+   explicitly asks to keep config (`--preserve-config`) or keep pip (`--keep-pip`).
 7. **`xu uninstall --execute --keep-pip` is a test escape hatch.**
    Agents must NEVER pass `--keep-pip` in normal flows — it's for the
    test suite (PRIN-TEST-*) and developer debugging. If you see it

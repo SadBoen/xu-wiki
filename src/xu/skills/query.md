@@ -53,8 +53,8 @@ xu report create --wiki <w> --title <t> --body <md> \
 > `--expansion` (synonyms, weighted low) comma lists. There is **no** `--q`,
 > **no** `--mode`, **no** `--limit`.
 >
-> - "find papers about BERT" → `--core "BERT,transformer"` `--expansion "pre-training,encoder,attention"`
-> - "show me 2025 works on RAG" → `--core "RAG,retrieval-augmented"` `--expansion "2025,generation"`
+> - "find papers about BERT" → `xu query --wiki W --core "BERT,transformer" --expansion "pre-training,encoder,attention"`
+> - "show me 2025 works on RAG" → `xu query --wiki W --core "RAG,retrieval-augmented"`
 >
 > If the user gives a free-text query and you cannot grade it, **ask** for
 > core entities before invoking.
