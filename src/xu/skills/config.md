@@ -94,7 +94,7 @@ for explicit confirmation. PRIN-UNINST-6: **the user must type "yes"
 ### Step 3 — execute
 
 ```bash
-xu uninstall --execute [--purge-wikis] [--purge-config] [--keep-pip]
+xu uninstall --execute [--preserve-config] [--keep-pip] [--keep-skill] [--target <agent>]
 # → 4-key JSON: status=success / warning / error
 #           data.result = { pip, wikis, config_dir }  with each step's outcome
 ```
@@ -203,19 +203,3 @@ xu unregister --name legacy
 ```
 
 The wiki directory is **untouched**. To bring it back: `register` again.
-
-## Common pitfalls
-
-- **`create` to register an existing dir** — refused by BAN-CRT-1. Use
-  `register` instead.
-- **Hardcoding the MinerU key** — never write the key into the repo, the
-  SKILL.md, or any code. Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml`.
-
-## Cross-references
-
-- Cross-cutting rules (4-key JSON, paths, secrets) → `SKILL.md §Hard rules`
-- The `create` CLI (fresh empty wiki) → `SKILL.md §SOP map` (create SOP)
-- The `delete-node` CLI (to wipe wiki contents before removing the dir) →
-  `SKILL.md §SOP map` (doctor SOP)
-- The 3-layer metadata model (for what `register` accepts) →
-  `SKILL.md §Architecture in 30 seconds`
