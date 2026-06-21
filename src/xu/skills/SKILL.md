@@ -101,191 +101,28 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 
 ## Hard rules the agent MUST respect
 
-0. **You are the only legitimate caller of `xu`.** The user communicates
-   with you through your UI (chat / voice / IM). They never run CLI
-   commands themselves (PRIN-SOP-8 / BAN-SOP-5). Three consequences:
-   - Translate the user's natural-language intent into CLI calls
-     yourself; never tell the user "please run `xu <verb>` in a
-     terminal" — they shouldn't be anywhere near a shell.
-   - The 4-key JSON you get back is for you to parse and reason about,
-     then translate into a human-readable reply for the user.
-     `data.error_class` is your routing hint; the user should never see
-     raw CLI output.
-   - When the user pushes back ("that's wrong", "I didn't say create",
-     "try a different way"), re-interpret their intent through the SOP
-     and pick a new CLI — they will not retype a corrected command
-     for you.
+0. **You are the only legitimate caller of `xu`.** User never touches CLI directly.
+   Translate intent → CLI calls. Parse 4-key JSON → natural language reply. On pushback: re-interpret via SOP, don't ask user to retype.
 
-0a. **Uninstall: Agent removes skill bundle itself; `xu uninstall` handles program body only.**
+0a. **Uninstall = 2 surfaces.** Skill bundle → agent self-removes (`~/.hermes/skills/xu-wiki/`). Program + config → `xu uninstall --execute`. **Wiki data NEVER deleted** (no flag, no option, no branch). See doctor.md §Uninstall.
 
-    Install is documented in README, not here (see rule 0b / CONST-INST-6).
+0b. **Install is documented in README only.** xu-wiki is pre-installed when this skill loads — this bundle carries no install steps (BAN-SKILL-3a). No `xu install` or `/xu-wiki install` command.
 
-    Uninstall has **two** independent surfaces — NOT three:
-
-    | Surface | Owner | How |
-    |---|---|---|
-    | Skill bundle (`~/.hermes/skills/xu-wiki/`) | **the agent** (self) | Agent uses its own skill manager to delete this dir |
-    | Program body (`xu` binary + venv) + `~/.xu-wiki/` config | **xu CLI** | `xu uninstall --execute` |
-
-    **Wiki data (`<wiki>` dirs) is the user's knowledge — it is NEVER
-    deleted. No flag, no option, no branch of any flow ever touches it.
-    The Agent must not ask about it, must not propose it, must not
-    implement it.**
-
-    When the user says anything about uninstalling / removing xu-wiki
-    ("把 xu-wiki 卸了", "uninstall xu-wiki", "remove xu-wiki from
-    this machine", etc.):
-
-    1. **Remove the skill bundle immediately** (no confirmation needed):
-       use the agent's own skill manager to delete
-       `~/.hermes/skills/xu-wiki/`. This is the Agent's own resource,
-       not the user's knowledge.
-    2. **Run `xu uninstall --execute`** (no dry-run needed — `--execute`
-       is the safety gate). This removes the program body AND `~/.xu-wiki/`
-       config directory. Wiki data (`<wiki>` dirs) is NEVER touched.
-       Read `data.installer` (∈ {`pipx`, `pip`, `unknown`}):
-       - `pipx` → after `xu uninstall --execute`, run
-         `pipx uninstall xu-wiki` to remove the program.
-       - `pip` / `unknown` → `xu uninstall --execute` handles everything.
-    3. **Translate the 4-key JSON result** back to natural language.
-       Don't paste raw JSON at the user.
-    4. **Never run `pip uninstall` or `pipx uninstall` directly via
-       your bash tool** — always go through `xu uninstall`.
-    5. **Independent verification**: after `--execute`, verify
-       `command -v xu` fails (program removed) and `~/.xu-wiki/` is gone
-       (config directory cleaned). Do not trust the JSON alone — check it.
-    6. **Wiki data is NEVER touched, no exceptions.** There is no flag,
-       no option, no branch that ever deletes wiki data. Do NOT add
-       `--purge-wikis` or any flag that could touch `<wiki>` directories.
-       The user's knowledge is not yours to delete.
-    7. **Watch for contradictions**: if `result.config_dir.ok == false`
-       but the path still exists, tell the user and suggest manual
-       inspection.
-
-    8. **Use `xu deploy skill --target <agent>`** instead of writing
-        hand-rolled `cp -r` commands.
-    9. **Inspect `data.deployment_status` and `data.next_actions`**
-        from `xu selfcheck` before declaring "install complete". Empty
-        `next_actions` list = nothing left. Any entry means the user
-        (and you) must do more. This catches the case where pip
-        install succeeded but the skill wasn't deployed.
-
-0b. **Install/deploy is documented in README, not here.** By the time
-    you load this skill, xu-wiki is already installed — so this bundle
-    deliberately carries no install steps (BAN-SKILL-3a / CONST-INST-6).
-    If you need to (re)install, deploy the skill, or fix a PATH issue,
-    read the repo `README.md` (§Install, §Agent skill deployment) — it
-    is the single authority and is readable on GitHub before install.
-    There is no `xu install` command and no `/xu-wiki install` slash
-    command; do not invent one.
-1. **Never edit L1 markdown body** — it is immutable (PRIN-ARCH-2/3).
-   UIDs are retired on delete, never reused (BAN-ARCH-2).
-2. **Report needs evidence** — `--references` must list ≥ 1 existing UIDs
-   (BAN-ARCH-5). Empty evidence is rejected at create-time.
-3. **50 edges only** — adding a 51st evicts the tail. Do not re-add the evicted
-   edge unless you actually need it; it will go back to the head (PRIN-ARCH-7~10).
-4. **Offline-first** — only MinerU parse may hit the network. Everything else
-   must be local. If MinerU fails (401 / network / ZIP error), the chain falls
-   back to `markitdown` → `text` → `image` silently (CONST-ING-1).
-5. **No secret in code or git** — MinerU key lives in `~/.xu-wiki/config.yaml`
-   (outside this repo) or `MINERU_API_KEY` env. Never hardcode.
-6. **All commands return 4-key JSON** — `{status, data, message, hints}`.
-   `status ∈ {success, warning, error}` (warning = partial, e.g. SHA256 dup;
-   error carries `data.error_class`). `hints` is for the agent, not the user.
-7. **Output is deterministic** — given same wiki + same input, output bytes
-   are identical. Do not inject timestamps, random IDs, or locale into the
-   response body. Use `--wiki` rather than relying on CWD.
-8. **Missing required args: ask, do not guess.** When the user requests a
-   command whose required flag (`--name`, `--path`, `--file`, `--title`,
-   `--references`, `--members`, etc.) is missing from the request,
-   **ask the user explicitly before invoking**. The CLI never auto-picks
-   a name (`xu create` without `--name` returns `MissingName` per
-   BAN-CRT-3) and never auto-picks a path (a guessed path that already
-   holds user content is refused by BAN-CRT-1 — protecting data beats
-   saving a round trip). The wrong-name-then-silent-new-wiki failure
-   mode is the single most common agent accident; the only safe guard
-   is to ask first, every time.
-9. **Paths are absolute; `~` is fine.** All `--path` and `--file`
-   arguments must be absolute paths. The CLI calls `Path.expanduser`
-   internally, so the agent may pass `~/Documents/NepTune` directly
-   without pre-expansion. Never pass relative paths like `./foo` — they
-   break idempotency (CONST-CRT-3) and the symlink-escape guard
-   (CONST-CRT-5). If the user gave a relative path, ask for the absolute
-   location before invoking.
-10. **Slash command is a SOP entry, NOT a CLI subcommand (BAN-SOP-1).**
-    `/xu-wiki <verb>` enters the `<verb>` SOP, which orchestrates one or
-    more CLI subcommands. It does **not** translate to `xu <verb>` —
-    `xu` is the binary name but `/xu-wiki` is the agent's slash command
-    for entering a SOP. Specifically:
-    - `/xu-wiki config` does **not** call a CLI subcommand literally
-      named `config` with no sub-subcommand; it enters the config SOP,
-      which calls `alias set/unset/show` / `register` / `unregister` /
-      `wikis` / `config set-mineru-key|show|path` / `skills path|list`.
-      (`config` itself is a subcommand that **requires** one of
-      `set-mineru-key | show | path`.)
-    - `/xu-wiki ingest` does **not** call a CLI named `ingest`; it
-      calls `ingest-file` then `ingest-commit` (PRIN-ING-1).
-    Before invoking anything, read the SOP map above and identify which
-    CLI subcommands the SOP needs. If the user's `<verb>` is not in the
-    five-SOP list, **stop and ask** — do not guess the nearest CLI name.
-    Also note: there is NO `xu install` or `xu uninstall` command —
-    install is documented in README (see rule 0b), uninstall goes
-    through `xu uninstall` (see rule 0a).
-11. **Within a SOP, match user natural-language intent to CLI (PRIN-SOP-7).**
-    After entering a SOP, the agent's job is to interpret the user's
-    actual intent (often natural language, not a verb-noun command)
-    and pick the right CLI from that SOP's palette. CLIs are atomic
-    capabilities, NOT aliases of the SOP.
-    - `/xu-wiki doctor` then user says "delete X node" → call
-      `delete-node --wiki W --uid X` (with `--force` if referenced).
-    - `/xu-wiki doctor` then user says "full check" → call
-      `doctor-all --wiki W`.
-    - `/xu-wiki doctor` then user says "move X to Y directory" →
-      **no CLI exists for node-move**; SOP must **explicitly refuse
-      and explain** (do NOT coerce by calling an unrelated CLI).
-    Refusing an unsupported intent is correct behavior; coercing to
-    an unrelated CLI is the same class of bug as the
-    `/xu-wiki config → create --alias` workaround.
-12. **Asymmetric creation bias** (PRIN-CR-1). After `ingest-commit` or after
-    `query`, the agent MUST run a creation-value reflection before declaring
-    the task done / before answering the user. The reflection has an
-    asymmetric default so it maps to user intent:
-    - After **ingest** → bias toward proposing **List** (PRIMARY
-      valuation). Report is SECONDARY (only if a contradiction /
-      re-evaluation emerged). Single-page ingest also triggers
-      reflection; "just one page" is not an excuse.
-    - After **query**  → bias toward proposing **Report** (PRIMARY
-      valuation). List is SECONDARY (only if hits form a natural
-      comparable group on a missing axis).
-    - **Never auto-create** — if value is real, draft the payload
-      (`--title` / `--members` / `--dimension` for List;
-      `--title` / `--body` / `--references` for Report), show a
-      one-sentence preview to the user, and wait for explicit
-      approval. The CLI does not run this reflection (PRIN-QRY-3) and
-      does not act on its own (PRIN-QRY-1).
-    Full reflection checklist → `ingest.md §Post-commit reflection`
-    and `query.md §Workflow` step 5.
-
-13. **Phase 1 temp file lifecycle (PRIN-ING-7)**: Phase 1 writes to a system
-    temp file (not `nodes/pending/`). After `ingest-commit` **succeeds**, the CLI
-    deletes the temp file immediately. After `ingest-commit` **fails**, the temp
-    file is retained (debug evidence). **No `nodes/pending/` directory exists** —
-    the pending concept is gone; the two-phase separation is achieved via the
-    system temp file returned by `ingest-file`. Any leftover temp file after a
-    commit failure is a bug signal; fix the error and re-run `ingest-commit`.
-
-> **Ingest-specific rule** (PRIN-ING-13, the body-form decision tree) lives
-> in `ingest.md` since it only applies to the ingest SOP.
-
-14. **Forbidden: running xu CLI via execute_code or any shell-混用 tool.**
-    Agent runtimes that mix stderr into stdout (e.g. `execute_code`) will corrupt
-    xu-wiki's JSON output — traceback text from a failing command contaminates
-    the stdout JSON stream, causing downstream JSON parsing to fail. The correct
-    approach is to invoke xu via the agent's own bash/terminal tool (which
-    separates stdout/stderr correctly). If `execute_code` is the only available
-    tool, **catch stderr separately** and only pass clean stdout to the JSON parser.
-    xu-wiki's stderr is for human-readable progress messages only; the machine-readable
-    output is **always** a single JSON object on stdout.
+1. **Never edit L1 markdown body** — immutable (PRIN-ARCH-2/3). UIDs retired on delete, never reused.
+2. **Report needs ≥1 evidence ref** at create-time (BAN-ARCH-5). Empty evidence rejected.
+3. **50 edges max per node** (LRU: 51st evicts tail). Do not re-add evicted edge unless needed.
+4. **Offline-first** — only MinerU parse hits network. On failure: markitdown → text → image silently.
+5. **No secret in code or git** — MinerU key in `~/.xu-wiki/config.yaml` or `MINERU_API_KEY` env.
+6. **All commands return 4-key JSON** — `{status, data, message, hints}`. `hints` is for agent, not user.
+7. **Deterministic output** — no timestamps, random IDs, or locale in response. Use `--wiki`.
+8. **Missing required args: ask, don't guess.** Never auto-pick names or paths (BAN-CRT-1/3).
+9. **Absolute paths only** (`~` is fine). Never `./foo` (breaks idempotency + symlink guard).
+10. **Slash command = SOP entry, not CLI subcommand.** `/xu-wiki <verb>` → enter SOP → pick CLI(s). See SOP map above.
+11. **Within a SOP: match intent to CLI (PRIN-SOP-7).** Do NOT coerce to an unrelated CLI.
+    - doctor + "move X to Y" → `xu reorganize --wiki W --uid X --new-node-path Y` (atomic; never delete+re-ingest)
+12. **Asymmetric creation bias (PRIN-CR-1):** After ingest → bias List; after query → bias Report. Never auto-create — draft and ask for approval first.
+13. **Phase 1 temp file (PRIN-ING-7):** Written to system temp, deleted on success, retained on failure. No `nodes/pending/`.
+14. **Forbidden: `execute_code` for xu CLI.** stderr corrupts JSON output. Use bash/terminal tool.
 
 ## Quick safety checklist
 
