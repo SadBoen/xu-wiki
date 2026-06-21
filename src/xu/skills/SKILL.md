@@ -15,19 +15,18 @@ Three distinct names — DO NOT mix them up:
 
 | Name | What it is | Where you see it |
 |---|---|---|
-| `xu-wiki` | The skill bundle / project name | This file's YAML frontmatter |
-| `/xu-wiki` | Slash command (Trae convention) | Enters the matching SOP |
+| `xu-wiki` | The skill bundle / project name | Skill frontmatter |
+| `/xu-wiki` | Slash command | Enters the matching SOP |
 | `xu` | The CLI binary | All `xu <verb>` shell invocations |
 
-The
-slash command `/xu-wiki` (Trae) is the agent's UX entry into a SOP and is
+The slash command `/xu-wiki` is the agent's UX entry into a SOP and is
 not a CLI invocation.
 
 ## SOP map
 
 A slash command `/xu-wiki <verb>` enters a SOP — **not** a CLI subcommand.
 Each SOP is self-contained in its own file (`*.md` below); the agent says
-"see SKILL.md §SOP map" rather than linking directly (BAN-SKILL-1).
+"see SKILL.md §SOP map" rather than linking directly.
 
 | SOP | Intent | CLI commands it calls | File |
 |---|---|---|---|
@@ -43,18 +42,15 @@ Each SOP is self-contained in its own file (`*.md` below); the agent says
 - **L2 Node_List** — `.md` comparison/aggregation in `nodes/list/`. Members in frontmatter.
 - **L3 Node_Report** — `.md` reasoning in `nodes/report/`. **Requires ≥ 1 evidence ref** (else rejected).
 - **Relations** — exactly **50 edges per node** (LRU, head=touch, tail=evict). No category, no score.
-- **DB** holds nodes / patches / IDF / relations (L1 metadata only; L2/L3 are `.md`-only).
 - **FS** holds raw material pool (`raws/`), L1 markdown (`nodes/page/`), L2 (`nodes/list/`), L3 (`nodes/report/`).
-- **CLI is offline-first.** MinerU is an optional
-  parser in the fallback chain; the key is loaded from `MINERU_API_KEY` env or
-  `~/.xu-wiki/config.yaml` (`XU_HOME` overrides the dir).
+- **CLI is offline-first.** MinerU is an optional parser in the fallback chain.
 
 ## Hard rules the agent MUST respect
 
 0. **You are the only legitimate caller of `xu`.** User never touches CLI directly.
    Translate intent → CLI calls. Parse 4-key JSON → natural language reply. On pushback: re-interpret via SOP, don't ask user to retype.
 
-0a. **Uninstall = 2 surfaces.** Skill bundle → agent self-removes (`~/.hermes/skills/xu-wiki/`). Program + config → `xu uninstall --execute`. **Wiki data NEVER deleted** (no flag, no option, no branch). See doctor.md §Uninstall.
+0a. **Uninstall = 2 surfaces.** Skill bundle → agent removes its skill dir. Program + config → `xu uninstall --execute`. **Wiki data NEVER deleted** (no flag, no option, no branch). See doctor.md §Uninstall.
 
 0b. **No install step in this bundle.** xu-wiki is pre-installed when this skill loads. No `xu install` or `/xu-wiki install` command.
 
@@ -106,8 +102,6 @@ extend existing if found; otherwise LLM decides autonomously (no user approval n
 Hints are starting points, not mandates.
 
 ## Quick start for the agent
-
-> The flow below assumes `xu` is already on PATH.
 
 ```bash
 # 1. create a wiki
