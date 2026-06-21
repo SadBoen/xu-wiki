@@ -56,12 +56,11 @@ def mineru_parse(path: str, api_key: str = "") -> str:
     except OSError:
         return ""
 
-    # Network call is best-effort; any failure → fallback. We keep it minimal and
-    # never block the test pipeline on external availability.
     try:
         return _do_mineru(path, key)
-    except Exception:
-        return ""
+    except Exception as e:
+        # Re-raise with context so parse_file can surface the reason
+        raise RuntimeError(f"[mineru] {e}") from e
 
 
 def _do_mineru(path: str, key: str) -> str:
@@ -70,6 +69,9 @@ def _do_mineru(path: str, key: str) -> str:
 
     Matches the official Precision Extract API (api/v4/file-urls/batch +
     api/v4/extract-results/batch/{batch_id}).
+
+    Raises RuntimeError with specific message on API errors (401, timeout, etc.)
+    so the parse chain can surface the failure reason instead of silently falling back.
     """
     headers = {
         "Authorization": f"Bearer {key}",
@@ -82,13 +84,21 @@ def _do_mineru(path: str, key: str) -> str:
         "enable_formula": True,
         "enable_table": True,
         "model_version": _MODEL_VERSION,
-        "files": [{"name": filename, "is_ocr": True}],
+        "files": [{"Name": filename, "is_ocr": True}],
     }).encode("utf-8")
     req = urllib.request.Request(_API_BATCH_URLS, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"[mineru] HTTP {e.code} when requesting upload URL: {body}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"[mineru] network error requesting upload URL: {e}") from e
+
     if data.get("code") != 0:
-        return ""
+        msg = data.get("msg", str(data))
+        raise RuntimeError(f"[mineru] API error when requesting upload URL: code={data.get('code')} msg={msg}")
     upload_url = data["data"]["file_urls"][0]
     batch_id = data["data"]["batch_id"]
 
@@ -115,7 +125,8 @@ def _do_mineru(path: str, key: str) -> str:
                 conn.send(chunk)
             resp = conn.getresponse()
             if resp.status not in (200, 201):
-                raise RuntimeError(f"OSS PUT failed: {resp.status} {resp.reason}")
+                body = resp.read().decode("utf-8", errors="replace")[:500]
+                raise RuntimeError(f"[mineru] OSS PUT failed: HTTP {resp.status} {resp.reason}: {body}")
     finally:
         conn.close()
 
@@ -125,10 +136,18 @@ def _do_mineru(path: str, key: str) -> str:
     while time.time() < deadline:
         time.sleep(_POLL_INTERVAL)
         poll = urllib.request.Request(poll_url, headers=headers, method="GET")
-        with urllib.request.urlopen(poll, timeout=30) as resp:
-            result = json.loads(resp.read())
+        try:
+            with urllib.request.urlopen(poll, timeout=30) as resp:
+                result = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                continue  # not ready yet
+            raise RuntimeError(f"[mineru] HTTP {e.code} polling results") from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"[mineru] network error polling results: {e}") from e
         if result.get("code") != 0:
-            continue
+            msg = result.get("msg", str(result))
+            raise RuntimeError(f"[mineru] poll API error: code={result.get('code')} msg={msg}")
         extract = result.get("data", {}).get("extract_result", [])
         if not extract:
             continue
@@ -136,10 +155,13 @@ def _do_mineru(path: str, key: str) -> str:
         state = entry.get("state")
         if state == "done":
             zip_url = entry.get("full_zip_url")
-            return _download_full_md(zip_url) if zip_url else ""
+            if not zip_url:
+                raise RuntimeError("[mineru] done but no zip URL in response")
+            return _download_full_md(zip_url)
         if state == "failed":
-            return ""
-    return ""
+            err_msg = entry.get("err_msg", "?")
+            raise RuntimeError(f"[mineru] processing failed: {err_msg}")
+    raise RuntimeError(f"[mineru] poll timeout after {_POLL_TIMEOUT}s")
 
 
 def _download_full_md(zip_url: str) -> str:
@@ -153,7 +175,9 @@ def _download_full_md(zip_url: str) -> str:
                 (n for n in names if n.endswith(".md")), None
             )
             if not target:
-                return ""
+                raise RuntimeError("[mineru] no .md file found in result zip")
             return zf.read(target).decode("utf-8", errors="replace")
-    except Exception:
-        return ""
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"[mineru] zip download/decode error: {e}") from e

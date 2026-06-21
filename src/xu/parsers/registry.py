@@ -248,16 +248,26 @@ def _chain_for(path: Path) -> list:
 
 
 def parse_file(path: str | Path, **kw) -> ParseResult:
+    """Run the fallback chain. Returns a ParseResult; .ok=False means rejected.
+
+    Collects per-parser failure reasons so the final skipped_reason discloses
+    what each parser tried and why it failed (PRIN-ING-5 transparency).
+    """
     p = Path(path)
     chain = _chain_for(p)
+    attempts = []
     for parser in chain:
         if not parser.can_parse(p):
             continue
         try:
             res = parser.parse(p, **kw)
-        except Exception:
+        except Exception as e:
+            attempts.append(f"{parser.name}: {e}")
             continue
         if res and res.ok:
             return res
+        reason = res.skipped_reason if res else "empty result"
+        attempts.append(f"{parser.name}: {reason}")
+    attempts_str = "; ".join(attempts) if attempts else "no parser attempted"
     return ParseResult(success=False,
-                      skipped_reason="all parsers failed for " + str(Path(path).name) + "; cannot enter Phase 2 (PRIN-ING-5)")
+                      skipped_reason=f"all parsers failed for {Path(path).name}: {attempts_str}; cannot enter Phase 2 (PRIN-ING-5)")
