@@ -27,13 +27,12 @@ where = ["src"]
 [tool.setuptools.package-data]
 "xu.skills" = [
     "SKILL.md",
-    "create.md",
-    "ingest.md",
-    "query.md",
-    "doctor.md",
-    "config.md",
-    "reference/error-catalog.md",
-    "reference/pitfalls.md",
+    "references/create.md",
+    "references/ingest.md",
+    "references/query.md",
+    "references/doctor.md",
+    "references/config.md",
+    "references/error-catalog.md",
 ]
 
 [tool.xu-wiki]
