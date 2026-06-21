@@ -172,12 +172,14 @@ def cmd_query(args) -> dict:
         data["neighbor_preview"] = neighbor_preview
 
     hints = []
-    if not fast_pass and top:
+    if top:
         hints.append("read --uid <uid> to fetch full body")
-    if list_hint:
-        hints.append("list show <uid> for L2 comparison")
-    if report_hint:
-        hints.append("report show <uid> for L3 conclusion + evidence")
+        if list_hint:
+            hints.append("list show <uid> for L2 comparison")
+        if report_hint:
+            hints.append("report show <uid> for L3 conclusion + evidence")
+        hints.append("consider: propose report create if hits form an evidence chain (PRIN-CR-1 primary bias)")
+        hints.append("consider: propose list create if hits share a comparable dimension (PRIN-CR-1 secondary, opportunistic)")
     if not top:
         hints.append("no hits; try different keywords or check ingest")
 

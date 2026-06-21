@@ -84,7 +84,7 @@ def _list_create(args) -> dict:
         {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_items],
          "dimension": args.dimension, "node_path": node_path},
         f"created Node_List {uid} with {len(member_items)} member(s)",
-        hints=[f"nodes/list/{node_path}.md"],
+        hints=[f"read --uid {uid} to view; list show --uid {uid} for L2 presentation"],
     )
 
 
@@ -188,7 +188,7 @@ def _report_create(args) -> dict:
         {"uid": uid, "layer": "Report", "references": [r["uid"] for r in ref_meta],
          "ref_count": len(ref_meta)},
         f"created Node_Report {uid} with {len(ref_meta)} evidence link(s)",
-        hints=[f"nodes/report/{node_path}.md"],
+        hints=[f"read --uid {uid} to view; report show --uid {uid} for L3 presentation"],
     )
 
 
