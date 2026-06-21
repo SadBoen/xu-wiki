@@ -33,20 +33,25 @@
 
 CLI 的职责只到 L1 的「找到证据坐标 + 给评分」——L2 / L3 是 Agent 决定要不要展开。
 
-### [PRIN-QRY-2] 关键词分级是 LLM 的责任——CLI 做基础分词，Agent 做语义分级
+### [PRIN-QRY-2] 关键词分级是 Agent 的责任——从原始查询直接生成，不依赖 CLI 分词
 
-CLI 不做语义判断，但**CLI 负责基础分词，Agent 负责语义分级**——分工明确：
+CLI 不做语义判断，也不做关键词生成。关键词（core + expansion）100% 由 Agent 从原始查询直接生成：
 
 ```
 用户发起查询 "A60 隔离区"
-   ↓ CLI 基础分词（jieba）：A60 / 隔离区
-   ↓ Agent 语义分级：
+   ↓ Agent 直接读取原始查询（无 CLI 分词介入）
+   ↓ Agent 语义分级（实体识别 + 同义词扩展 + 英文补充）：
      - "A60" → 核心关键词（实体识别：船级代号）
-     - "隔离区" → 扩展关键词（同义词扩展：防火分区 / 阻燃区 / 隔火区）
+     - "隔离区" → 扩展关键词（中文同义：防火分区 / 阻燃区 / 隔火区）
+                         （英文补充：fire zone / fire compartment / fire barrier）
    ↓ Agent 把分级结果传给 query
 ```
 
-**CLI 不调 LLM**——但 CLI **可以**调 jieba 这种机械分词工具。Agent 只负责**语义分级**（实体识别 + 同义词扩展）这种需要 LLM 推理的工作。
+**扩展词必须包含英文**——无论查询语言为何，expansion 必须补充英文同义词。这是硬性要求。
+
+**Jieba 职责范围**：
+- ✅ **ingest 阶段**：构建 IDF 词频表时做名词提取
+- ❌ **query 阶段**：不参与关键词生成，Agent 从原始查询直接推理 core + expansion
 
 CLI 接收**已分级的关键词列表**，按权重比处理。CLI 内部不再调 LLM。
 
@@ -299,7 +304,7 @@ Agent 拿到 hint 后**自己决定**要不要 `list show` / `report show` —�
 
 **原则**：
 - [ ] 三层介入 L1→L2→L3（[PRIN-QRY-1]）
-- [ ] 关键词分级是 LLM 责任（CLI 分词 + Agent 分级）（[PRIN-QRY-2]）
+  - [ ] 关键词分级是 Agent 责任（从原始查询直接生成，含英文补充）（[PRIN-QRY-2]）
 - [ ] CLI 不调 LLM（[PRIN-QRY-3]）
 - [ ] 检索内容不检索结构（[PRIN-QRY-4]）
 - [ ] 评分公式硬编码（[PRIN-QRY-5]）

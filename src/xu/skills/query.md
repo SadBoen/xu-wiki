@@ -53,16 +53,27 @@ xu report create --wiki <w> --title <t> --body <md> \
 > `--expansion` (synonyms, weighted low) comma lists. There is **no** `--q`,
 > **no** `--mode`, **no** `--limit`.
 >
-> - "find papers about BERT" → `xu query --wiki W --core "BERT,transformer" --expansion "pre-training,encoder,attention"`
-> - "show me 2025 works on RAG" → `xu query --wiki W --core "RAG,retrieval-augmented"`
+> - "find papers about BERT" → `xu query --wiki W --core "BERT,transformer" --expansion "pre-training,encoder,attention,model,architecture"`
+> - "现在库里面收录了几条船？" → `xu query --wiki W --core "船舶,IMO,MMSI,船名" --expansion "船只,舰船,货轮,ship,vessel,boat"`
 >
 > If the user gives a free-text query and you cannot grade it, **ask** for
 > core entities before invoking.
 
 ## Workflow
 
-1. **Grade the user's query** into core + expansion keywords.
-2. **Invoke `query`** with `--core` (required) and `--expansion` (optional).
+1. **Grade the user's query** into core + expansion keywords:
+   - Input: the **raw user query** (full natural language, e.g. "现在库里面收录了几条船？")
+   - **Always add English forms to expansion** — regardless of query language,
+     include English synonyms (e.g. `ship,vessel,boat` for 船). This is a hard
+     requirement: every expansion set must include English.
+   - Output: `--core` (domain-specific entities, weighted high) +
+     `--expansion` (language-aware synonyms, weighted low)
+   - Example: `"现在库里面收录了几条船？"` →
+     `--core "船舶,IMO,MMSI,船名"` `--expansion "船只,舰船,货轮,ship,vessel,boat"`
+   - Jieba plays **no role in query keyword generation** — it only runs inside
+     ingest (IDF table construction). At query time, you grade from the raw
+     query text directly.
+2. **Invoke `query`** with `--core` (required) and `--expansion` (recommended).
 3. **Inspect the result's `data.hits`** — list of UIDs with relevance score.
 4. **Read the top hits** with `read --wiki W --uid <uid>`.
 5. **Post-query reflection (PRIN-CR-1, asymmetric bias)** — the agent MUST run
