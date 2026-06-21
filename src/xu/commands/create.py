@@ -96,13 +96,6 @@ def _build_skeleton(target: Path, name: str) -> None:
     (target / "nodes" / "report").mkdir(parents=True)
     (target / ".xu").mkdir(parents=True)
 
-    # wiki marker (CONST-CRT-1)
-    (target / "pyproject.toml").write_text(
-        "[tool.xu-wiki]\nmarker = \"xu-wiki-project\"\n"
-        f"name = \"{name}\"\n",
-        encoding="utf-8",
-    )
-
     # wiki-internal config (CONST-CRT-6) — written with inline comments
     _write_wiki_config(target / ".xu" / "config.yaml", name)
 

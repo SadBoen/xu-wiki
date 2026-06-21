@@ -50,8 +50,7 @@ class WikiContext:
 
     def is_valid(self) -> bool:
         return (
-            (self.root / "pyproject.toml").exists()
-            and self.raws_dir.is_dir()
+            self.raws_dir.is_dir()
             and self.nodes_dir.is_dir()
             and self.xu_dir.is_dir()
             and self.db_path.exists()
