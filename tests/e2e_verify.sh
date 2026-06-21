@@ -19,10 +19,10 @@ echo
 echo "################ M2: ingest (PDF + DOCX) + query + read ################"
 for f in "$SAMPLES/PDF/02_arxiv_resnet.pdf" "$SAMPLES/PDF/03_arxiv_bert.pdf"; do
   base=$(basename "$f")
-  $XU ingest-file --wiki demo --file "$f" --node-path papers/ml 2>/dev/null \
-    | python3 -c "import sys,json;d=json.load(sys.stdin);print('  parse',\"$base\",d['status'],d['data'].get('parser'),d['data'].get('chars'),'chars')"
-  pend=$(ls $WIKI/nodes/pending/*$(echo "$base" | sed 's/\.[^.]*$//')* 2>/dev/null | head -1)
   title=$(echo "$base" | sed 's/\.[^.]*$//')
+  out=$($XU ingest-file --wiki demo --file "$f" --node-path papers/ml 2>/dev/null)
+  pend=$(python3 -c "import sys,json;print(json.load(sys.stdin)['data'].get('pending',''))" <<< "$out")
+  echo "  parse $base: $(python3 -c "import sys,json;d=json.load(sys.stdin);print(d['status'],d['data'].get('parser'),d['data'].get('chars'),'chars')" <<< "$out")"
   $XU ingest-commit --wiki demo --pending "$pend" --title "$title" --node-path papers/ml 2>/dev/null \
     | python3 -c "import sys,json;d=json.load(sys.stdin);print('  commit',d['status'],d['data'].get('page_count'),'pages ->',[c['uid'] for c in d['data'].get('created',[])])"
 done
