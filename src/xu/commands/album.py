@@ -4,8 +4,8 @@ This is a sub-flow of the ingest SOP, NOT a two-phase split
 (PRIN-ING-1 only governs the single-source pipeline). Each source
 file is copied to raws/, its essential metadata (resolution, GPS,
 capture time) is extracted via Pillow when available, and the L1
-body is rendered as a markdown table or list — one row/entry per
-photo (PRIN-ING-13 body-style matching).
+body is rendered as a YAML list of dicts (PRIN-ING-13 body-style
+matching, same format as table/gallery content_type).
 
 EXIF data beyond resolution + GPS + DateTime is intentionally NOT
 extracted; the source files in raws/ remain the authoritative
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import yaml
 from pathlib import Path
 from typing import Any
 
@@ -74,60 +75,24 @@ def _parse_captions(raw: str) -> dict[str, str]:
     return out
 
 
-def _render_table(rows: list[dict[str, Any]]) -> str:
-    lines = [
-        "| # | Filename | Path | Resolution | GPS | Captured | Description |",
-        "|---|----------|------|------------|-----|----------|-------------|",
-    ]
-
-    def esc(s: str) -> str:
-        return (s or "").replace("|", "\\|")
-
+def _render_body(rows: list[dict[str, Any]]) -> str:
+    items = []
     for r in rows:
         w, h = r.get("width"), r.get("height")
-        res = f"{w}×{h}" if (w and h) else "—"
-        gps = r.get("gps") or "—"
-        captured = r.get("captured") or "—"
-        desc = r.get("caption") or "—"
-        lines.append(
-            f"| {r['position']} | {esc(r['filename'])} | "
-            f"`{esc(r['raw_rel_path'])}` | {res} | {esc(gps)} | "
-            f"{esc(captured)} | {esc(desc)} |"
-        )
-    return "\n".join(lines) + "\n\n"
-
-
-def _render_list(rows: list[dict[str, Any]]) -> str:
-    lines = []
-    for r in rows:
-        w, h = r.get("width"), r.get("height")
-        res = f"{w}×{h}" if (w and h) else "—"
-        gps = r.get("gps") or "—"
-        captured = r.get("captured") or "—"
-        meta = f"`{r['raw_rel_path']}` — {res} — {gps} — {captured}"
-        lines.append(f"- **{r['filename']}** — {meta}")
+        item = {
+            "filename": r["filename"],
+            "raw_rel_path": r["raw_rel_path"],
+        }
+        if w and h:
+            item["resolution"] = f"{w}×{h}"
+        if r.get("gps"):
+            item["gps"] = r["gps"]
+        if r.get("captured"):
+            item["captured"] = r["captured"]
         if r.get("caption"):
-            lines.append(f"  描述：{r['caption']}")
-    return "\n".join(lines) + "\n\n"
-
-
-def _render_marker(layout: str, count: int, vision: bool) -> str:
-    return f"<!-- xu-album layout={layout} count={count} vision={'yes' if vision else 'no'} -->\n"
-
-
-def _render_body(title: str, node_path: str, rows: list[dict[str, Any]],
-                 layout: str, vision: bool) -> str:
-    n = len(rows)
-    vision_note = ""
-    if vision:
-        vision_note = "；vision 意图已标记（后端未配置时由 SOP 提示用户）"
-    intro = (
-        f"# {title}\n\n"
-        f"> 相册主题：{title}；{n} 张图片；源文件存于 `raws/{node_path}/`"
-        f"{vision_note}。\n\n"
-    )
-    body_main = _render_table(rows) if layout == "table" else _render_list(rows)
-    return intro + body_main + _render_marker(layout, n, vision)
+            item["caption"] = r["caption"]
+        items.append(item)
+    return yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
 def cmd_ingest_album(args) -> dict:
@@ -255,7 +220,7 @@ def cmd_ingest_album(args) -> dict:
                 ],
             )
 
-        body = _render_body(args.title, node_path, rows, layout, vision)
+        body = _render_body(rows)
         content_hash = sha256_text(body)
 
         uid = gen_uid()

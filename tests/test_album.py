@@ -7,6 +7,7 @@ when available (graceful degradation when Pillow is missing).
 """
 import json
 import os
+import yaml
 import re
 import sys
 from pathlib import Path
@@ -90,13 +91,12 @@ def test_album_happy_table(wiki, tmp_path):
     assert front["layer"] == "Page"
     assert front["content_type"] == "gallery"
     assert front["source_hash"]  # first source's hash recorded on the L1
-    # body has 7-column table header
-    assert "| # | Filename | Path | Resolution | GPS | Captured | Description |" in body
-    assert "| 1 | 001.jpeg |" in body
-    assert "| 2 | 002.jpeg |" in body
-    assert "| 3 | 003.jpeg |" in body
-    # xu-album marker
-    assert "<!-- xu-album layout=table count=3 vision=no -->" in body
+    # body is YAML list of dicts (gallery body format per PRIN-ING-13)
+    assert body.startswith("- filename:")
+    items = yaml.safe_load(body)
+    assert len(items) == 3
+    assert [i["filename"] for i in items] == ["001.jpeg", "002.jpeg", "003.jpeg"]
+    assert items[0]["raw_rel_path"] == "raws/船舶/SGW001/照片/001.jpeg"
 
     # attrs.album.sources stored: verify via SQL (raw JSON column)
     ctx = resolve_wiki(name)
@@ -131,11 +131,11 @@ def test_album_happy_list(wiki, tmp_path):
     assert r["status"] == "success", r
     md = root / r["data"]["md_path"]
     body = fm.parse(md.read_text(encoding="utf-8"))[1]
-    # list layout: no pipe table header, has **filename** bold entries
-    assert "| # | Filename" not in body
-    assert "- **a.png**" in body
-    assert "- **b.png**" in body
-    assert "<!-- xu-album layout=list count=2 vision=no -->" in body
+    # body is YAML list of dicts regardless of layout preference
+    assert body.startswith("- filename:")
+    items = yaml.safe_load(body)
+    assert len(items) == 2
+    assert [i["filename"] for i in items] == ["a.png", "b.png"]
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +284,7 @@ def test_album_captions_bad_json(wiki, tmp_path):
 
 
 def test_album_vision_flag_recorded(wiki, tmp_path):
-    """--vision must produce marker 'vision=yes' and a hint about backend."""
+    """--vision is recorded in attrs.album.vision; hint surfaces deferred-caption."""
     name, root = wiki
     p = tmp_path / "v.jpeg"
     _write_fake_jpeg(p)
@@ -295,8 +295,14 @@ def test_album_vision_flag_recorded(wiki, tmp_path):
     assert r["status"] == "success", r
     md = root / r["data"]["md_path"]
     body = fm.parse(md.read_text(encoding="utf-8"))[1]
-    assert "<!-- xu-album layout=table count=1 vision=yes -->" in body
-    assert "vision 意图已标记" in body
+    assert body.startswith("- filename:")
+    # attrs.album.vision stored for backend to pick up later
+    ctx = resolve_wiki(name)
+    conn = ctx.connect()
+    row = conn.execute("SELECT attrs FROM nodes WHERE uid=?", (r["data"]["uid"],)).fetchone()
+    conn.close()
+    attrs_obj = json.loads(row["attrs"])
+    assert attrs_obj["album"]["vision"] is True
     # hint surfaces the deferred-caption expectation
     assert any("vision" in h for h in r["hints"])
 
@@ -329,8 +335,11 @@ def test_album_runs_without_pillow(wiki, tmp_path, monkeypatch):
     assert src["captured"] is None
     md = root / r["data"]["md_path"]
     body = fm.parse(md.read_text(encoding="utf-8"))[1]
-    # resolution cell falls back to "—"
-    assert "| — |" in body
+    # resolution field absent when width/height are None
+    items = yaml.safe_load(body)
+    assert len(items) == 1
+    assert "resolution" not in items[0]
+    assert items[0]["filename"] == "n.jpeg"
     monkeypatch.undo()
 
 
