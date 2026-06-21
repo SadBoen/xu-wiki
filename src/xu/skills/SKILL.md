@@ -277,6 +277,16 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 > **Ingest-specific rule** (PRIN-ING-13, the body-form decision tree) lives
 > in `ingest.md` since it only applies to the ingest SOP.
 
+14. **Forbidden: running xu CLI via execute_code or any shell-混用 tool.**
+    Agent runtimes that mix stderr into stdout (e.g. `execute_code`) will corrupt
+    xu-wiki's JSON output — traceback text from a failing command contaminates
+    the stdout JSON stream, causing downstream JSON parsing to fail. The correct
+    approach is to invoke xu via the agent's own bash/terminal tool (which
+    separates stdout/stderr correctly). If `execute_code` is the only available
+    tool, **catch stderr separately** and only pass clean stdout to the JSON parser.
+    xu-wiki's stderr is for human-readable progress messages only; the machine-readable
+    output is **always** a single JSON object on stdout.
+
 ## Quick safety checklist
 
 Before declaring an ingest done, run through this every time:
