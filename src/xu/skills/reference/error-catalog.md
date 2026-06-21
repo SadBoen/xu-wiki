@@ -12,8 +12,7 @@ format:
 
 **Empty by design.** Do not delete this file even when it has no entries —
 its existence is a structural signal: "errors live here, not in
-ad-hoc `error1.md` / `bug-2026-06-20.md` files". See PRIN-SKILL-7 in
-`design-docs/09-skill-architecture.md`.
+ad-hoc `error1.md` / `bug-2026-06-20.md` files.
 
 Cross-references:
 - JSON response shape (`status` / `data` / `message` / `hints` /
@@ -22,7 +21,7 @@ Cross-references:
 
 ## CreationRefused
 - Trigger: LLM decided not to create an L2/L3 after post-commit or
-  post-query reflection (PRIN-CR-1), after checking for similar existing
+  post-query reflection, after checking for similar existing
   nodes (query-before-create). Not a CLI error — the agent weighed the
   evidence and chose not to create.
 - Where: agent-side only. The CLI never sees this; it is the agent's

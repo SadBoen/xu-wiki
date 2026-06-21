@@ -2,7 +2,7 @@
 
 `/xu-wiki ingest` adds content to a wiki as **L1 Node_Page** (immutable). It
 is the most complex SOP because L1 body style **must match the content
-type** (PRIN-ING-13). The `content_type` frontmatter key stores the body form
+type**. The `content_type` frontmatter key stores the body form
 (`article` for prose, `table` for tabular, `gallery` for album).
 
 This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
@@ -10,7 +10,7 @@ This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
 `SKILL.md`; the body-form decision tree lives here because it only applies
 to ingest.
 
-## Hard rule for this SOP (PRIN-ING-2, PRIN-ING-13)
+## Hard rule for this SOP
 
 > **Route by content form first; Phase 1↔2 intermediate values are LLM-generated.**
 >
@@ -19,16 +19,16 @@ to ingest.
 > | User says | Route to | Agent action |
 > |---|---|---|
 > | PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` | Auto-fill `--content-type` from `CONTENT_TYPE_MAP` (`.xlsx/.csv`→`table`, images→`gallery`, rest→`article`); do not ask |
-> | N images, one theme | `ingest-album` | Ask "vision per-photo? (yes/no)" before calling (PRIN-SOP-7) |
+> | N images, one theme | `ingest-album` | Ask "vision per-photo? (yes/no)" before calling |
 > | code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article`; do not ask |
 > | After commit: verify integrity | `ingest-verify` | 5 read-only checks (DB / nodes/ / hash / raw / format); run before declaring task done |
 >
 > After `ingest-file` succeeds, the Agent reads the temp file and synthesizes ALL
 > intermediate values **without asking the user**: title, node_path, relations,
-> content_type — these are LLM-generated decisions (PRIN-ING-2). The user never
+> content_type — these are LLM-generated decisions. The user never
 > sees or approves these values.
 >
-> **content_type body validation** (PRIN-ING-13): the CLI validates body format
+> **content_type body validation**: the CLI validates body format
 > before write — `article` accepts free text; `table` requires YAML list of dicts;
 > `gallery` requires YAML list of dicts each with a `filename` field. Mismatch
 > returns `BodyFormatMismatch` error and blocks commit.
@@ -40,15 +40,15 @@ to ingest.
 ## CLI palette
 
 ```bash
-# Two-phase prose flow (PRIN-ING-1)
+# Two-phase prose flow
 xu ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
 xu ingest-commit --wiki <w> --pending <f> --title <t> \
                       [--content-type article|table|gallery] \
                       [--node-path <p>] [--relations '<json>'] \
                       [--native '<md>'] --source <abs-path> [--author <a>]
-                      # NOTE: --source is required when using --native (PRIN-ING-6)
+                      # NOTE: --source is required when using --native
 
-# Album single-shot flow (PRIN-ING-14)
+# Album single-shot flow
 xu ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
                       [--node-path <p>] [--layout table|list] [--vision] \
                       [--captions '<json>'] [--author <a>]
@@ -69,7 +69,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 | `--files` | yes | Comma-separated absolute paths to images |
 | `--node-path` | no | Where in the wiki tree to place the page |
 | `--layout` | no | `table` (default) or `list` |
-| `--vision` | no | Flag that user wants per-photo captions; sets intent even if backend absent (PRIN-SOP-7) |
+| `--vision` | no | Flag that user wants per-photo captions; sets intent even if backend absent |
 | `--captions` | no | Pre-computed captions as JSON; if absent, vision backend runs at view time |
 | `--author` | no | L1 frontmatter author field |
 
@@ -81,14 +81,14 @@ xu report create --wiki <w> --title <t> --body <md> \
    (no parser called, no money spent). If unique: parses via MinerU →
    markitdown chain → writes a temp file to the system temp directory.
    Returns the temp file path in `data.pending`. No node is created at this stage.
-3. **Agent synthesizes all metadata** from the temp file (PRIN-ING-2):
+3. **Agent synthesizes all metadata** from the temp file:
    title, node_path, relations, content_type — all LLM-generated, never asked
    of the user. `--title` is required by CLI but the value comes from the LLM.
-4. **取证副本 (PRIN-ING-6)**: after `ingest-commit` succeeds, the CLI copies
+4. **取证副本**: after `ingest-commit` succeeds, the CLI copies
    the source file to `raws/<node_path>/<original_name>` (first page only).
    **This is mandatory for all document types** — `.md / .pdf / .docx / .pptx`
    must all be physically stored. The response `data.created[].raw_path` should
-   be non-null. If it is null, PRIN-ING-6 was bypassed — stop and investigate.
+   be non-null. If it is null, the copy step was bypassed — stop and investigate.
    > **Exception**: `--native` mode has no source file (agent-synthesized text),
    > so `raw_path` is null by design. But `--native` still requires `--source`
    > (a reference path) for dedup. Use `--pending` for any external document.
@@ -98,7 +98,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 6. **Page splitting notice**: if `data.page_count > 1`, tell the user
    "文档较长，已自动按容量分片为 N 个 L1 节点"。This is normal behavior, not an error.
 7. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
-   An empty `raws/` directory with populated `nodes/page/` = PRIN-ING-6 was
+   An empty `raws/` directory with populated `nodes/page/` = copy was
    bypassed (usually from `--native` on a document).
 8. **(Optional) Wire relations** with `query-relation add`.
 9. **(Optional) Group into L2/L3** with `list create` / `report create`.
@@ -107,7 +107,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 
 1. **Verify files**: all `--files` must be absolute paths to images.
 2. **Ask vision intent**: "需要每张照片的 AI 描述吗？" — set `--vision` if yes
-   (PRIN-SOP-7: never decide for the user).
+   (never decide for the user).
 3. **Single-shot `ingest-album`**: writes ONE L1 page with a markdown
    table (or list if `--layout list`). Album theme = `--title`.
 4. **(Optional) Wire relations / group** as in prose flow.
@@ -116,14 +116,14 @@ xu report create --wiki <w> --title <t> --body <md> \
 
 1. **`ingest-commit --native "<code>" --source <abs-path>`**: skips Phase 1 (no parse),
    goes through dedup / patches v1 / IDF directly. `--source` is required even
-   for `--native` (for Level-2 dedup via source_hash, PRIN-ING-6).
-   > **Warning — PRIN-ING-6 bypass**: `--native` has **no physical source file**
+   for `--native` (for Level-2 dedup via source_hash).
+   > **Warning — bypass**: `--native` has **no physical source file**
    > (it is agent-synthesized text), so `raw_path` in the response is null by
    > design. **Do NOT use `--native` for external `.md / .pdf / .docx / .pptx`
    > ingestion** — that silently skips the raws/ forensic copy. Use the
    > `--pending` path (Phase 1 + Phase 2) for any external document.
 
-## Phase 1 temp file lifecycle (PRIN-ING-7)
+## Phase 1 temp file lifecycle
 
 Phase 1 writes to a **system temp file** (not `nodes/pending/`). The temp file
 path is returned in `data.pending` of the `ingest-file` response. Its lifecycle:
@@ -131,14 +131,14 @@ path is returned in `data.pending` of the `ingest-file` response. Its lifecycle:
 | Event | What happens |
 |---|---|
 | `ingest-file` runs | Creates temp file via `tempfile.gettempdir()` (e.g. `/tmp/<stem>-pre.md`) |
-| `ingest-commit` succeeds | CLI deletes temp file immediately (PRIN-ING-7) |
+| `ingest-commit` succeeds | CLI deletes temp file immediately |
 | `ingest-commit` fails | Temp file **retained** for debug / retry |
 | Any leftover temp file after success | **Bug** — fix the error and re-run `ingest-commit` to trigger deletion |
 
 **There is no `nodes/pending/` directory.** The two-phase separation is achieved
 by the system temp file; no wiki-internal staging directory exists.
 
-## Reorganize — move a page to a different partition (PRIN-ARCH-25)
+## Reorganize — move a page to a different partition
 
 If the user is dissatisfied with a page's location after ingest, **never delete
 and re-ingest**. Use `xu reorganize`:
@@ -158,12 +158,12 @@ When to call reorganize:
 - `doctor-node-path-organization` reports the page is at root with no organization
 - Agent decides the page belongs in a different logical partition after review
 
-## Post-commit reflection (PRIN-CR-1, asymmetric bias)
+## Post-commit reflection
 
 After **every** `ingest-commit` (single page, album, or batch), the agent runs
 a creation-value reflection **before declaring the task done**. LLM decides
 autonomously — no user approval needed. The CLI does not run this reflection
-(PRIN-QRY-3) and never auto-creates (PRIN-ING-*).
+The CLI does not run this reflection and never auto-creates.
 
 **Step 1 — Find similar List (mandatory, before any creation decision):**
 Run a query to find existing Lists that overlap with the new page(s) on
@@ -222,7 +222,7 @@ xu ingest-verify --wiki research --uid <uid from commit response>
 
 ### Multi-file serial ingest
 
-When ingesting N files, repeat the two-phase cycle **per file** — serial, not parallel ([CONST-ING-9]):
+When ingesting N files, repeat the two-phase cycle **per file** — serial, not parallel:
 
 ```bash
 # File 1
@@ -248,16 +248,16 @@ xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
   disjoint L1 pages with no album structure. Always confirm form first.
 - **Deciding vision for the user** — if the user didn't say, ASK. Setting
   `--vision` when the build has no vision backend records the intent
-  (PRIN-SOP-7) but does NOT crash. This is the right way to defer.
+   but does NOT crash. This is the right way to defer.
 - **Splitting an album** — never call `ingest-file` N times then
   `ingest-commit` N times for an album. Use `ingest-album` once.
 - **Editing the L1 body after commit** — the L1 markdown is immutable
-  (PRIN-ARCH-2/3, hard rule 1 in `SKILL.md`). To "add another photo to
+   (L1 is immutable; see hard rule 1 in `SKILL.md`). To "add another photo to
   the album", use `ingest-album` with a fresh call targeting the existing
   node-path — this creates a new L1 node; there is currently no CLI
   for appending photos to an existing album node.
 - **Empty raws/ despite L1 pages** — if `nodes/page/` has content but
-  `raws/` is empty, PRIN-ING-6 was bypassed (usually from using `--native`
+   `raws/` is empty, the copy step was bypassed (usually from using `--native`
   on a document). `data.created[].raw_path` in the response would be null.
   Fix: delete the L1 and re-ingest via `--pending` path.
 - **Skip ingest-verify after commit** — run `xu ingest-verify <wiki> <uid>` to
@@ -273,4 +273,3 @@ xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
 - Cross-cutting rules (immutability, JSON, paths, missing-args) → `SKILL.md §Hard rules`
 - The `query` and `read` CLIs (for reading the ingest result) → `SKILL.md §SOP map` (query SOP); use `ingest-verify` for integrity checks
 - The 50-edge LRU semantics → `SKILL.md §Architecture in 30 seconds`
-- Full ingest architecture → `design-docs/05-ingest.md`

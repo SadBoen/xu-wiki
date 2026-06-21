@@ -3,10 +3,10 @@
 `/xu-wiki query` finds L1/L2/L3 nodes by graded keywords. The CLI is purely
 a matcher — **it does not interpret free-text**. The agent's job is to
 grade the user's natural language into `--core` (entities, weighted high)
-and `--expansion` (synonyms, weighted low) before invoking (PRIN-ARCH-12,
+and `--expansion` (synonyms, weighted low) before invoking
 DESIGN-ARCH-4).
 
-This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
+This file is **self-contained**. Cross-cutting rules
 (4-key JSON, missing-args, paths) live in `SKILL.md`; the keyword-grading
 rule is restated here because it is the dominant failure mode of this SOP.
 
@@ -46,7 +46,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 | `--neighbors` | no | Also include 50-edge LRU neighbors of top hits |
 | `--include-inactive` | no | Include nodes marked inactive (default: active only) |
 
-## Hard rule for this SOP (PRIN-ARCH-12 / DESIGN-ARCH-4)
+## Hard rule for this SOP
 
 > **Keyword grading is the Agent's job. The CLI does NOT split a free-text
 > query.** You pass already-graded `--core` (entities, weighted high) and
@@ -76,7 +76,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 2. **Invoke `query`** with `--core` (required) and `--expansion` (recommended).
 3. **Inspect the result's `data.hits`** — list of UIDs with relevance score.
 4. **Read the top hits** with `read --wiki W --uid <uid>`.
-5. **Post-query reflection (PRIN-CR-1, asymmetric bias)** — the agent runs
+5. **Post-query reflection** — the agent runs
    this before answering the user. LLM decides autonomously — no user approval needed.
    The CLI's `list_hint` / `report_hint` are **starting points, not mandates**.
 
@@ -101,7 +101,7 @@ xu report create --wiki <w> --title <t> --body <md> \
    **Why query leans Report, not List**: query is "I asked a question"; the
    natural follow-up is "save the answer". A List would just bundle related
    hits without synthesizing anything. **CLI does NOT run this reflection**
-   (PRIN-QRY-3) and never auto-creates (PRIN-QRY-1).
+   The CLI does not run this reflection and never auto-creates.
 6. **If the user wants to wire edges** — `query-relation add` with
    `--from-uid` / `--to-uid` / `--relation-name`.
 7. **If the user wants the neighborhood** — re-run with `--neighbors`.
@@ -134,7 +134,7 @@ xu query-relation add --wiki research \
   are starting points, not mandates. The post-query reflection in step 5
   is the **agent's** job; the agent must always run the valuation and
   only propose if value is real, with PRIMARY bias toward Report
-  (PRIN-CR-1). LLM decides autonomously; always query for similar Report first
+  LLM decides autonomously; always query for similar Report first
   and extend existing if found.
 - **Forgetting the 50-edge limit** — when wiring relations, adding a
   51st evicts the tail (hard rule 3 in `SKILL.md`). Don't re-add the
@@ -147,4 +147,3 @@ xu query-relation add --wiki research \
   `SKILL.md §SOP map` (ingest SOP)
 - The `doctor-*` CLIs (to check query results are consistent) →
   `SKILL.md §SOP map` (doctor SOP)
-- Full query architecture → `design-docs/06-query.md`

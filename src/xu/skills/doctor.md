@@ -6,7 +6,7 @@ wiki. Default is read-only; `--fix` is opt-in and only enables **safe**
 auto-repair. Truly destructive ops (`delete-node --force`, `rebuild`) are
 explicit commands, not flags on a read operation.
 
-This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
+This file is **self-contained**. Cross-cutting rules
 (4-key JSON, missing-args) live in `SKILL.md`; the safety boundaries
 specific to doctor are stated here.
 
@@ -46,7 +46,7 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 | `delete-node` | n/a (always destructive) | n/a | **yes** — `--force` ignores references |
 | `rebuild` | n/a (always destructive) | n/a | **yes** — granularity controls blast radius |
 
-## Hard rule for this SOP (PRIN-SOP-7 reinforced)
+## Hard rule for this SOP
 
 > **Within doctor, match user natural-language intent to the right CLI.**
 > The doctor SOP is the only place where destructive ops live. Examples:
@@ -140,4 +140,3 @@ xu delete-node --wiki research --uid WXYZ5678 --force
 - The `ingest-*` CLIs (to re-ingest after a delete) → `SKILL.md §SOP map` (ingest SOP)
 - The `register` / `unregister` CLIs (to recover a wiki from doctor
   reports) → `SKILL.md §SOP map` (config SOP)
-- Full doctor architecture → `design-docs/07-doctor.md`

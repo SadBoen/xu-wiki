@@ -32,12 +32,10 @@ Each SOP is self-contained in its own file (`*.md` below); the agent says
 | SOP | Intent | CLI commands it calls | File |
 |---|---|---|---|
 | `/xu-wiki create` | build a new empty wiki at a path (raws/, nodes/{page,list,report}/, .xu/) | `create` (+ optional `wikis` to verify) | `create.md` |
-| `/xu-wiki ingest` | add content (PDF / DOCX / PPTX / MD / image / album) as immutable L1 Node_Page. Two-phase prose/doc flow (`ingest-file` → `ingest-commit`); single-shot album flow (`ingest-album`). Body style must match content type. **Post-commit reflection (PRIN-CR-1)**: query for similar List → extend or create new; LLM decides autonomously | `ingest-file` → `ingest-commit` (PRIN-ING-1); `ingest-album` (PRIN-ING-14); `ingest-verify`; `reorganize` (if user不满意路径); optional `query-relation add` | `ingest.md` |
-| `/xu-wiki query` | find knowledge with elastic slicing, IDF, Fast Pass; read nodes; follow L2/L3 hints. **Post-query reflection (PRIN-CR-1)**: query for similar Report → extend or create new; LLM decides autonomously | `query`; then `read`, `list show`, or `report show` per hint | `query.md` |
+| `/xu-wiki ingest` | add content (PDF / DOCX / PPTX / MD / image / album) as immutable L1 Node_Page. Two-phase prose/doc flow (`ingest-file` → `ingest-commit`); single-shot album flow (`ingest-album`). Body style must match content type. **Post-commit reflection**: query for similar List → extend or create new; LLM decides autonomously | `ingest-file` → `ingest-commit`; `ingest-album`; `ingest-verify`; `reorganize` (if user不满意路径); optional `query-relation add` | `ingest.md` |
+| `/xu-wiki query` | find knowledge with elastic slicing, IDF, Fast Pass; read nodes; follow L2/L3 hints. **Post-query reflection**: query for similar Report → extend or create new; LLM decides autonomously | `query`; then `read`, `list show`, or `report show` per hint | `query.md` |
 | `/xu-wiki doctor` | read-only consistency checks on fields / files / relations / L1 immutability / Report evidence / IDF; apply `--fix` for safe repairs; rebuild derived layers | `doctor-all`; per-check subcommands; `--fix`; `delete-node`; `rebuild`; `nodes` (dangling lookup) | `doctor.md` |
 | `/xu-wiki config` | manage wiki aliases, register/unregister directories, set MinerU API key, inspect wikis, **and uninstall xu-wiki** | `wikis`; `alias set/unset/show`; `register` / `unregister`; `config set-mineru-key / show / path`; `skills path / list`; **`uninstall`** (always dry-run first, then `--execute` after user confirms) | `config.md` |
-
-Full SOP semantics: design-docs/08-sop-architecture.md.
 
 ## Architecture in 30 seconds
 
@@ -47,7 +45,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 - **Relations** — exactly **50 edges per node** (LRU, head=touch, tail=evict). No category, no score.
 - **DB** holds nodes / patches / IDF / relations (L1 metadata only; L2/L3 are `.md`-only).
 - **FS** holds raw material pool (`raws/`), L1 markdown (`nodes/page/`), L2 (`nodes/list/`), L3 (`nodes/report/`).
-- **CLI is offline-first** (CONST-ARCH-1 / PRIN-ARCH-11/12). MinerU is an optional
+- **CLI is offline-first.** MinerU is an optional
   parser in the fallback chain; the key is loaded from `MINERU_API_KEY` env or
   `~/.xu-wiki/config.yaml` (`XU_HOME` overrides the dir).
 
@@ -60,31 +58,31 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 
 0b. **Install is documented in README only.** xu-wiki is pre-installed when this skill loads — this bundle carries no install steps. No `xu install` or `/xu-wiki install` command.
 
-1. **Never edit L1 markdown body** — immutable (PRIN-ARCH-2/3). UIDs retired on delete, never reused.
-2. **Report needs ≥1 evidence ref** at create-time (BAN-ARCH-5). Empty evidence rejected.
+1. **Never edit L1 markdown body** — immutable. UIDs retired on delete, never reused.
+2. **Report needs ≥1 evidence ref** at create-time. Empty evidence rejected.
 3. **50 edges max per node** (LRU: 51st evicts tail). Do not re-add evicted edge unless needed.
 4. **Offline-first** — only MinerU parse hits network. On failure: markitdown → text → image silently.
 5. **No secret in code or git** — MinerU key in `~/.xu-wiki/config.yaml` or `MINERU_API_KEY` env.
 6. **All commands return 4-key JSON** — `{status, data, message, hints}`. `hints` is for agent, not user.
 7. **Deterministic output** — no timestamps, random IDs, or locale in response. Use `--wiki`.
-8. **Missing required args: ask, don't guess.** Never auto-pick names or paths (BAN-CRT-1/3).
+8. **Missing required args: ask, don't guess.** Never auto-pick names or paths.
 9. **Absolute paths only** (`~` is fine). Never `./foo` (breaks idempotency + symlink guard).
 10. **Slash command = SOP entry, not CLI subcommand.** `/xu-wiki <verb>` → enter SOP → pick CLI(s). See SOP map above.
-11. **Within a SOP: match intent to CLI (PRIN-SOP-7).** Do NOT coerce to an unrelated CLI.
+11. **Within a SOP: match intent to CLI.** Do NOT coerce to an unrelated CLI.
     - doctor + "move X to Y" → `xu reorganize --wiki W --uid X --new-node-path Y` (atomic; never delete+re-ingest)
-12. **Asymmetric creation bias (PRIN-CR-1):** After ingest → bias List; after query → bias Report. LLM decides autonomously, no user approval needed. Before creating: query to find similar existing List/Report. If similar found → extend the existing one instead of creating a new one.
-13. **Phase 1 temp file (PRIN-ING-7):** Written to system temp, deleted on success, retained on failure. No `nodes/pending/`.
+12. **Asymmetric creation bias:** After ingest → bias List; after query → bias Report. LLM decides autonomously, no user approval needed. Before creating: query to find similar existing List/Report. If similar found → extend the existing one instead of creating a new one.
+13. **Phase 1 temp file:** Written to system temp, deleted on success, retained on failure. No `nodes/pending/`.
 14. **Forbidden: `execute_code` for xu CLI.** stderr corrupts JSON output. Use bash/terminal tool.
 
 ## Quick safety checklist
 
 Before declaring an ingest done, run through this every time:
 
-1. **`raws/<node_path>/` has the source file copy?** (PRIN-ING-6) — if empty but
-   `nodes/page/` has content, PRIN-ING-6 was bypassed. Stop and re-investigate.
-2. **Phase 1 temp file was deleted on success?** (PRIN-ING-7) — if `ingest-commit`
-   succeeded but the temp file still exists, that is a bug. Re-run `ingest-commit`
-   (it will reject a duplicate commit) to confirm deletion.
+1. **`raws/<node_path>/` has the source file copy?** — if empty but `nodes/page/`
+   has content, the copy was bypassed. Stop and re-investigate.
+2. **Phase 1 temp file was deleted on success?** — if `ingest-commit` succeeded but
+   the temp file still exists, that is a bug. Re-run `ingest-commit` (it will
+   reject a duplicate commit) to confirm deletion.
 3. **`data.created[].raw_path` is non-null?** — if null, explains why raws/ is
    empty. Null is expected only for `--native` (agent-synthesized text).
 4. **`xu doctor-all --wiki W` returns zero issues?** — do not proceed to the next
@@ -92,7 +90,7 @@ Before declaring an ingest done, run through this every time:
 
 **Any NO answer means: stop, investigate, fix before continuing.**
 
-## Process-layer audit log (CONST-ARCH-6 / PRIN-ARCH-26)
+## Process-layer audit log
 
 **Every CLI invocation emits exactly one process-layer audit line** — the
 agent does NOT need to (and must NOT) call any logging command explicitly:
@@ -117,7 +115,7 @@ Every command prints one JSON object to stdout. Read `data.*` for facts and
 ```
 
 On a `list_hint` / `report_hint` field, the agent runs the post-query
-reflection (PRIN-CR-1; see hard rule 12): query for similar List/Report first;
+reflection (see hard rule 12): query for similar List/Report first;
 extend existing if found; otherwise LLM decides autonomously (no user approval needed).
 Hints are starting points, not mandates.
 
@@ -130,7 +128,7 @@ Hints are starting points, not mandates.
 # 1. create a wiki
 xu create --name research --path /abs/path/to/wiki
 
-# 2. ingest L1 — two phases (PRIN-ING-1); verify raws/ has copy after (PRIN-ING-6)
+# 2. ingest L1 — two phases; verify raws/ has copy after
 xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → {"data":{"pending":"/tmp/...-pre.md",...}}
 # Agent reviews the temp file content, then:
 xu ingest-commit --wiki research --pending /tmp/...-pre.md --title "BERT" --content-type article # → L1 entry
@@ -159,4 +157,3 @@ xu rebuild    --wiki research --granularity keep-l1
 - `README.md` in this repo for the full reference
 - `tests/e2e_verify.sh` for a runnable smoke test
 - `tests/test_core.py` for unit tests of the deterministic core
-- `design-docs/09-skill-architecture.md` for the file-layout principles

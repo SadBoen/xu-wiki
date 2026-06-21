@@ -5,7 +5,7 @@ registering / aliasing / unregistering wikis, managing the MinerU API key,
 inspecting the global state, and **uninstalling the xu-wiki package
 itself**. It does not touch L1/L2/L3 content.
 
-This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
+This file is **self-contained**. Cross-cutting rules
 (4-key JSON, missing-args) live in `SKILL.md`; the safety rules for
 register / unregister / uninstall are stated here.
 
@@ -31,7 +31,7 @@ xu config path                                 # global config file paths
 xu skills path                                 # print source dir of the xu-wiki skill bundle
 xu skills list                                 # list files in the xu-wiki skill bundle
 
-# Software lifecycle — uninstall xu-wiki itself (PRIN-UNINST-*)
+# Software lifecycle — uninstall xu-wiki itself
 xu uninstall                                          # DRY-RUN by default; --execute to apply
 xu uninstall --execute                               # remove pip package + skill bundles + ~/.xu-wiki/ config
 xu uninstall --execute --preserve-config             # keep ~/.xu-wiki/ config dir
@@ -88,7 +88,7 @@ is accepted but ignored — it is not possible to delete wiki data through unins
 ### Step 2 — confirm with the user
 
 The agent shows the dry-run plan and the scope options, then waits
-for explicit confirmation. PRIN-UNINST-6: **the user must type "yes"
+for explicit confirmation. **The user must type "yes"
 / "确认" / "proceed" before any --execute runs.** This is non-negotiable.
 
 ### Step 3 — execute
@@ -123,7 +123,7 @@ the user what happened. The JSON is NOT shown to the user.
    explicitly asks to keep config (`--preserve-config`) or keep pip (`--keep-pip`).
 7. **`xu uninstall --execute --keep-pip` is a test escape hatch.**
    Agents must NEVER pass `--keep-pip` in normal flows — it's for the
-   test suite (PRIN-TEST-*) and developer debugging. If you see it
+   test suite and developer debugging. If you see it
    in a user-facing flow, treat it as a bug.
 
 ### Install is NOT in this SOP
@@ -134,7 +134,7 @@ and no `pip upgrade` wrapper.
 
 ## Common pitfalls
 
-- **`create` to register an existing dir** — refused by BAN-CRT-1. Use
+- **`create` to register an existing dir** — refused. Use
   `register` instead.
 - **Hardcoding the MinerU key** — never write the key into the repo, the
   SKILL.md, or any code. Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml`.
@@ -152,7 +152,6 @@ and no `pip upgrade` wrapper.
   `SKILL.md §SOP map` (doctor SOP)
 - The 3-layer metadata model (for what `register` accepts) →
   `SKILL.md §Architecture in 30 seconds`
-- Why uninstall is a CLI command and install is not → `design-docs/08-sop-architecture.md` [CONST-SOP-3]
 
 ## Workflow — first-time setup
 
@@ -176,7 +175,7 @@ and no `pip upgrade` wrapper.
 
 Use `register` (NOT `create`) when the directory already exists with
 wiki data. `create` is only for fresh empty wikis (it refuses to
-overwrite a non-empty path — BAN-CRT-1).
+overwrite a non-empty path).
 
 ```bash
 xu register --name legacy --path /abs/path/to/existing/wiki --alias lg
