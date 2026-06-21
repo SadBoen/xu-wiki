@@ -18,6 +18,7 @@ class ParseResult:
     content_markdown: str = ""
     metadata: dict = field(default_factory=dict)
     skipped_reason: str = ""
+    parser: str = ""
 
     @property
     def ok(self) -> bool:
@@ -87,7 +88,8 @@ class ExcelParser:
                 parts.append(yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False))
             text = "".join(parts)
             return ParseResult(success=True, content_markdown=text,
-                              metadata={"parser": self.name, "sheets": wb.sheetnames})
+                              metadata={"parser": self.name, "sheets": wb.sheetnames},
+                              parser=self.name)
         except Exception:
             return None
 
@@ -126,7 +128,8 @@ class CsvParser:
         except Exception:
             return None
         return ParseResult(success=True, content_markdown=text,
-                          metadata={"parser": self.name, "rows": len(items)})
+                          metadata={"parser": self.name, "rows": len(items)},
+                          parser=self.name)
 
 
 # ---- VisionParser: PIL/EXIF -> YAML list of dicts (gallery content_type) ----
@@ -162,7 +165,8 @@ class VisionParser:
             pass
         text = yaml.dump([item], allow_unicode=True, default_flow_style=False, sort_keys=False)
         return ParseResult(success=True, content_markdown=text,
-                          metadata={"parser": self.name})
+                          metadata={"parser": self.name},
+                          parser=self.name)
 
 
 # ---- MinerU primary (cloud API; silent fallback if key missing) ----
