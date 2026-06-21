@@ -131,3 +131,22 @@ xu doctor-all --wiki research
 xu rebuild    --wiki research --granularity keep-l1
 ```
 
+## Error catalog
+
+Every `error_class` the CLI may return. Append new entries using this format:
+
+```
+## <error_class>
+- Trigger: <what user/system action causes it>
+- Where: <which CLI subcommand / SOP>
+- Response shape: <what `data` keys accompany it>
+- Fix: <how the user / agent should respond>
+```
+
+Cross-reference: JSON response shape (`status` / `data` / `message` / `hints`) → `SKILL.md §Reading the response`
+
+### CreationRefused
+- Trigger: LLM decided not to create an L2/L3 after post-commit or post-query reflection, after checking for similar existing nodes. The agent weighed the evidence and chose not to create.
+- Where: agent-side only. The CLI never sees this; it is the agent's internal acknowledgment that no `list create` / `report create` call was made.
+- Response shape: N/A (no CLI call). Agent may later revisit the decision if new content is ingested or queried that changes the comparison set.
+

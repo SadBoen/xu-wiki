@@ -1,7 +1,7 @@
 # 09 — Skill 文档架构设计原则
 
 > **目的**：本文定义 xu-wiki Skill 文档（`src/xu/skills/`）的目录组织、文件结构、内容划分原则。
-> **范围**：SKILL.md 主入口的职责、5 个 SOP 任务文件的组织、`scripts/` 与 `reference/` 的取舍、跨文件引用的纪律。
+> **范围**：SKILL.md 主入口的职责、5 个 SOP 任务文件的组织、`scripts/` 与 `references/` 的取舍、跨文件引用的纪律。
 > **风格**：每条原则标 `[PRIN-SKILL-N]` / `[BAN-SKILL-N]` / `[CONST-SKILL-N]` / `[DESIGN-SKILL-N]`。
 
 ---
@@ -17,16 +17,16 @@ Skill 文档的目标是**让 Agent 在执行具体 SOP 任务时只加载与该
 ```
 src/xu/skills/
 ├── SKILL.md          # 唯一索引：5 SOP 总览、跨切 hard rules、response 格式、quick start
-├── create.md         # /xu-wiki create 任务全文（自给自足）
-├── ingest.md         # /xu-wiki ingest 任务全文（自给自足）
-├── query.md          # /xu-wiki query 任务全文（自给自足）
-├── doctor.md         # /xu-wiki doctor 任务全文（自给自足）
-├── config.md         # /xu-wiki config 任务全文（自给自足）
-└── reference/        # 预占位目录：空文件是引导（PRIN-SKILL-7）
-    └── error-catalog.md   # 空 — 未来 error_class 集中地
+└── references/       # 所有 SOP + reference data（统一组织）
+    ├── create.md         # /xu-wiki create 任务全文（自给自足）
+    ├── ingest.md         # /xu-wiki ingest 任务全文（自给自足）
+    ├── query.md          # /xu-wiki query 任务全文（自给自足）
+    ├── doctor.md         # /xu-wiki doctor 任务全文（自给自足）
+    ├── config.md         # /xu-wiki config 任务全文（自给自足）
+    └── error-catalog.md  # error_class 速查
 ```
 
-**不创建** `scripts/`（CLI 已是确定性层）。`reference/` **当前只放空占位**——任务流（5 SOP）不放在这里。**不创建** `sop/` 等自定义子目录（违反 Anthropic 官方 Skill 框架的扁平约定）。
+**不创建** `scripts/`（CLI 已是确定性层）。所有任务流和 reference data 统一放在 `references/` 子目录。
 
 ---
 
@@ -36,7 +36,7 @@ src/xu/skills/
 
 每个 SOP 任务文件（`create.md` / `ingest.md` / `query.md` / `doctor.md` / `config.md`）必须**自给自足**：
 - 不引用其他 SOP 文件（不允许 `ingest.md → query.md`）
-- 不引用 `reference/` 之类的共享层（不存在）
+- 不引用 `references/` 之类的共享层（不存在）
 - 不引用 `scripts/` 之类的代码层（不存在）
 - **只允许**引用 SKILL.md（"见 SKILL.md §X"）——因为 SKILL.md 已加载，引用是 0-token 的导航
 
@@ -47,7 +47,7 @@ src/xu/skills/
 ### [PRIN-SKILL-2] 跨切内容进 SKILL.md——不抽 reference/
 
 如果某条信息**所有 SOP 都需要**（hard rules、response 格式、原则索引、quick start、5 SOP 总览），写在 SKILL.md。
-**不要**抽到 `reference/common.md` 然后让每个 SOP 引用——那等于让每个 SOP 全量加载 reference。
+**不要**抽到 `references/common.md` 然后让每个 SOP 引用——那等于让每个 SOP 全量加载 reference。
 
 如果某条信息**两个 SOP 都需要且只两个**，**内联两遍**到各自 SOP 文件——**重复胜于污染**。
 
@@ -59,36 +59,29 @@ xu-wiki 的 CLI 已经覆盖所有确定性操作（ingest-file / ingest-commit 
 
 **特例**：若以后真出现「CLI 不该做、但 Agent 又要做」的边角操作（如临时格式转换、临时校验），可单独加文件并写清楚"为什么这个不进 CLI"——但**默认不创建**。
 
-### [PRIN-SKILL-4] 任务流不进 `reference/`——任务不是 reference data
+### [PRIN-SKILL-4] 任务流与 reference data 统一放 `references/`
 
-`reference/` 在 Anthropic Skill 框架中的语义是「lookup data / schemas / reference tables」（如 `bigquery-skill` 的 `reference/finance.md`、`reference/sales.md`）。任务流程（5 SOP）**不是** reference data，**不要套用这个命名**——5 个 SOP 文件放根目录，不放 `reference/`。
+所有任务流（SOP 文件）和 lookup data（error catalog 等）统一放在 `references/` 子目录，符合 Anthropic Skill 框架的目录约定：
+- `references/<name>.md` = 任务流（自给自足，不需要跨 SOP 引用）
+- `references/<type>.md` = lookup data / schemas / reference tables
 
 如果内容是"Agent 偶尔查一下的表"（如 error_class 全集速查），**两种情况**：
 - 跨切通用且短 → 放 SKILL.md（已加载即免费）
-- 跨切通用但**会增长** → 放 `reference/<type>.md`（见 [PRIN-SKILL-7]，空文件是预占位）
+- 跨切通用但**会增长** → 放 `references/<type>.md`（见 [PRIN-SKILL-7]，空文件是预占位）
 
 如果内容是"某个 SOP 内需要查的表"（如 ingest 的 body-form 三选一判定表），放**该 SOP 任务文件**内——任务专属、自给自足。
 
-### [PRIN-SKILL-5] 任务文件扁平放根目录——遵循官方框架
-
-5 个 SOP 文件直接放 `src/xu/skills/` 根目录，命名即任务动词（`create.md` / `ingest.md` / `query.md` / `doctor.md` / `config.md`），**不创建** `sop/` 之类自定义子目录。
-
-理由：
-- 符合 Anthropic 官方 Skill 框架的扁平约定（参见 [https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)）
-- Agent 通过 `ls` 或文件系统发现时一目了然
-- 避免命名创新引入的理解成本
-
 ### [PRIN-SKILL-6] SKILL.md 是唯一索引——任务文件之间平行
 
-SKILL.md 列出 5 个 SOP 入口及对应文件名。任务文件之间是**平行关系**，不是引用关系：
+SKILL.md 列出 5 个 SOP 入口及对应文件路径。任务文件之间是**平行关系**，不是引用关系：
 - 一个 SOP 文件提到「可以用 query」时，**不**直接链到 `query.md`——只写「走 query SOP（见 SKILL.md）」
-- 一个 SOP 文件需要某个 CLI 命令的详细说明时，**不**链到 reference（不存在）——直接在该文件内联必要细节
+- 一个 SOP 文件需要某个 CLI 命令的详细说明时，直接在该文件内联必要细节——不链到其他 SOP 文件
 
 SKILL.md 是 Agent 的**唯一导航枢纽**。所有 SOP 间的跳转都通过它路由。
 
-### [PRIN-SKILL-7] `reference/` 用占位文件做引导——空文件也是结构信号
+### [PRIN-SKILL-7] `references/` 用占位文件做引导——空文件也是结构信号
 
-当 `reference/` 目录下某类内容**预期会增长**（error 集、术语表…），**提前创建**仅含引导头的空文件作为占位。这不是"未完成"，而是"**结构化未来**"——空文件本身在告诉 Agent：
+当 `references/` 目录下某类内容**预期会增长**（error 集、术语表…），**提前创建**仅含引导头的空文件作为占位。这不是"未完成"，而是"**结构化未来**"——空文件本身在告诉 Agent：
 
 1. **这一类内容有家**——别建 `weird-bug.md` / `error-log-2026.md` / `notes-today.md` 之类的散文件
 2. **有约定的格式**——文件头里写好 entry 模板，Agent 照着填
@@ -104,7 +97,7 @@ SKILL.md 是 Agent 的**唯一导航枢纽**。所有 SOP 间的跳转都通过�
 
 | 文件 | 用途 | 当前状态 |
 |---|---|---|
-| `reference/error-catalog.md` | 所有 `error_class` 的触发 / 修复 速查 | 空 |
+| `references/error-catalog.md` | 所有 `error_class` 的触发 / 修复 速查 | 已填充 |
 
 **触发条件**（什么时候建新占位文件）：
 
@@ -132,7 +125,7 @@ SKILL.md 是 Agent 的**唯一导航枢纽**。所有 SOP 间的跳转都通过�
 
 ### [BAN-SKILL-2] 禁止为"省字数"而抽 reference
 
-不允许：「这几个 SOP 都用到的内容抽到 `reference/common.md`」「命令全集抽到 `reference/commands.md`」。
+不允许：「这几个 SOP 都用到的内容抽到 `references/common.md`」「命令全集抽到 `references/commands.md`」。
 
 理由：抽到 reference/ 后，所有引用方**全量加载**该 reference——污染源从 1 个变成 N 个（每个引用方都是污染源）。表面看是省了重复字数，实际是给每个任务 context 注入了不相关内容。
 
@@ -151,12 +144,12 @@ skill bundle（`src/xu/skills/` 下随包分发、由 Agent 加载的文件）**
 - SKILL.md / 各 SOP 文件提到安装时，**只写一句指路**「安装见 README」，不复述步骤。
 - 不存在 `INSTALL.md` 之类的"安装清单"进 bundle——它违反本禁令，也违反第 17-28 行的文件结构图。
 
-### [BAN-SKILL-3] 禁止在 `reference/` 之外创建参考性 / 错误收集类文件
+### [BAN-SKILL-3] 禁止在 `references/` 之外创建参考性 / 错误收集类文件
 
-所有「同类内容累积型」的文件——`error-catalog` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `reference/<type>.md`。
+所有「同类内容累积型」的文件——`error-catalog` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `references/<type>.md`。
 
 理由（[PRIN-SKILL-7](file:///Users/boen/Coding/xu-wiki-2/xu-wiki/design-docs/09-skill-architecture.md)）：
-- `reference/` 的空占位文件是**结构信号**——告诉 Agent "这一类内容有家"
+- `references/` 的空占位文件是**结构信号**——告诉 Agent "这一类内容有家"
 - 散文件（`error1.md` / `bug-2026-06-20.md`）**违反**这个信号，导致同主题内容散落
 - 散文件无法跨 entry 比较，无法 grep 全文，无法在 install / uninstall 时被一致管理
 
@@ -171,9 +164,9 @@ skill bundle（`src/xu/skills/` 下随包分发、由 Agent 加载的文件）**
 
 ### [CONST-SKILL-1] 遵循 Anthropic Skill 框架的扁平结构
 
-Skill 目录结构以 Anthropic 官方文档为准。允许的子目录只有 `scripts/`（代码）和 `reference/`（lookup data）——前者默认不创建，后者禁止用于任务流。
+Skill 目录结构以 Anthropic 官方文档为准。允许的子目录只有 `scripts/`（代码）和 `references/`（lookup data）——前者默认不创建，后者禁止用于任务流。
 
-新增任何子目录前必须先回答：这是 `scripts/`（确定性代码）、`reference/`（lookup data），还是**都不属于**？都不属于 → 不创建。
+新增任何子目录前必须先回答：这是 `scripts/`（确定性代码）、`references/`（lookup data），还是**都不属于**？都不属于 → 不创建。
 
 ### [CONST-SKILL-2] Agent 加载粒度为整文件
 
@@ -245,7 +238,7 @@ ingest.md       # 该任务需要的全部内容内联
 | create --name / --path 校验 | `create.md` | create 专属 |
 | process-layer audit 日志规范 | `SKILL.md`（简）+ `01-wiki-architecture.md` §五·五（详） | SKILL.md 只放一句指路，详细在架构文档 |
 | error_class 速查（短 / 静态） | `SKILL.md` | 跨切通用，跨频率不高 |
-| error_class 完整 catalog（**会增长**） | `reference/error-catalog.md` | 占位文件，未来累积（PRIN-SKILL-7） |
+| error_class 完整 catalog（**会增长**） | `references/error-catalog.md` | 占位文件，未来累积（PRIN-SKILL-7） |
 
 ---
 
@@ -261,16 +254,14 @@ ingest.md       # 该任务需要的全部内容内联
 
 ## 九、自检清单
 
-- [ ] `src/xu/skills/` 根目录有 `SKILL.md` + 5 个 SOP 文件 + `__init__.py`（PRIN-SKILL-5）
-- [ ] `reference/` 子目录存在，且**只**含预占位文件（PRIN-SKILL-7）
+- [ ] `src/xu/skills/` 根目录有 `SKILL.md` + `references/` 子目录（PRIN-SKILL-4）
+- [ ] `references/` 目录包含全部 5 个 SOP 文件 + error-catalog（统一组织）
 - [ ] 没有 `scripts/` 文件夹（PRIN-SKILL-3）
-- [ ] 没有 `sop/` 之类自定义子目录（PRIN-SKILL-5）
-- [ ] 5 个 SOP 文件**全部放在根目录**（PRIN-SKILL-4）
 - [ ] 5 个 SOP 文件之间无直接链（BAN-SKILL-1）
 - [ ] 跨切内容（hard rules、response、quick start）在 SKILL.md（PRIN-SKILL-2）
-- [ ] 没有「省字数」抽 reference 的痕迹（BAN-SKILL-2）
+- [ ] 没有「省字数」抽 references/ 的痕迹（BAN-SKILL-2）
 - [ ] SKILL.md 是所有任务文件的唯一入口（PRIN-SKILL-6）
-- [ ] 没有散文件（`error1.md` / `notes-<date>.md` / `bug-<id>.md`）—— 累积型内容全进 `reference/<type>.md`（BAN-SKILL-3）
+- [ ] 没有散文件（`error1.md` / `notes-<date>.md` / `bug-<id>.md`）—— 累积型内容全进 `references/<type>.md`（BAN-SKILL-3）
 - [ ] bundle 内无安装 / 部署内容（无 `INSTALL.md`，SKILL.md / SOP 提安装只一句指向 README）（BAN-SKILL-3a）
 
 ---

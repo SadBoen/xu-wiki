@@ -119,8 +119,8 @@ def test_deploy_copies_files_to_destination(monkeypatch, tmp_path):
     result = r["data"]["results"][0]
     assert result["status"] == "success"
     dest = tmp_path / ".hermes" / "skills" / SKILL_NAME
-    # Reference subdir is preserved (not flattened)
-    assert (dest / "reference").is_dir()
+    # References subdir is preserved (not flattened)
+    assert (dest / "references").is_dir()
     # Top-level files all there
     for rel in ALL_SKILL_FILES:
         if rel.endswith(".md"):

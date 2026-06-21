@@ -18,7 +18,7 @@
 | 06 | [06-query.md](06-query.md) | query | 三层介入怎么打分？Fast Pass 怎么动态？ |
 | 07 | [07-doctor.md](07-doctor.md) | doctor | 三层不变量 + 50 条上限 + L1 不可变怎么检？ |
 | 08 | [08-sop-architecture.md](08-sop-architecture.md) | **SOP 层**（create / ingest / query / doctor / config） | 用户/Agent 层意图动词如何映射到 CLI 子命令？slash command 为什么不是 CLI 子命令别名？ |
-| 09 | [09-skill-architecture.md](09-skill-architecture.md) | **Skill 文档架构**（`src/xu/skills/` 的文件结构与内容划分） | 如何让 Agent 加载 Skill 时零污染？`reference/` 的占位引导是什么？ |
+| 09 | [09-skill-architecture.md](09-skill-architecture.md) | **Skill 文档架构**（`src/xu/skills/` 的文件结构与内容划分） | 如何让 Agent 加载 Skill 时零污染？`references/` 的占位引导是什么？ |
 
 ---
 
@@ -188,21 +188,15 @@ Agent 编排 SOP 时,**第一步就是问用户「这些内容是表格化 / 散
 
 这条原则是过去把 `op-log` 写进各命令、又用 LLM 重写 .md 的反模式里沉淀出来的——**把过程当内容，是高熵增的源头**。
 
-### 16. `reference/` 用占位文件做引导——空文件也是结构信号（[PRIN-SKILL-7]）
+### 16. `references/` 用占位文件做引导——空文件也是结构信号（[PRIN-SKILL-7]）
 
-当 `reference/` 目录下某类内容**预期会增长**（error 集、术语表…），**提前创建**仅含引导头的空文件作为占位——空文件不是「未完成」，而是**结构化未来**：
+当 `references/` 目录下某类内容**预期会增长**（error 集、术语表…），**提前创建**仅含引导头的空文件作为占位——空文件不是「未完成」，而是**结构化未来**：
 
-- **这一类内容有家**——别建 `weird-bug.md` / `error-log-2026.md` / `notes-today.md` 之类的散文件
-- **有约定的格式**——文件头里写好 entry 模板
-- **有约定的命名**——同类内容集中在同一个文件，跨 entry 可比较
+### 17. 禁止在 `references/` 之外创建参考性 / 踩坑 / 错误收集类文件（[BAN-SKILL-3]）
 
-**触发条件**：跨多个 SOP / 多会话累积、没有现成 SOP 文件或 SKILL.md 适合收纳。**反例**：一次性查表放 SKILL.md；SOP 专属放该 SOP 文件；不需要累积就不建。详见 [09-skill-architecture.md](09-skill-architecture.md) [PRIN-SKILL-7]。
+所有「同类内容累积型」的文件——`error-catalog` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `references/<type>.md`。
 
-### 17. 禁止在 `reference/` 之外创建参考性 / 踩坑 / 错误收集类文件（[BAN-SKILL-3]）
-
-所有「同类内容累积型」的文件——`error-catalog` / `glossary` / `changelog` / `notes-<date>` / `bug-<id>` / `weird-issue`——**必须**进 `reference/<type>.md`。
-
-`reference/` 的空占位文件是**结构信号**——告诉 Agent "这一类内容有家"。散文件（`error1.md` / `bug-2026-06-20.md`）违反这个信号，导致同主题内容散落、无法跨 entry 比较、无法被 install/uninstall 一致管理。
+`references/` 的空占位文件是**结构信号**——告诉 Agent "这一类内容有家"。散文件（`error1.md` / `bug-2026-06-20.md`）违反这个信号，导致同主题内容散落、无法跨 entry 比较、无法被 install/uninstall 一致管理。
 
 如果新类型的内容**没有对应的占位文件**：先建占位（带引导头），再写内容。永远不要建 `notes-<date>.md` 之类的临时散文件。详见 [09-skill-architecture.md](09-skill-architecture.md) [BAN-SKILL-3]。
 
