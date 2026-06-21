@@ -45,6 +45,7 @@ from ..utils.response import error, success, warning
 from ..utils.wiki import is_wiki_root
 
 MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
+XU_SHARE_DIR = MANIFEST_PATH.parent
 
 
 def _list_wikis() -> list[tuple[str, str]]:
@@ -348,6 +349,12 @@ def _purge_skill_bundles(targets: list[str] | None = None) -> dict:
     elif not remaining or (not remaining and failures):
         try:
             MANIFEST_PATH.unlink()
+        except FileNotFoundError:
+            pass
+        # All deployments gone — also remove the canonical skill store dir
+        # (~/.local/share/xu-wiki/) which holds skills/, global_audit.jsonl, etc.
+        try:
+            shutil.rmtree(XU_SHARE_DIR)
         except FileNotFoundError:
             pass
 
