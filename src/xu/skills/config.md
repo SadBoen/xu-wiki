@@ -157,8 +157,7 @@ and no `pip upgrade` wrapper.
 ## Workflow — first-time setup
 
 > This section covers runtime configuration only. For install steps
-> (pipx / pip / venv) see **README §Install** — install is not in this
-> bundle (CONST-INST-6 / BAN-SKILL-3a).
+> (pipx / pip / venv) see **README §Install**.
 
 1. **Set the MinerU API key** (optional — only needed if the offline
    fallback chain hits a PDF and `markitdown` is not enough):

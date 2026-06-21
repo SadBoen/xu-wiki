@@ -38,11 +38,6 @@ This skill is split into 8 files per the principles in
 | `config.md` | `/xu-wiki config` SOP — full self-contained | When entering config SOP |
 | `reference/error-catalog.md` | placeholder — future error_class catalog | On demand |
 
-**Install/deploy docs are NOT in this bundle** (BAN-SKILL-3a / CONST-INST-6):
-the bundle is loaded *after* xu-wiki is installed, so how-to-install lives in
-the repo `README.md` (readable on GitHub before install). See README §Install
-and §Agent skill deployment.
-
 **No file links to another SOP file** (BAN-SKILL-1). If an SOP file needs to
 mention a CLI from another SOP, it says "see SKILL.md §X" — never links
 directly. The agent places all 8 files in its own skill discovery dir
@@ -106,7 +101,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 
 0a. **Uninstall = 2 surfaces.** Skill bundle → agent self-removes (`~/.hermes/skills/xu-wiki/`). Program + config → `xu uninstall --execute`. **Wiki data NEVER deleted** (no flag, no option, no branch). See doctor.md §Uninstall.
 
-0b. **Install is documented in README only.** xu-wiki is pre-installed when this skill loads — this bundle carries no install steps (BAN-SKILL-3a). No `xu install` or `/xu-wiki install` command.
+0b. **Install is documented in README only.** xu-wiki is pre-installed when this skill loads — this bundle carries no install steps. No `xu install` or `/xu-wiki install` command.
 
 1. **Never edit L1 markdown body** — immutable (PRIN-ARCH-2/3). UIDs retired on delete, never reused.
 2. **Report needs ≥1 evidence ref** at create-time (BAN-ARCH-5). Empty evidence rejected.
@@ -171,9 +166,8 @@ Hints are starting points, not mandates.
 
 ## Quick start for the agent
 
-> Already installed? This bundle is loaded post-install. For install /
-> deploy steps see README (§Install, §Agent skill deployment) — not here
-> (CONST-INST-6). The flow below assumes `xu` is already on PATH.
+> Already installed? For install / deploy steps see README (§Install, §Agent
+> skill deployment). The flow below assumes `xu` is already on PATH.
 
 ```bash
 # 1. create a wiki
