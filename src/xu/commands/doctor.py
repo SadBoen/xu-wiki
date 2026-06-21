@@ -432,9 +432,9 @@ def cmd_rebuild(args) -> dict:
     """Rebuild derived layers from L1. NEVER regenerates L1 content (PRIN-ARCH-3).
 
     granularity:
-      keep-l1     : rebuild IDF + relation positions from current L1 (default)
+      keep-l1     : rebuild IDF + renumber relation positions from frontmatter (default)
       keep-l1-l2  : also leave L2 lists intact, rebuild IDF/relations
-      full        : rebuild IDF + reconcile DB rows from L1 md files
+      full        : same as keep-l1 (DB reconciliation deprecated; frontmatter is source of truth)
     """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
@@ -445,72 +445,53 @@ def cmd_rebuild(args) -> dict:
         actions = []
 
         if gran == "full":
-            # reconcile: ensure every L1 md file has a DB row, re-derive content_hash
-            reconciled = 0
-            for md in ctx.page_dir.rglob("*.md"):
-                rel = str(md.relative_to(ctx.root))
-                frontmatter, body = fm.parse(md.read_text(encoding="utf-8", errors="replace"))
-                uid = frontmatter.get("uid")
-                if not uid:
-                    continue
-                ch = sha256_text(body)
-                row = conn.execute("SELECT uid FROM nodes WHERE uid=?", (uid,)).fetchone()
-                if not row:
-                    ts = now_ts()
-                    conn.execute(
-                        "INSERT INTO nodes(uid,layer,content_type,title,node_path,slug,rel_md_path,"
-                        "source_hash,content_hash,active,attrs,created_at,updated_at) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)",
-                        (uid, frontmatter.get("layer", "Page"), frontmatter.get("content_type", "article"),
-                         frontmatter.get("title", uid), frontmatter.get("node_path", ""),
-                         md.stem, rel, frontmatter.get("source_hash"), ch,
-                         frontmatter.get("attrs", "{}"), ts, ts),
-                    )
-                    # patches v1 so reconciled rows aren't missing their create record
-                    conn.execute(
-                        "INSERT OR IGNORE INTO patches(page_uid,version,op,delta,author,created_at) "
-                        "VALUES(?,1,'create',?,?,?)",
-                        (uid, ch, "rebuild", ts),
-                    )
-                    reconciled += 1
-                else:
-                    conn.execute("UPDATE nodes SET content_hash=?, rel_md_path=? WHERE uid=?",
-                                 (ch, rel, uid))
-            actions.append(f"reconciled {reconciled} L1 row(s) from disk")
+            actions.append("DB reconciliation skipped (frontmatter is source of truth)")
 
         # rebuild IDF from all active L1 bodies (always, for any granularity)
-        conn.execute("DELETE FROM idf")
+        # reads from frontmatter via fs walk; writes to SQLite (IDF still in SQLite)
+        if conn:
+            conn.execute("DELETE FROM idf")
         freq: dict[str, int] = {}
-        rows = conn.execute(
-            "SELECT rel_md_path FROM nodes WHERE layer='Page' AND active=1 AND rel_md_path IS NOT NULL"
-        ).fetchall()
-        for row in rows:
-            p = ctx.root / row["rel_md_path"]
-            if not p.exists():
+        for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
+            if fm_dict.get("layer") != "Page":
                 continue
-            _, body = fm.parse(p.read_text(encoding="utf-8", errors="replace"))
+            if not fm_dict.get("active", True):
+                continue
             for noun, cnt in extract_nouns(body).items():
                 freq[noun] = freq.get(noun, 0) + cnt
         ts = now_ts()
-        for noun, f in freq.items():
-            conn.execute("INSERT INTO idf(noun,freq,weight,updated_at) VALUES(?,?,?,?)",
-                         (noun, f, IDF_CONSTANT / (f + 1), ts))
+        if conn:
+            for noun, f in freq.items():
+                conn.execute("INSERT INTO idf(noun,freq,weight,updated_at) VALUES(?,?,?,?)",
+                             (noun, f, IDF_CONSTANT / (f + 1), ts))
         actions.append(f"rebuilt IDF: {len(freq)} noun(s)")
 
-        # renumber relation positions to contiguous
-        for src in [r["from_uid"] for r in
-                    conn.execute("SELECT DISTINCT from_uid FROM relations").fetchall()]:
-            rels = list_relations(conn, src)
-            for newpos, r in enumerate(rels):
-                conn.execute("UPDATE relations SET position=? WHERE from_uid=? AND to_uid=? "
-                             "AND relation_name=?", (newpos, src, r["to_uid"], r["relation_name"]))
-        actions.append("renumbered relation LRU positions")
+        # renumber relation positions to contiguous in frontmatter
+        for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
+            src = fm_dict.get("uid")
+            if not src:
+                continue
+            raw = fm_dict.get("relations", [])
+            if not isinstance(raw, list):
+                continue
+            positions = [r.get("position", i) for i, r in enumerate(raw)]
+            if positions == list(range(len(positions))):
+                continue
+            for i, r in enumerate(raw):
+                r["position"] = i
+            text = md_path.read_text(encoding="utf-8", errors="replace")
+            _, body = fm.parse(text)
+            md_path.write_text(fm.render(fm_dict, body), encoding="utf-8")
+        actions.append("renumbered relation LRU positions in frontmatter")
 
-        conn.commit()
+        if conn:
+            conn.commit()
         return success({"granularity": gran, "actions": actions},
                        f"rebuild ({gran}) complete; L1 content untouched (PRIN-ARCH-3)")
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         return error(f"rebuild failed, rolled back: {e}", type(e).__name__)
     finally:
-        conn.close()
+        if conn:
+            conn.close()
