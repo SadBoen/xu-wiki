@@ -148,15 +148,17 @@ def test_register_path_not_found(xu_home):
     assert r["data"]["error_class"] == "PathNotFound"
 
 
-def test_register_already_wiki_refuses(xu_home, tmp_path):
+def test_register_already_wiki_succeeds(xu_home, tmp_path):
+    """Registering an existing wiki dir succeeds — no longer rejects with AlreadyWiki."""
     target = tmp_path / "wiki_dir"
     target.mkdir()
     (target / ".xu").mkdir()
     (target / ".xu" / "config.yaml").write_text("version: 1\n")
     (target / ".xu" / "wiki.db").touch()
     r = cmd_mod.cmd_register(_args(name="MyWiki", path=str(target)))
-    assert r["status"] == "error"
-    assert r["data"]["error_class"] == "AlreadyWiki"
+    assert r["status"] == "success"
+    assert r["data"]["name"] == "MyWiki"
+    assert r["data"]["path"] == str(target)
 
 
 def test_register_alias_conflict_warns(xu_home, tmp_path):

@@ -152,14 +152,6 @@ def cmd_register(args):
 
     target = raw_path.resolve(strict=False)
 
-    if is_wiki_root(target):
-        return error(
-            f"path is already a wiki (use `xu-wiki wikis` to inspect; "
-            f"`xu-wiki create --alias` to set alias)",
-            "AlreadyWiki",
-            data={"path": str(target)},
-        )
-
     reg = load_registry()
     wikis = reg.setdefault("wikis", {})
 
