@@ -43,9 +43,11 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 
 同一源文件（按 SHA256 识别）重复 ingest：
 - ✅ 第一次：创建 Node_Page
-- ❌ 第二次：返回 warning，告知已有 Page 信息，**不创建**
+- ❌ 第二次：Phase 1 的 dedup 检查在 parser 调用之前，**先查 SHA256 → 发现重复 → 直接返回 warning，不调用 parser（不花钱）**
 
 理由：用户可能误点「重新 ingest」——系统应识别并提示，而不是默默复制一份。
+
+**时机关键**：Level-2 dedup（SHA256）在 Phase 1 最早检查，在 parser 调用之前。这样同一个文件第二次 ingest 时不会浪费 MinerU 等付费 parser 的调用费用。
 
 ### [PRIN-ING-4] Page 切分粒度 = 300 行（正文,按余数)——可定位原则
 
@@ -398,10 +400,10 @@ URL 摄取必须：
 
 ### [CONST-ING-3] SHA256 两级去重
 
-- Level 1：active Page 的内容哈希（正文 SHA256）
-- Level 2：所有 Page 的原始文件哈希（图片用压缩前的哈希，见 [PRIN-ING-12]）
+- **Level 1**：active Page 的内容哈希（正文 SHA256）—— Phase 2 内检查
+- **Level 2**：所有 Page 的原始文件哈希（图片用压缩前的哈希，见 [PRIN-ING-12]）—— **Phase 1 parser 调用之前检查**，避免浪费 parser 费用
 
-任一命中 → warning + 返回已有 Page 信息。
+Level-2 在 Phase 1 最早执行，在 parser 调用之前（即使 parser 是 MinerU 等付费 API）。任一命中 → warning + 返回已有 Page 信息。
 
 ### [CONST-ING-4] 校验（commit 入口必跑）
 

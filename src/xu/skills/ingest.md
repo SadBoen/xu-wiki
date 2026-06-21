@@ -76,10 +76,11 @@ xu report create --wiki <w> --title <t> --body <md> \
 ## Workflow — prose / document (PDF / DOCX / MD / image)
 
 1. **Confirm wiki exists and file is absolute** (rule 8, rule 9 in `SKILL.md`).
-2. **Phase 1 — `ingest-file`**: parses the file via the offline-first
-   fallback chain (MinerU → markitdown → text → image, CONST-ING-1) and
-   writes a temp file to the system temp directory. Returns the temp file path
-   in `data.pending`. No node is created at this stage.
+2. **Phase 1 — `ingest-file`**: computes SHA256 → Level-2 dedup check (Phase 1,
+   before calling any parser) → if duplicate, returns warning immediately
+   (no parser called, no money spent). If unique: parses via MinerU →
+   markitdown chain → writes a temp file to the system temp directory.
+   Returns the temp file path in `data.pending`. No node is created at this stage.
 3. **Agent synthesizes all metadata** from the temp file (PRIN-ING-2):
    title, node_path, relations, content_type — all LLM-generated, never asked
    of the user. `--title` is required by CLI but the value comes from the LLM.

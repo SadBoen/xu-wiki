@@ -50,7 +50,10 @@ from ..utils.wiki import resolve_wiki, find_node_md
 
 
 def cmd_ingest_file(args) -> dict:
-    """Phase 1: parse a source file into a temporary file. No node created.
+    """Phase 1: dedup check → parse source → write temp file. No node created.
+
+    Dedup is checked BEFORE calling the parser (especially expensive MinerU)
+    to avoid wasting API calls on already-ingested sources (PRIN-ING-3).
 
     The temporary file is stored in the system temp directory
     (tempfile.gettempdir()), not in the wiki itself.
@@ -77,6 +80,23 @@ def cmd_ingest_file(args) -> dict:
                 hints=["pip install xu-wiki[parse] to enable PDF/DOCX/PPTX parsing"],
             )
 
+    # Level-2 dedup: check BEFORE calling parser (especially MinerU — costs money).
+    # Level-2 is all-pages, not active-only, so re-ingesting a deactivated source
+    # is also caught here (PRIN-ING-3).
+    source_hash = sha256_file(src)
+    conn = ctx.connect()
+    dup = conn.execute(
+        "SELECT uid, title, active FROM nodes WHERE source_hash=? LIMIT 1",
+        (source_hash,),
+    ).fetchone()
+    if dup:
+        return warning(
+            {"existing_uid": dup["uid"], "existing_title": dup["title"],
+             "existing_active": bool(dup["active"]), "source_hash": source_hash},
+            f"source already ingested as {dup['uid']} (BAN-ING-4); Phase 1 skipped to avoid wasted parse cost",
+            hints=["use 'revise' to update; ingest never overwrites (PRIN-ING-3)"],
+        )
+
     # path whitelist (BAN-ING-5): allow anywhere readable for Phase 1 source,
     # but temp output stays in system temp dir.
     from ..utils.config import load_global_config
@@ -94,7 +114,6 @@ def cmd_ingest_file(args) -> dict:
     except ValueError as e:
         return error(str(e), "BadNodePath")
     stem = safe_slug(src.stem)
-    # Write to system temp directory (PRIN-ING-7 implementation detail)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix="-pre.md", prefix=f"{stem}-",
         dir=tempfile.gettempdir(), delete=False, encoding="utf-8"
@@ -102,7 +121,7 @@ def cmd_ingest_file(args) -> dict:
         text = _strip_frontmatter(res.text)
         meta_header = (
             f"<!-- xu-pending source={src} parser={res.parser} "
-            f"source_hash={sha256_file(src)} -->\n\n"
+            f"source_hash={source_hash} -->\n\n"
         )
         f.write(meta_header + text)
         temp_path = Path(f.name)
@@ -112,7 +131,7 @@ def cmd_ingest_file(args) -> dict:
             "pending": str(temp_path),
             "parser": res.parser,
             "source": str(src),
-            "source_hash": sha256_file(src),
+            "source_hash": source_hash,
             "chars": len(text),
         },
         f"parsed via {res.parser} → pending temp file (Phase 1). No node created yet.",
