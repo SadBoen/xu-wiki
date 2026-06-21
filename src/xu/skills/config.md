@@ -128,7 +128,6 @@ the user what happened. The JSON is NOT shown to the user.
 
 ### Install is NOT in this SOP
 
-Install is documented in README §Install (single authoritative source).
 There is no `xu install` command, no `/xu-wiki install` slash command,
 and no `pip upgrade` wrapper.
 
@@ -155,8 +154,7 @@ and no `pip upgrade` wrapper.
 
 ## Workflow — first-time setup
 
-> This section covers runtime configuration only. For install steps
-> (pipx / pip / venv) see **README §Install**.
+> This section covers runtime configuration only.
 
 1. **Set the MinerU API key** (optional — only needed if the offline
    fallback chain hits a PDF and `markitdown` is not enough):

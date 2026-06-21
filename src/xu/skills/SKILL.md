@@ -56,7 +56,7 @@ Each SOP is self-contained in its own file (`*.md` below); the agent says
 
 0a. **Uninstall = 2 surfaces.** Skill bundle → agent self-removes (`~/.hermes/skills/xu-wiki/`). Program + config → `xu uninstall --execute`. **Wiki data NEVER deleted** (no flag, no option, no branch). See doctor.md §Uninstall.
 
-0b. **Install is documented in README only.** xu-wiki is pre-installed when this skill loads — this bundle carries no install steps. No `xu install` or `/xu-wiki install` command.
+0b. **No install step in this bundle.** xu-wiki is pre-installed when this skill loads. No `xu install` or `/xu-wiki install` command.
 
 1. **Never edit L1 markdown body** — immutable. UIDs retired on delete, never reused.
 2. **Report needs ≥1 evidence ref** at create-time. Empty evidence rejected.
@@ -121,8 +121,7 @@ Hints are starting points, not mandates.
 
 ## Quick start for the agent
 
-> Already installed? For install / deploy steps see README (§Install, §Agent
-> skill deployment). The flow below assumes `xu` is already on PATH.
+> The flow below assumes `xu` is already on PATH.
 
 ```bash
 # 1. create a wiki
@@ -152,8 +151,3 @@ xu doctor-all --wiki research
 xu rebuild    --wiki research --granularity keep-l1
 ```
 
-## See also
-
-- `README.md` in this repo for the full reference
-- `tests/e2e_verify.sh` for a runnable smoke test
-- `tests/test_core.py` for unit tests of the deterministic core
