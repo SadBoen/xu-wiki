@@ -23,6 +23,7 @@ xu doctor-relations      --wiki <w> [--fix]   # 50-edge LRU invariants
 xu doctor-l1-immutable   --wiki <w> [--fix]   # L1 markdown body never modified
 xu doctor-report-evidence --wiki <w> [--fix]  # L3 reports have ≥ 1 evidence ref
 xu doctor-idf            --wiki <w> [--fix]   # IDF table consistency
+xu doctor-node-path-organization --wiki <w> [--fix]  # root-level pages + suggested paths
 
 # Destructive ops (NEVER auto-invoked — explicit command, not a flag)
 xu delete-node --wiki <w> --uid <uid> [--force]
@@ -41,6 +42,7 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 | `doctor-l1-immutable` | read-only | n/a (always refuses) | no |
 | `doctor-report-evidence` | read-only | reject reports w/o evidence | no |
 | `doctor-idf` | read-only | rebuild IDF from corpus | no |
+| `doctor-node-path-organization` | read-only | calls `xu reorganize` per page | no |
 | `delete-node` | n/a (always destructive) | n/a | **yes** — `--force` ignores references |
 | `rebuild` | n/a (always destructive) | n/a | **yes** — granularity controls blast radius |
 
@@ -53,9 +55,8 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 >   if X is referenced and the user explicitly accepts the orphan refs).
 > - "full check" → `doctor-all --wiki W`.
 > - "rebuild from scratch" → `rebuild --wiki W --granularity full`.
-> - "move X to Y directory" → **no CLI exists for node-move**; doctor
->   must **explicitly refuse and explain**. Do NOT coerce by calling an
->   unrelated CLI (PRIN-SOP-7). The right path is delete + re-ingest.
+> - "move X to Y directory" → `xu reorganize --wiki W --uid X --new-node-path Y`
+>   (atomic: nodes/ + raws/ + DB all updated in one transaction).
 >
 > Default for any destructive op is to ask the user to confirm and to
 > name the wiki + the affected UIDs.

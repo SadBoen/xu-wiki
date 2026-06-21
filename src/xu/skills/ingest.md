@@ -137,6 +137,26 @@ path is returned in `data.pending` of the `ingest-file` response. Its lifecycle:
 **There is no `nodes/pending/` directory.** The two-phase separation is achieved
 by the system temp file; no wiki-internal staging directory exists.
 
+## Reorganize — move a page to a different partition (PRIN-ARCH-25)
+
+If the user is dissatisfied with a page's location after ingest, **never delete
+and re-ingest**. Use `xu reorganize`:
+
+```bash
+xu reorganize --wiki <w> --uid <uid> --new-node-path certificates/qsa
+# → nodes/page/old/slug.md  →  nodes/page/certificates/qsa/slug.md
+# → raws/old/file.pdf         →  raws/certificates/qsa/file.pdf
+# → DB node_path updated atomically
+```
+
+This is atomic: nodes/ + raws/ + DB are all updated in one transaction. No
+content is re-parsed; the page body and all metadata are preserved.
+
+When to call reorganize:
+- User says "move this to X folder"
+- `doctor-node-path-organization` reports the page is at root with no organization
+- Agent decides the page belongs in a different logical partition after review
+
 ## Post-commit reflection (PRIN-CR-1, asymmetric bias)
 
 After **every** `ingest-commit` (single page, album, or batch), the agent MUST

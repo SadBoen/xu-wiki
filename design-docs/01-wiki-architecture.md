@@ -380,11 +380,21 @@ Page 落在哪个层级由 node_path 决定:用户显式指定时直接用;未�
 
 这与 [PRIN-SAFETY] 不冲突——「内容该归哪个文件夹」是 LLM 的本职判断,不是意图歧义。判断一个值 ≠ 猜测意图。真正要停下来问的是「目标库不存在」这类意图歧义。
 
+**reorganize 命令**：用户对 ingest 后的路径不满意时，调用 `xu reorganize --wiki W --uid <uid> --new-node-path <path>` 将 Page 原子迁移到新分区。迁移是位置变更，不是内容修改，**不触发 patches**。
+
 ### [PRIN-ARCH-25] nodes 与 raws 按 node_path 镜像——移动联动
 
-nodes/ 与 raws/ 按同一 node_path 镜像对应。Page 移位时两侧联动移动,原子事务。
+nodes/ 与 raws/ 按同一 node_path 镜像对应。Page 移位时两侧联动移动，原子事务，由 `xu reorganize` 命令执行。
 
-要点:移动改的是位置不是内容,**不触发 patches**;引用走 UID([PRIN-ARCH-22]),移动不断引用。是否独立成命令由实现决定。
+```
+xu reorganize --wiki W --uid <uid> --new-node-path certificates/qsa
+  → nodes/page/old/slug.md  →  nodes/page/certificates/qsa/slug.md
+  → raws/old/file.pdf        →  raws/certificates/qsa/file.pdf
+  → DB: node_path, rel_md_path, raw_path 全部更新
+  → 三者原子事务（DB 回滚即撤销）
+```
+
+要点：移动改的是位置不是内容，**不触发 patches**；引用走 UID（[PRIN-ARCH-22]），移动不断引用。
 
 ### [PRIN-ARCH-26] 过程层只用于诊断 SOP——不参与内容
 

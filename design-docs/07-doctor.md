@@ -46,6 +46,7 @@ ingest 写 Page → doctor --fix 删除 orphan Page（逆向）
 ingest 写 IDF → doctor --fix 重建 IDF 频次（逆向）
 ingest 写 patches → doctor --fix 重建 v1 初值（逆向）
 ingest 写关系 → doctor --fix 删除悬挂边 / 修剪超出 50 条上限的队尾（逆向）
+ingest 时规划 node_path → doctor --fix 时调用 xu reorganize 迁移到新分区（逆向）
 ```
 
 LLM 重写时不要让 doctor --fix 凭「我觉得该删」删东西——必须有 ingest 的对称操作做依据。
@@ -54,13 +55,14 @@ LLM 重写时不要让 doctor --fix 凭「我觉得该删」删东西——必�
 
 | 子命令 | 检查 |
 |---|---|
-| `doctor`（总入口） | 快速检查（fields / files / relations / l1-immutable / report-evidence / idf） |
+| `doctor`（总入口） | 快速检查（fields / files / relations / l1-immutable / report-evidence / idf / node-path-organization） |
 | `doctor-fields` | frontmatter 必填字段、类型、格式 |
 | `doctor-files` | 文件系统与 DB 一致性 |
 | `doctor-relations` | 关系完整性（含 50 条上限 + 无悬挂边） |
 | `doctor-l1-immutable` | L1 Page Markdown 未被外部修改 + patches v1 初值存在 |
 | `doctor-report-evidence` | L3 Report 证据链完整（无悬挂引用） |
 | `doctor-idf` | IDF 词频表与 Page 实际一致 |
+| `doctor-node-path-organization` | 检测根级堆积 + 给出迁移建议（--fix 调用 xu reorganize） |
 | `doctor-all` | 串行调上述所有子 doctor |
 
 LLM 重写时不要发明「万能 doctor」——每个专题独立可调用。
@@ -238,6 +240,7 @@ doctor 全程确定性逻辑：DB 查询 + 文件状态比对 + 结构化输出�
 - [ ] 修复后重检查（[CONST-DOC-8]）
 - [ ] 不修〈形态字段〉与 body 不匹配（[CONST-DOC-9]）
 - [ ] 不调 LLM（[CONST-DOC-10]）
+- [ ] node-path-organization 检查含建议路径（[CONST-DOC-N]）
 
 **已知 Bug**：
 - [ ] 统一模块命名规范避免 import 错（[BUG-DOC-1]）

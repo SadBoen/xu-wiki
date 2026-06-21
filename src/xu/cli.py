@@ -156,7 +156,8 @@ def build_parser() -> argparse.ArgumentParser:
     # ---- M5: doctor / delete-node / rebuild ----
     for name in [
         "doctor", "doctor-fields", "doctor-files", "doctor-relations",
-        "doctor-l1-immutable", "doctor-report-evidence", "doctor-idf", "doctor-all",
+        "doctor-l1-immutable", "doctor-report-evidence", "doctor-idf",
+        "doctor-node-path-organization", "doctor-all",
     ]:
         spx = sub.add_parser(name, help=f"{name} health check (read-only by default)")
         spx.add_argument("--wiki", required=True)
@@ -173,6 +174,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--granularity", default="keep-l1", choices=["keep-l1", "keep-l1-l2", "full"])
     sp.set_defaults(func="rebuild")
+
+    sp = sub.add_parser("reorganize",
+                        help="atomically move a Page to a new node_path partition (PRIN-ARCH-25)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True)
+    sp.add_argument("--new-node-path", required=True,
+                    help="target node_path (e.g. certificates/qsa)")
+    sp.set_defaults(func="reorganize")
 
     # ---- M6: SOP-config (alias / register / unregister / config) ----
     sp = sub.add_parser("alias", help="manage wiki aliases (set / unset / show)")
@@ -303,6 +312,9 @@ def _dispatch(args) -> dict:
     if func == "rebuild":
         from .commands.doctor import cmd_rebuild
         return cmd_rebuild(args)
+    if func == "reorganize":
+        from .commands.reorganize import cmd_reorganize
+        return cmd_reorganize(args)
     if func == "alias_set":
         from .commands.config import cmd_alias_set
         return cmd_alias_set(args)

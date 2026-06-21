@@ -80,7 +80,7 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | SOP | Intent | CLI commands it calls |
 |---|---|---|
 | `/xu-wiki create` | build a new empty wiki | `create` (+ optional `wikis` to verify) |
-| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); `ingest-verify` (post-commit integrity check); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)** with PRIMARY bias toward `list create` (Report only on contradiction) |
+| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); `ingest-verify` (post-commit integrity check); `reorganize` (if user不满意路径); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)** with PRIMARY bias toward `list create` (Report only on contradiction) |
 | `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint; **post-query reflection (PRIN-CR-1)** with PRIMARY bias toward `report create` (List only on missing axis) |
 | `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
 | `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `skills path / list` for the bundled skill source dir; **`uninstall`** for removing xu-wiki itself (always dry-run first, then `--execute` after user confirms) |

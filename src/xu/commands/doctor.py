@@ -55,6 +55,7 @@ def cmd_doctor(args) -> dict:
             "doctor-l1-immutable": _check_l1_immutable,
             "doctor-report-evidence": _check_report_evidence,
             "doctor-idf": _check_idf,
+            "doctor-node-path-organization": _check_node_path_organization,
         }
         if kind in ("doctor", "doctor-all"):
             report = {fn_name: fn(ctx, conn, fix) for fn_name, fn in checks.items()}
@@ -243,6 +244,88 @@ def _check_idf(ctx, conn, fix) -> dict:
     return {"issue_count": len(issues), "issues": issues[:50], "fixed": fixed,
             "total_nouns": len(rows)}
 
+
+def _suggest_node_path(title: str) -> str:
+    """Heuristic: extract dominant noun from title → use as node_path category."""
+    try:
+        nouns = extract_nouns(title)
+        if not nouns:
+            return "uncategorized"
+        top = max(nouns, key=nouns.get)
+        if len(top) < 2:
+            return "uncategorized"
+        safe = top.replace(" ", "-").lower()[:30]
+        return safe
+    except Exception:
+        return "uncategorized"
+
+
+def _check_node_path_organization(ctx, conn, fix) -> dict:
+    """Detect pages at nodes/page/ root with no logical partition (PRIN-ARCH-24).
+
+    Suggests target node_path per page by extracting dominant noun from title.
+    --fix calls xu reorganize for each page.
+    """
+    issues = []
+    fixed = []
+
+    root_page_dir = ctx.page_dir
+    if not root_page_dir.is_dir():
+        return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
+
+    root_uids = set()
+    for p in root_page_dir.glob("*.md"):
+        rel = str(p.relative_to(ctx.root))
+        row = conn.execute(
+            "SELECT uid, title, node_path, active FROM nodes WHERE rel_md_path=?",
+            (rel,),
+        ).fetchone()
+        if row and row["active"] and not (row["node_path"] or "").strip():
+            root_uids.add(row["uid"])
+
+    for uid, in conn.execute(
+            "SELECT uid FROM nodes WHERE layer='Page' AND node_path='' AND active=1"
+    ).fetchall():
+        root_uids.add(uid)
+
+    if not root_uids:
+        return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
+
+    for uid in sorted(root_uids):
+        row = conn.execute(
+            "SELECT uid, title, node_path, rel_md_path FROM nodes WHERE uid=?",
+            (uid,),
+        ).fetchone()
+        if not row:
+            continue
+        title = row["title"] or ""
+        suggested = _suggest_node_path(title)
+        issues.append({
+            "uid": uid,
+            "title": title,
+            "current_path": row["rel_md_path"] or "",
+            "suggested_node_path": suggested,
+            "suggest_reason": f"title contains noun: {suggested!r}",
+            "layer": "L1",
+            "fixable": True,
+        })
+        if fix:
+            from ..commands.reorganize import cmd_reorganize
+            class _FakeArgs:
+                wiki = ctx.name
+                uid = uid
+                new_node_path = suggested
+            r = cmd_reorganize(_FakeArgs())
+            fixed.append({"uid": uid, "result": r.get("status", "unknown"),
+                          "suggested": suggested})
+
+    return {
+        "issue_count": len(issues),
+        "issues": issues,
+        "fixed": fixed,
+        "at_root": len(issues),
+        "note": "fix calls xu reorganize per page; review suggested_node_path before running --fix",
+    }
 
 
 def cmd_delete_node(args) -> dict:
