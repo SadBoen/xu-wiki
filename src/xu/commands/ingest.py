@@ -27,7 +27,9 @@ from ..utils.constants import (
     FM_CREATED,
     FM_LAYER,
     FM_NODE_PATH,
+    FM_PARENT_UID,
     FM_SOURCE_HASH,
+    FM_SPLIT_INDEX,
     FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
@@ -269,6 +271,7 @@ def cmd_ingest_commit(args) -> dict:
         created = []
         dup_pages = []
         multi = len(pages) > 1
+        first_uid = gen_uid()
         for idx, page_body in enumerate(pages):
             page_body = page_body.rstrip()  # normalize to match fm.render storage
 
@@ -287,7 +290,9 @@ def cmd_ingest_commit(args) -> dict:
                 dup_pages.append({"part": idx + 1, "existing_uid": dup["uid"]})
                 continue
 
-            uid = gen_uid()
+            uid = first_uid if idx == 0 else gen_uid()
+            split_index = idx + 1
+            parent_uid = first_uid
             title = args.title if not multi else f"{args.title} (part {idx + 1}/{len(pages)})"
             base_slug = safe_slug(args.title)
             slug = f"{base_slug}-{idx + 1}-{uid}" if multi else f"{base_slug}-{uid}"
@@ -302,6 +307,8 @@ def cmd_ingest_commit(args) -> dict:
                 FM_CREATED: ts,
                 FM_CONTENT_HASH: content_hash,
                 FM_NODE_PATH: node_path,
+                FM_SPLIT_INDEX: split_index,
+                FM_PARENT_UID: parent_uid,
             }
             if source_hash:
                 frontmatter[FM_SOURCE_HASH] = source_hash
