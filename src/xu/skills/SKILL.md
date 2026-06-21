@@ -90,20 +90,6 @@ Before declaring an ingest done, run through this every time:
 
 **Any NO answer means: stop, investigate, fix before continuing.**
 
-## Process-layer audit log
-
-**Every CLI invocation emits exactly one process-layer audit line** — the
-agent does NOT need to (and must NOT) call any logging command explicitly:
-
-- Commands with a resolvable `--wiki` write to `<wiki>/.xu/audit.jsonl`
-- Commands without `--wiki` (or unresolvable) write to
-  `~/.xu-wiki/global_audit.jsonl`
-
-Each line carries `ts` / `command` / `wiki` / `status` / `elapsed_ms`;
-failures add `error_class`. This log exists for SOP / CLI health diagnosis
-only — it is NOT content history, NOT a substitute for `nodes.created_at`,
-and NOT consumed by any CLI decision.
-
 ## Reading the response
 
 Every command prints one JSON object to stdout. Read `data.*` for facts and
