@@ -6,21 +6,22 @@ not a bug. NEVER hardcode the key here.
 """
 from __future__ import annotations
 
-import http.client
 import io
 import json
 import os
 import time
 import urllib.request
 import urllib.parse
+import urllib.error
 import zipfile
+
+import requests
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".ppt", ".doc", ".xls", ".xlsx"}
 _API_BATCH_URLS = "https://mineru.net/api/v4/file-urls/batch"
 _API_RESULTS = "https://mineru.net/api/v4/extract-results/batch/{batch_id}"
 _API_MAX_PAGES = 200
 _API_MAX_SIZE_MB = 200
-_MODEL_VERSION = "vlm"
 _POLL_INTERVAL = 3
 _POLL_TIMEOUT = 600
 
@@ -59,19 +60,14 @@ def mineru_parse(path: str, api_key: str = "") -> str:
     try:
         return _do_mineru(path, key)
     except Exception as e:
-        # Re-raise with context so parse_file can surface the reason
         raise RuntimeError(f"[mineru] {e}") from e
 
 
 def _do_mineru(path: str, key: str) -> str:
-    """Real MinerU v4 batch flow: request upload URL → PUT file → poll batch
-    results → download result ZIP → return full.md content.
+    """MinerU v4 batch flow: request upload URL → PUT file → poll → download result ZIP.
 
-    Matches the official Precision Extract API (api/v4/file-urls/batch +
-    api/v4/extract-results/batch/{batch_id}).
-
-    Raises RuntimeError with specific message on API errors (401, timeout, etc.)
-    so the parse chain can surface the failure reason instead of silently falling back.
+    Raises RuntimeError on API errors (401, 403, timeout, etc.) so the parse
+    chain surfaces the failure reason instead of silently falling back.
     """
     headers = {
         "Authorization": f"Bearer {key}",
@@ -79,58 +75,42 @@ def _do_mineru(path: str, key: str) -> str:
     }
     filename = os.path.basename(path)
 
-    # 1. request a presigned upload URL (batch). is_ocr per-file; model_version outer.
+    # Step 1: request a presigned upload URL
     body = json.dumps({
         "enable_formula": True,
         "enable_table": True,
-        "model_version": _MODEL_VERSION,
-        "files": [{"Name": filename, "is_ocr": True}],
+        "files": [{"name": filename, "is_ocr": True}],
     }).encode("utf-8")
     req = urllib.request.Request(_API_BATCH_URLS, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"[mineru] HTTP {e.code} when requesting upload URL: {body}") from e
+        raise RuntimeError(f"[mineru] HTTP {e.code}: {e.read()[:500]}")
     except urllib.error.URLError as e:
-        raise RuntimeError(f"[mineru] network error requesting upload URL: {e}") from e
+        raise RuntimeError(f"[mineru] network error: {e}")
 
     if data.get("code") != 0:
-        msg = data.get("msg", str(data))
-        raise RuntimeError(f"[mineru] API error when requesting upload URL: code={data.get('code')} msg={msg}")
+        raise RuntimeError(f"[mineru] API error: code={data.get('code')} msg={data.get('msg')}")
     upload_url = data["data"]["file_urls"][0]
     batch_id = data["data"]["batch_id"]
 
-    # 2. PUT the raw bytes to the presigned URL via http.client.
-    #    urllib.request uses chunked transfer encoding by default, but OSS
-    #    presigned URLs require an explicit Content-Length header — without it
-    #    the signature does not cover the body and OSS returns 403.
-    #    We also stream the file in chunks to avoid reading a large PDF
-    #    entirely into memory.
-    parsed = urllib.parse.urlparse(upload_url)
-    conn = http.client.HTTPSConnection(parsed.netloc, timeout=120)
+    # Step 2: PUT file bytes to the presigned OSS URL via requests
+    # (requests handles presigned URL signing correctly; http.client manual
+    # putrequest/putheader/send produces a signature mismatch and always returns 403)
+    with open(path, "rb") as f:
+        file_bytes = f.read()
     try:
-        file_size = os.path.getsize(path)
-        with open(path, "rb") as f:
-            chunk_size = 64 * 1024  # 64 KB chunks
-            conn.connect()
-            conn.putrequest("PUT", parsed.path)
-            conn.putheader("Content-Length", str(file_size))
-            conn.endheaders()
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                conn.send(chunk)
-            resp = conn.getresponse()
-            if resp.status not in (200, 201):
-                body = resp.read().decode("utf-8", errors="replace")[:500]
-                raise RuntimeError(f"[mineru] OSS PUT failed: HTTP {resp.status} {resp.reason}: {body}")
-    finally:
-        conn.close()
+        resp = requests.put(upload_url, data=file_bytes, timeout=120)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"[mineru] OSS PUT failed: HTTP {resp.status_code} {resp.reason}: "
+                f"{resp.text[:500]}"
+            )
+    except requests.RequestException as e:
+        raise RuntimeError(f"[mineru] OSS PUT network error: {e}") from e
 
-    # 3. poll batch results until this file's state is done/failed
+    # Step 3: poll until done/failed
     deadline = time.time() + _POLL_TIMEOUT
     poll_url = _API_RESULTS.format(batch_id=batch_id)
     while time.time() < deadline:
@@ -142,12 +122,11 @@ def _do_mineru(path: str, key: str) -> str:
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 continue  # not ready yet
-            raise RuntimeError(f"[mineru] HTTP {e.code} polling results") from e
+            raise RuntimeError(f"[mineru] HTTP {e.code} polling results")
         except urllib.error.URLError as e:
-            raise RuntimeError(f"[mineru] network error polling results: {e}") from e
+            raise RuntimeError(f"[mineru] network error polling: {e}")
         if result.get("code") != 0:
-            msg = result.get("msg", str(result))
-            raise RuntimeError(f"[mineru] poll API error: code={result.get('code')} msg={msg}")
+            raise RuntimeError(f"[mineru] poll API error: {result.get('msg')}")
         extract = result.get("data", {}).get("extract_result", [])
         if not extract:
             continue
@@ -156,11 +135,10 @@ def _do_mineru(path: str, key: str) -> str:
         if state == "done":
             zip_url = entry.get("full_zip_url")
             if not zip_url:
-                raise RuntimeError("[mineru] done but no zip URL in response")
+                raise RuntimeError("[mineru] done but no zip URL")
             return _download_full_md(zip_url)
         if state == "failed":
-            err_msg = entry.get("err_msg", "?")
-            raise RuntimeError(f"[mineru] processing failed: {err_msg}")
+            raise RuntimeError(f"[mineru] processing failed: {entry.get('err_msg', '?')}")
     raise RuntimeError(f"[mineru] poll timeout after {_POLL_TIMEOUT}s")
 
 

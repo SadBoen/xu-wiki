@@ -391,6 +391,11 @@ Page 一旦写入，**commit 命令绝不修改 Markdown 内容**。发现错误
 
 当前 MinerU 实现在 `src/xu/parsers/mineru_parser.py`。Key 缺失时静默回退到 markitdown（是设计，不是 bug）：参数 > 环境变量 `MINERU_API_KEY` > `config.mineru.api_key`。
 
+**API 请求格式（已验证可用的版本）**：
+- 请求体字段：`"name"`（小写）、`"is_ocr": True`；**不使用** `"model_version"`（API 不支持）
+- OSS 上传：使用 `requests.put()`（直接传 bytes），**不使用** `http.client` 手动 `putrequest/send`（签名不兼容，始终 403）
+- Key 缺失或网络错误 → 静默回退到 markitdown
+
 ### [CONST-ING-2] SSRF 防护(ingest_url)
 
 URL 摄取必须：
