@@ -118,6 +118,14 @@ List 的**对比维度不是写死的**——可以由用户/Agent 在查询时*
 
 哲学：List 是**活视图**而不是**死表格**——数据不变、视角可变。
 
+**dimension 示例**：
+- `"by-document-type"` — 按文档类型聚合（证书/许可证/图纸）
+- `"by-date"` — 按日期聚合（事件时间线）
+- `"by-owner"` — 按船东聚合
+- `"by-flag-state"` — 按船旗国聚合
+- `"船体颜色"` — 对比这批船的船体颜色
+- `"吃水深度"` — 对比不同工况下的吃水深度
+
 ### [PRIN-ARCH-5] L3 承载所有 LLM 推理——增量固化
 
 Node_Report 回答的是「为什么 / 怎么办 / 如果…会怎样」——这些**没有客观答案**的问题。
@@ -394,7 +402,7 @@ nodes/ 与 raws/ 按同一 node_path 镜像对应。Page 移位时两侧联动�
 ### [DESIGN-ARCH-1] L2/L3 只存 .md，不存 SQLite
 
 Node_List 与 Node_Report 是**逻辑视图**，统一以 .md 文件存储，不写入 SQLite。
-- L2: `nodes/list/<uid>.md`，frontmatter 含 `members[]`（uid/title/layer/position），body 含对比表格
+- L2: `nodes/list/<uid>.md`，frontmatter 含 `uid/title/layer/dimension/created_at/updated_at`，body 是 YAML list of dicts（uid/title/layer/note），顺序即位置
 - L3: `nodes/report/<uid>.md`，frontmatter 含 `references[]`（uid/title/layer/note），body 是报告正文
 
 L1 必写 .md（不可变 + 可溯源）；L2 / L3 同样写 .md，保证所有节点统一文件系统访问。

@@ -7,6 +7,8 @@ Both are .md-only: body + frontmatter in nodes/list/|nodes/report/ (DESIGN-ARCH-
 """
 from __future__ import annotations
 
+import yaml
+
 from ..utils import frontmatter as fm
 from ..utils.response import error, success, warning
 from ..utils.paths import atomic_write_text, gen_uid, now_ts
@@ -33,19 +35,19 @@ def _list_create(args) -> dict:
     if not members:
         return error("a List needs at least one member (--members)", "EmptyList")
 
-    member_meta = []
+    member_items = []
     missing = []
-    for pos, m_uid in enumerate(members):
+    for m_uid in members:
         found = find_node_md(ctx, m_uid)
         if not found:
             missing.append(m_uid)
         else:
             mf, _ = found
-            member_meta.append({
+            member_items.append({
                 "uid": m_uid,
-                "position": pos,
                 "title": mf.get("title", ""),
                 "layer": mf.get("layer", ""),
+                "note": "",
             })
     if missing:
         return error(f"member node(s) not found: {missing}", "MemberNotFound",
@@ -59,23 +61,18 @@ def _list_create(args) -> dict:
         "title": args.title,
         "layer": "List",
         "dimension": args.dimension,
-        "members": member_meta,
         "created_at": ts,
         "updated_at": ts,
     }
 
     md_path = ctx.list_dir / f"{uid}.md"
-    table_rows = "".join(
-        f"| {i+1} | {m['uid']} | {m['title']} | {m['layer']} |\n"
-        for i, m in enumerate(member_meta)
-    )
-    body = f"# {args.title}\n\n| # | UID | Title | Layer |\n|---|-----|-------|-------|\n{table_rows}"
+    body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
     atomic_write_text(md_path, fm.render(frontmatter, body))
 
     return success(
-        {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_meta],
+        {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_items],
          "dimension": args.dimension},
-        f"created Node_List {uid} with {len(member_meta)} member(s)",
+        f"created Node_List {uid} with {len(member_items)} member(s)",
         hints=[f"nodes/list/{uid}.md"],
     )
 
@@ -94,8 +91,14 @@ def _list_show(args) -> dict:
     except Exception as e:
         return error(f"failed to read List file: {e}", "ReadError")
 
-    frontmatter, _ = fm.parse(text)
-    members = frontmatter.get("members", [])
+    frontmatter, body = fm.parse(text)
+    members = []
+    if body.strip():
+        try:
+            members = yaml.safe_load(body) or []
+        except yaml.YAMLError:
+            members = []
+
     return success(
         {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),
          "dimension": frontmatter.get("dimension", ""),
