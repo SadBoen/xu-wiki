@@ -206,25 +206,41 @@ def _check_l1_immutable(ctx, conn, fix) -> dict:
 
 
 def _check_report_evidence(ctx, conn, fix) -> dict:
-    """Every Report must have >=1 evidence ref, no dangling refs (CONST-DOC-3)."""
+    """Every Report must have >=1 evidence ref, no dangling refs (CONST-DOC-3).
+
+    --fix is mechanical: removes dangling / inactive refs from the evidence table.
+    It does NOT delete the Report itself (BAN-DOC-6: LLM推理成果不自动删).
+    A Report with zero evidence is reported but NOT auto-deleted.
+    """
     issues = []
+    fixed = []
     reports = conn.execute("SELECT uid FROM nodes WHERE layer='Report'").fetchall()
     for r in reports:
         refs = conn.execute("SELECT ref_uid FROM evidence WHERE report_uid=?", (r["uid"],)).fetchall()
         if not refs:
             issues.append({"report_uid": r["uid"], "problem": "report with zero evidence (BAN-ARCH-5)",
                            "layer": "L3", "fixable": False})
+            continue
         for ref in refs:
             target = conn.execute("SELECT active FROM nodes WHERE uid=?", (ref["ref_uid"],)).fetchone()
             if not target:
                 issues.append({"report_uid": r["uid"], "problem": "dangling evidence ref",
-                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": False})
+                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": True})
+                if fix:
+                    conn.execute("DELETE FROM evidence WHERE report_uid=? AND ref_uid=?",
+                                 (r["uid"], ref["ref_uid"]))
+                    fixed.append({"report_uid": r["uid"], "ref_uid": ref["ref_uid"],
+                                  "action": "removed dangling ref"})
             elif not target["active"]:
-                # CONST-DOC-3 #2: referenced node must be active
                 issues.append({"report_uid": r["uid"], "problem": "evidence ref points to inactive node",
-                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": False})
-    return {"issue_count": len(issues), "issues": issues, "fixed": [],
-            "note": "evidence integrity is structural; never auto-deleted (BAN-DOC-6)"}
+                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": True})
+                if fix:
+                    conn.execute("DELETE FROM evidence WHERE report_uid=? AND ref_uid=?",
+                                 (r["uid"], ref["ref_uid"]))
+                    fixed.append({"report_uid": r["uid"], "ref_uid": ref["ref_uid"],
+                                  "action": "removed ref to inactive node"})
+    return {"issue_count": len(issues), "issues": issues, "fixed": fixed,
+            "note": "--fix removes dangling/inactive refs from evidence table; Report itself is never deleted (BAN-DOC-6)"}
 
 
 def _check_idf(ctx, conn, fix) -> dict:
@@ -324,7 +340,7 @@ def _check_node_path_organization(ctx, conn, fix) -> dict:
         "issues": issues,
         "fixed": fixed,
         "at_root": len(issues),
-        "note": "fix calls xu reorganize per page; review suggested_node_path before running --fix",
+        "note": "--fix is mechanical but suggested_node_path is heuristic (from title noun extraction); review suggestions before applying",
     }
 
 

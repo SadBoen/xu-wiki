@@ -119,11 +119,12 @@ doctor 全程确定性逻辑：DB 查询 + 文件状态比对 + 结构化输出�
 
 理由：L1 不可变性是 [PRIN-ARCH-3] 的核心——doctor --fix 不能破坏这一原则。
 
-### [BAN-DOC-6] L3 Report 悬挂不自动删
+### [BAN-DOC-6] L3 Report 本身不自动删；但悬挂引用可 auto-fix
 
-`doctor-report-evidence` 检测到 Report 引用了不存在的 Page / List：
+`doctor-report-evidence` 检测到 Report 引用问题：
 - ❌ 绝不自动删 Report（L3 的价值是固化 LLM 推理成果，自动删 = 知识丢失）
-- ✅ 报警告 + 列出悬挂引用 + 让 Agent 决定（重写 Report / 修改引用 / 接受悬挂）
+- ✅ 悬挂引用（指向不存在节点）和失效引用（指向 inactive 节点）可 auto-fix：从 `evidence` 表删除该引用行（机械操作，ingest-commit 的逆操作）
+- ⚠️ "Report 无任何引用"保持只读；让 Agent 决定是删除 Report 还是补充引用
 
 ## 四、约束
 
