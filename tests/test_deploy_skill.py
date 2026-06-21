@@ -20,7 +20,9 @@ from xu.skills import ALL_SKILL_FILES, SKILL_NAME, SKILL_SRC_DIR
 
 
 def _args(target="auto"):
-    return SimpleNamespace(target=target)
+    if isinstance(target, list):
+        return SimpleNamespace(target=target, copy=False)
+    return SimpleNamespace(target=target, copy=False)
 
 
 # ----------------------------------------------------------------------
@@ -113,6 +115,9 @@ def test_deploy_copies_files_to_destination(monkeypatch, tmp_path):
     r = cmd_mod.cmd_deploy_skill(args)
 
     assert r["status"] == "success"
+    assert r["data"]["succeeded"] == 1
+    result = r["data"]["results"][0]
+    assert result["status"] == "success"
     dest = tmp_path / ".hermes" / "skills" / SKILL_NAME
     # Reference subdir is preserved (not flattened)
     assert (dest / "reference").is_dir()
@@ -121,9 +126,8 @@ def test_deploy_copies_files_to_destination(monkeypatch, tmp_path):
         if rel.endswith(".md"):
             assert (dest / rel).is_file(), f"missing: {rel}"
     # result dict shape
-    assert r["data"]["skill_md_at_dest"] is True
-    assert r["data"]["file_count"] >= 7
-    assert "next_action" in r["data"]
+    assert result["skill_md_at_dest"] is True
+    assert result["file_count"] >= 7
 
 
 def test_deploy_does_not_copy_python_artifacts(monkeypatch, tmp_path):
@@ -141,7 +145,8 @@ def test_deploy_does_not_copy_python_artifacts(monkeypatch, tmp_path):
 def test_deploy_handles_unknown_target():
     r = cmd_mod.cmd_deploy_skill(_args(target="vscode"))
     assert r["status"] == "error"
-    assert r["data"]["error_class"] == "UnknownTarget"
+    assert r["data"]["failed"] == 1
+    assert r["data"]["results"][0]["err_class"] == "UnknownTarget"
 
 
 def test_deploy_skips_missing_source_files(monkeypatch, tmp_path):
@@ -153,4 +158,4 @@ def test_deploy_skips_missing_source_files(monkeypatch, tmp_path):
     r = cmd_mod.cmd_deploy_skill(_args(target="hermes"))
     assert r["status"] == "success"
     # Source dir is real and populated, so files_skipped should be empty.
-    assert r["data"]["files_skipped"] == []
+    assert r["data"]["results"][0]["files_skipped"] == []

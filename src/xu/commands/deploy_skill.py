@@ -115,13 +115,12 @@ def _resolve_target(target: str, *, cwd: str | None = None) -> tuple[str, str, P
 
 
 def cmd_deploy_skill(args) -> dict:
-    target = getattr(args, "target", None) or "auto"
+    targets = getattr(args, "target", None)
+    if not targets:
+        targets = ["auto"]
+    elif isinstance(targets, str):
+        targets = [targets]
     use_copy = bool(getattr(args, "copy", False))
-    try:
-        target_name, desc, dest = _resolve_target(target)
-    except ValueError as e:
-        err_class = "NoAgentDetected" if target == "auto" else "UnknownTarget"
-        return error(str(e), err_class)
 
     src = Path(SKILL_SRC_DIR)
     if not src.is_dir():
@@ -129,6 +128,34 @@ def cmd_deploy_skill(args) -> dict:
             f"skill source dir not found: {src}", "BundleMissing",
             data={"source_dir": str(src)},
         )
+
+    results = []
+    for target in targets:
+        r = _deploy_one(target, use_copy, src)
+        results.append(r)
+
+    failures = [r for r in results if r["status"] == "error"]
+    successes = [r for r in results if r["status"] == "success"]
+    if not successes:
+        return error(f"all {len(targets)} target(s) failed", "DeployFailed",
+                     data={"results": results, "total": len(targets),
+                           "succeeded": len(successes), "failed": len(failures)})
+    msg_parts = [f"{len(successes)}/{len(targets)} target(s) deployed"]
+    if failures:
+        msg_parts.append(f"{len(failures)} failed: {[r['target'] for r in failures]}")
+    return success(
+        {"results": results, "total": len(targets),
+         "succeeded": len(successes), "failed": len(failures)},
+        "; ".join(msg_parts),
+    )
+
+
+def _deploy_one(target: str, use_copy: bool, src: Path) -> dict:
+    try:
+        target_name, desc, dest = _resolve_target(target)
+    except ValueError as e:
+        err_class = "NoAgentDetected" if target == "auto" else "UnknownTarget"
+        return {"status": "error", "target": target, "error": str(e), "err_class": err_class}
 
     mode = "copy" if use_copy else "symlink"
     deployed = []
@@ -192,27 +219,18 @@ def cmd_deploy_skill(args) -> dict:
 
     _write_manifest(target_name, dest, mode, link_target)
     skill_md_at_dest = (dest / "SKILL.md").is_file()
-    return success(
-        {
-            "target": target_name,
-            "target_description": desc,
-            "source_dir": str(src),
-            "destination": str(dest),
-            "mode": mode,
-            "link_target": link_target,
-            "canonical": str(CANONICAL_SKILLS),
-            "manifest": str(MANIFEST_PATH),
-            "skill_md_at_dest": skill_md_at_dest,
-            "files_deployed": deployed,
-            "files_skipped": failures,
-            "file_count": len(deployed),
-            "next_action": (
-                "reload the agent's skill index / restart the agent so it "
-                f"picks up the new files at {dest}"
-            ),
-        },
-        f"deployed skill bundle to {dest} ({mode})",
-    )
+    return {
+        "status": "success",
+        "target": target_name,
+        "target_description": desc,
+        "destination": str(dest),
+        "mode": mode,
+        "link_target": link_target,
+        "file_count": len(deployed),
+        "files_deployed": deployed,
+        "files_skipped": failures,
+        "skill_md_at_dest": skill_md_at_dest,
+    }
 
 
 def _write_manifest(target: str, dest: Path, mode: str, link_target: str | None) -> None:

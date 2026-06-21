@@ -250,9 +250,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp_skill = deploy_sub.add_parser("skill",
                                       help="copy the skill bundle to <target>'s discovery dir")
     sp_skill.add_argument("--target",
+                          action="append",
                           choices=("hermes", "trae", "claude", "cursor", "auto"),
-                          default="auto",
-                          help="agent platform to deploy to (default: auto-detect)")
+                          help="agent platform to deploy to; can be specified multiple times "
+                               "(default: auto-detect if absent)")
     sp_skill.add_argument("--copy",
                           action="store_true",
                           help="copy files instead of symlinking (symlink is default)")
