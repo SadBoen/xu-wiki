@@ -15,6 +15,9 @@ import argparse
 import sys
 import time
 import traceback
+import logging
+import logging.handlers
+from pathlib import Path
 
 from .utils.response import emit, error
 
@@ -337,6 +340,14 @@ def _dispatch(args) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _log_dir = Path.home() / ".xu-wiki"
+    _log_dir.mkdir(exist_ok=True)
+    _handler = logging.handlers.RotatingFileHandler(
+        _log_dir / "xu-wiki.log",
+        maxBytes=5*1024*1024, backupCount=3)
+    _handler.setLevel(logging.ERROR)
+    logging.root.addHandler(_handler)
+
     parser = build_parser()
     # CONST-ARCH-1: every CLI invocation MUST emit a 4-key JSON response,
     # including argparse-level errors (missing/unknown args). Override
@@ -383,6 +394,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         response = _dispatch(args)
     except Exception as e:  # never crash without a 4-key response
+        logging.error("[xu] command=%s %s: %s",
+                      getattr(args, "command", "?"), type(e).__name__, e)
         response = error(
             f"unhandled exception: {e}",
             type(e).__name__,
