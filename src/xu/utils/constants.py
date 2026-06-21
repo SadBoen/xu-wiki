@@ -19,6 +19,7 @@ FM_RAW_PATH = "raw_path"
 FM_SOURCE_HASH = "source_hash"
 FM_SPLIT_INDEX = "split_index"
 FM_PARENT_UID = "parent_uid"
+FM_RELATIONS = "relations"    # YAML list of {to_uid, relation_name, comment, created_at}
 
 REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_CONTENT_TYPE, FM_ACTIVE, FM_CREATED, FM_CONTENT_HASH]
 

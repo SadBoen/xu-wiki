@@ -148,12 +148,14 @@ def cmd_query(args) -> dict:
     if args.neighbors and hit_uids:
         neighbor_preview = {}
         for uid in hit_uids[:5]:
-            rels = list_relations(conn_for_hints, uid)
+            fm_node, _ = find_node_md(ctx, uid)
+            if not fm_node:
+                continue
+            rels = list_relations(fm_node, uid)
             neighbor_preview[uid] = rels
-            # query hit touches relations forward (PRIN-QRY-13)
             for r in rels:
-                touch_relation(conn_for_hints, uid, r["to_uid"])
-        conn_for_hints.commit()
+                touch_relation(fm_node, uid, r["to_uid"])
+            _write_node_fm(ctx, uid, fm_node)
 
     conn.close()
 
@@ -220,6 +222,22 @@ def _read_body(ctx, file_path: str) -> str:
     return body
 
 
+def _write_node_fm(ctx, uid: str, fm_node: dict) -> None:
+    """Find node .md by uid and rewrite its frontmatter, preserving body."""
+    nodes_root = ctx.nodes_dir
+    if not nodes_root.is_dir():
+        return
+    for p in nodes_root.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            parsed, body = fm.parse(text)
+            if parsed.get("uid") == uid:
+                p.write_text(fm.render(fm_node, body), encoding="utf-8")
+                return
+        except Exception:
+            continue
+
+
 def _build_hints(ctx, hit_uids: list[str]) -> tuple[list, str | None]:
     """Find L2 Lists referencing hit pages, and L3 Reports citing them — via filesystem scan."""
     if not hit_uids:
@@ -265,45 +283,16 @@ def cmd_read(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
-    conn = ctx.connect()
-    try:
-        row = conn.execute("SELECT * FROM nodes WHERE uid=?", (args.uid,)).fetchone()
-        if row:
-            node = dict(row)
-            body = ""
-            if node["rel_md_path"]:
-                md_path = ctx.root / node["rel_md_path"]
-                if md_path.exists():
-                    text = md_path.read_text(encoding="utf-8", errors="replace")
-                    _, body = fm.parse(text)
-            else:
-                body = ""
-            patches = conn.execute(
-                "SELECT version, op, author, created_at FROM patches WHERE page_uid=? ORDER BY version",
-                (args.uid,),
-            ).fetchall()
-            return success(
-                {"uid": node["uid"], "title": node["title"], "layer": node["layer"],
-                 "content_type": node["content_type"], "node_path": node["node_path"],
-                 "active": bool(node["active"]), "body": body,
-                 "patch_versions": [dict(p) for p in patches]},
-                f"read {node['layer']} node {args.uid}",
-            )
-    finally:
-        conn.close()
-
-    # L2/L3: not in SQLite — look up via filesystem
     found = find_node_md(ctx, args.uid)
     if found:
         fm_dict, body = found
         return success(
             {"uid": fm_dict.get("uid"), "title": fm_dict.get("title"),
              "layer": fm_dict.get("layer"), "content_type": fm_dict.get("content_type", "article"),
-             "node_path": "", "active": True, "body": body,
-             "patch_versions": []},
+             "node_path": fm_dict.get("node_path", ""), "active": fm_dict.get("active", True),
+             "body": body, "patch_versions": []},
             f"read {fm_dict.get('layer')} node {args.uid}",
         )
-
     return error(f"node not found: {args.uid}", "NodeNotFound")
 
 
@@ -311,20 +300,27 @@ def cmd_nodes(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
-    conn = ctx.connect()
-    try:
-        sql = "SELECT uid, layer, content_type, title, node_path, active, created_at FROM nodes"
-        clauses = []
-        params = []
-        if args.layer:
-            clauses.append("layer=?")
-            params.append(args.layer)
-        if not args.include_inactive:
-            clauses.append("active=1")
-        if clauses:
-            sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY created_at DESC"
-        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
-        return success({"nodes": rows, "count": len(rows)}, f"{len(rows)} node(s)")
-    finally:
-        conn.close()
+    nodes_root = ctx.nodes_dir
+    results = []
+    if nodes_root.is_dir():
+        for p in nodes_root.rglob("*.md"):
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+                fm_dict, _ = fm.parse(text)
+                if args.layer and fm_dict.get("layer") != args.layer:
+                    continue
+                if not args.include_inactive and not fm_dict.get("active", True):
+                    continue
+                results.append({
+                    "uid": fm_dict.get("uid"),
+                    "title": fm_dict.get("title"),
+                    "layer": fm_dict.get("layer"),
+                    "content_type": fm_dict.get("content_type", "article"),
+                    "node_path": fm_dict.get("node_path", ""),
+                    "active": fm_dict.get("active", True),
+                    "created_at": fm_dict.get("created_at", 0),
+                })
+            except Exception:
+                continue
+    results.sort(key=lambda n: n.get("created_at", 0), reverse=True)
+    return success({"nodes": results, "count": len(results)}, f"{len(results)} node(s)")

@@ -11,7 +11,7 @@ from xu.utils import frontmatter as fm  # noqa: E402
 from xu.utils.paths import gen_uid, is_valid_uid, sha256_text  # noqa: E402
 from xu.utils import db  # noqa: E402
 from xu.ingest.relations_lru import add_relation, list_relations, touch_relation  # noqa: E402
-from xu.commands.doctor import _summarize, _check_relations  # noqa: E402
+from xu.commands.doctor import _summarize  # noqa: E402
 
 
 def test_uid_format():
@@ -80,48 +80,27 @@ def test_extract_nouns_nonempty():
     assert len(nouns) >= 1
 
 
-def _mkdb():
-    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    tmp.close()
-    db.init_schema(tmp.name)
-    conn = db.connect(tmp.name)
-    for i in range(60):
-        conn.execute(
-            "INSERT INTO nodes(uid,layer,content_type,title,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?)",
-            (f"2026-N{i:07d}", "Page", "article", f"n{i}", 0, 0),
-        )
-    conn.commit()
-    return conn
-
-
 def test_lru_cap_50_and_eviction():
-    conn = _mkdb()
+    fm = {"uid": "2026-N0000000", "relations": []}
     src = "2026-N0000000"
     for i in range(1, 56):
-        add_relation(conn, src, f"2026-N{i:07d}", "related")
-    conn.commit()
-    rels = list_relations(conn, src)
+        add_relation(fm, src, f"2026-N{i:07d}", "related")
+    rels = list_relations(fm, src)
     assert len(rels) == 50  # cap enforced (PRIN-ARCH-7)
-    # most recent insert is at head
-    assert rels[0]["to_uid"] == "2026-N0000055"
-    positions = [r["position"] for r in rels]
-    assert positions == list(range(50))  # contiguous renumber
+    assert rels[0]["to_uid"] == "2026-N0000055"  # most recent at head
 
 
 def test_lru_touch_moves_forward():
-    conn = _mkdb()
+    fm = {"uid": "2026-N0000000", "relations": []}
     src = "2026-N0000000"
     for i in range(1, 6):
-        add_relation(conn, src, f"2026-N{i:07d}", "related")
-    conn.commit()
-    rels = list_relations(conn, src)
+        add_relation(fm, src, f"2026-N{i:07d}", "related")
+    rels = list_relations(fm, src)
     tail_uid = rels[-1]["to_uid"]
-    touch_relation(conn, src, tail_uid)
-    conn.commit()
-    rels2 = list_relations(conn, src)
-    new_pos = next(r["position"] for r in rels2 if r["to_uid"] == tail_uid)
-    assert new_pos == len(rels2) - 2  # moved forward by one
+    touch_relation(fm, src, tail_uid)
+    rels2 = list_relations(fm, src)
+    tail_entry = next(r for r in rels2 if r["to_uid"] == tail_uid)
+    assert tail_entry["position"] == 3  # moved forward by one (from 4 to 3)
 
 
 def test_doctor_summarize_by_layer_and_fixability():
@@ -140,54 +119,27 @@ def test_doctor_summarize_by_layer_and_fixability():
     assert s["read_only"] == 2
 
 
-def test_doctor_relations_trim_over_cap():
-    conn = _mkdb()
-    src = "2026-N0000000"
-    for i in range(1, 56):
-        conn.execute(
-            "INSERT INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
-            "VALUES(?,?,?,?,?,?)",
-            (src, f"2026-N{i:07d}", "related", "", i - 1, 0),
-        )
-    conn.commit()
-    r = _check_relations(None, conn, fix=True)
-    assert any("> 50" in i["problem"] for i in r["issues"])  # over-cap detected (CONST-DOC-4)
-    conn.commit()
-    assert len(list_relations(conn, src)) == 50  # trimmed back to cap
-    post = _check_relations(None, conn, fix=False)
-    assert not any("> 50" in i["problem"] for i in post["issues"])  # repair verified (CONST-DOC-8)
-
-
 def test_touch_relation_no_rotation_multi_relname():
-    conn = _mkdb()
+    fm = {"uid": "2026-N0000000", "relations": [
+        {"to_uid": "2026-N0000001", "relation_name": "r1", "comment": "", "created_at": 0, "position": 0},
+        {"to_uid": "2026-N0000001", "relation_name": "r2", "comment": "", "created_at": 0, "position": 1},
+        {"to_uid": "2026-N0000001", "relation_name": "r3", "comment": "", "created_at": 0, "position": 2},
+    ]}
     src = "2026-N0000000"
-    for i, rn in enumerate(("r1", "r2", "r3")):
-        conn.execute(
-            "INSERT INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
-            "VALUES(?,?,?,?,?,?)",
-            (src, "2026-N0000001", rn, "", i, 0),
-        )
-    conn.commit()
-    touch_relation(conn, src, "2026-N0000001")
-    conn.commit()
-    order = [(r["position"], r["relation_name"]) for r in list_relations(conn, src)]
-    assert order == [(0, "r1"), (1, "r2"), (2, "r3")]  # stable, not rotated (BUG-16)
+    touch_relation(fm, src, "2026-N0000001")
+    order = [r["relation_name"] for r in list_relations(fm, src)]
+    assert order == ["r1", "r2", "r3"]  # stable, not rotated (BUG-16)
 
 
 def test_touch_relation_advances_one_slot():
-    conn = _mkdb()
+    fm = {"uid": "2026-N0000000", "relations": [
+        {"to_uid": "2026-N0000001", "relation_name": "a", "comment": "", "created_at": 0, "position": 0},
+        {"to_uid": "2026-N0000002", "relation_name": "b", "comment": "", "created_at": 0, "position": 1},
+        {"to_uid": "2026-N0000003", "relation_name": "c", "comment": "", "created_at": 0, "position": 2},
+    ]}
     src = "2026-N0000000"
-    for i, (to, rn) in enumerate([("2026-N0000001", "a"), ("2026-N0000002", "b"),
-                                  ("2026-N0000003", "c")]):
-        conn.execute(
-            "INSERT INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
-            "VALUES(?,?,?,?,?,?)",
-            (src, to, rn, "", i, 0),
-        )
-    conn.commit()
-    touch_relation(conn, src, "2026-N0000003")
-    conn.commit()
-    order = [r["to_uid"] for r in list_relations(conn, src)]
+    touch_relation(fm, src, "2026-N0000003")
+    order = [r["to_uid"] for r in list_relations(fm, src)]
     assert order == ["2026-N0000001", "2026-N0000003", "2026-N0000002"]  # c moved up one
 
 

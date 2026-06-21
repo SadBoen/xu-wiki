@@ -1,32 +1,32 @@
-"""Relation LRU linked list operations (PRIN-ARCH-7~10, CONST-ARCH-4).
+"""Relation LRU operations (PRIN-ARCH-7~10, CONST-ARCH-4).
 
-A node's out-edges form one ordered list (max 50). No category, no score.
-- add = a touch → insert at head (position 0), shift others down
-- query hit = move forward one position (上浮)
-- full (50) + new → evict the tail (most stale)
+A node's out-edges form one ordered list (max 50). Stored as a YAML list in
+the node's frontmatter `relations` field:
+  relations:
+    - {to_uid: X, relation_name: "参访", comment: "", created_at: "..."}
+    - ...
+
+Position = list index (head = 0). No SQLite; frontmatter is the sole store.
 """
 from __future__ import annotations
 
-import sqlite3
-
-from ..utils.constants import MAX_EDGES
+from ..utils.constants import FM_RELATIONS, MAX_EDGES
 from ..utils.paths import now_ts
 
 
-def _renumber(conn: sqlite3.Connection, from_uid: str) -> None:
-    rows = conn.execute(
-        "SELECT to_uid, relation_name FROM relations WHERE from_uid=? ORDER BY position",
-        (from_uid,),
-    ).fetchall()
-    for pos, r in enumerate(rows):
-        conn.execute(
-            "UPDATE relations SET position=? WHERE from_uid=? AND to_uid=? AND relation_name=?",
-            (pos, from_uid, r["to_uid"], r["relation_name"]),
-        )
+def _load_relations(fm: dict) -> list[dict]:
+    raw = fm.get(FM_RELATIONS, [])
+    if not isinstance(raw, list):
+        return []
+    return [dict(r) for r in raw]
+
+
+def _save_relations(fm: dict, rels: list[dict]) -> None:
+    fm[FM_RELATIONS] = rels
 
 
 def add_relation(
-    conn: sqlite3.Connection,
+    fm: dict,
     from_uid: str,
     to_uid: str,
     relation_name: str,
@@ -35,95 +35,90 @@ def add_relation(
 ) -> dict:
     """Insert/refresh a relation at the head. Returns {created|refreshed, evicted}.
 
-    Caller is responsible for commit.
+    Matches OLD SQLite semantics: bulk position+1 on all existing edges,
+    then place new/refreshed edge at position 0.
     """
-    existing = conn.execute(
-        "SELECT 1 FROM relations WHERE from_uid=? AND to_uid=? AND relation_name=?",
-        (from_uid, to_uid, relation_name),
-    ).fetchone()
+    raw = fm.get(FM_RELATIONS, [])
+    if not isinstance(raw, list):
+        raw = []
+        fm[FM_RELATIONS] = raw
 
-    # shift everyone down by 1 to free position 0
-    conn.execute(
-        "UPDATE relations SET position = position + 1 WHERE from_uid=?", (from_uid,)
-    )
-    if existing:
-        conn.execute(
-            "UPDATE relations SET position=0, comment=? "
-            "WHERE from_uid=? AND to_uid=? AND relation_name=?",
-            (comment, from_uid, to_uid, relation_name),
-        )
-        result = {"action": "refreshed", "evicted": None}
+    existing_idx = None
+    for i, r in enumerate(raw):
+        if r.get("to_uid") == to_uid and r.get("relation_name") == relation_name:
+            existing_idx = i
+            break
+
+    ts = now_ts()
+    if existing_idx is not None:
+        raw.pop(existing_idx)
+
+    new_entry = {
+        "to_uid": to_uid,
+        "relation_name": relation_name,
+        "comment": comment,
+        "created_at": ts,
+        "position": 0,
+    }
+
+    for r in raw:
+        r["position"] = r.get("position", 0) + 1
+
+    raw.insert(0, new_entry)
+    raw.sort(key=lambda r: r.get("position", 0))
+    for i, r in enumerate(raw):
+        r["position"] = i
+
+    if len(raw) > max_edges:
+        evicted = raw.pop()
+        result = {"action": "refreshed" if existing_idx is not None else "created",
+                  "evicted": {"to_uid": evicted["to_uid"], "relation_name": evicted["relation_name"]}}
     else:
-        conn.execute(
-            "INSERT INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
-            "VALUES(?,?,?,?,0,?)",
-            (from_uid, to_uid, relation_name, comment, now_ts()),
-        )
-        result = {"action": "created", "evicted": None}
+        result = {"action": "refreshed" if existing_idx is not None else "created", "evicted": None}
 
-    _renumber(conn, from_uid)
-
-    # evict tail if over the cap (BAN-ARCH-6)
-    count = conn.execute(
-        "SELECT COUNT(*) AS c FROM relations WHERE from_uid=?", (from_uid,)
-    ).fetchone()["c"]
-    if count > max_edges:
-        tail = conn.execute(
-            "SELECT to_uid, relation_name FROM relations WHERE from_uid=? "
-            "ORDER BY position DESC LIMIT 1",
-            (from_uid,),
-        ).fetchone()
-        if tail:
-            conn.execute(
-                "DELETE FROM relations WHERE from_uid=? AND to_uid=? AND relation_name=?",
-                (from_uid, tail["to_uid"], tail["relation_name"]),
-            )
-            result["evicted"] = {"to_uid": tail["to_uid"], "relation_name": tail["relation_name"]}
-            _renumber(conn, from_uid)
+    fm[FM_RELATIONS] = raw
     return result
 
 
-def touch_relation(conn: sqlite3.Connection, from_uid: str, to_uid: str) -> bool:
-    """Query hit → move the relation(s) to that target forward one position.
+def _renumber_rels(rels: list[dict]) -> None:
+    """Reassign contiguous positions 0..N-1 matching OLD SQLite _renumber."""
+    rels.sort(key=lambda r: r.get("position", 0))
+    for i, r in enumerate(rels):
+        r["position"] = i
 
-    A single target may carry several relation_names (each is its own edge).
-    Swapping them one-by-one against live positions corrupts ordering (an
-    earlier swap shifts the row a later swap then reads), which reverses the
-    block. Instead we compute a stable reordering in one pass: every matched
-    edge gets a sort key one slot ahead of its current position while ties are
-    broken by original order, so matched edges advance without rotating.
+
+def touch_relation(fm: dict, from_uid: str, to_uid: str) -> bool:
+    """Query hit → advance matched relation(s) one position toward the head (sort-based).
+
+    Uses the same sort-based advance as the original SQLite implementation.
+    Modifies frontmatter in-place.
     """
-    all_rows = conn.execute(
-        "SELECT to_uid, relation_name, position FROM relations WHERE from_uid=? ORDER BY position",
-        (from_uid,),
-    ).fetchall()
-    if not any(r["to_uid"] == to_uid for r in all_rows):
+    raw = fm.get(FM_RELATIONS, [])
+    if not isinstance(raw, list):
         return False
+
+    if not any(r.get("to_uid") == to_uid for r in raw):
+        return False
+
     keyed = []
-    moved = False
-    for idx, r in enumerate(all_rows):
-        matched = r["to_uid"] == to_uid
-        if matched and r["position"] > 0:
-            primary = r["position"] - 1
-            moved = True
-        else:
-            primary = r["position"]
-        # matched edges win ties at the same slot so they overtake an
-        # unmatched predecessor; original index keeps matched order stable.
-        keyed.append((primary, 0 if matched else 1, idx, r["to_uid"], r["relation_name"]))
+    for i, r in enumerate(raw):
+        matched = r.get("to_uid") == to_uid
+        pos = r.get("position", i)
+        primary = pos - 1 if (matched and pos > 0) else pos
+        keyed.append((primary, 0 if matched else 1, i, r))
+
     keyed.sort(key=lambda x: (x[0], x[1], x[2]))
-    for pos, item in enumerate(keyed):
-        conn.execute(
-            "UPDATE relations SET position=? WHERE from_uid=? AND to_uid=? AND relation_name=?",
-            (pos, from_uid, item[3], item[4]),
-        )
-    return moved
+    for new_pos, (_, _, _, r) in enumerate(keyed):
+        r["position"] = new_pos
+
+    raw.sort(key=lambda r: r.get("position", 0))
+    for i, r in enumerate(raw):
+        r["position"] = i
+
+    return True
 
 
-def list_relations(conn: sqlite3.Connection, from_uid: str) -> list[dict]:
-    rows = conn.execute(
-        "SELECT to_uid, relation_name, comment, position FROM relations "
-        "WHERE from_uid=? ORDER BY position",
-        (from_uid,),
-    ).fetchall()
-    return [dict(r) for r in rows]
+def list_relations(fm: dict, from_uid: str) -> list[dict]:
+    """Return ordered relations list from frontmatter (position = list index)."""
+    raw = fm.get(FM_RELATIONS, [])
+    return [dict(r) for r in raw]

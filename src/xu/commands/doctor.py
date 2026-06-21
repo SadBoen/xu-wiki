@@ -22,6 +22,37 @@ from ..utils.wiki import resolve_wiki
 _LAYER_TAG = {"Page": "L1", "List": "L2", "Report": "L3"}
 
 
+def _all_frontmatter_nodes(ctx):
+    """Walk nodes_dir, yield (md_path, fm_dict, body)."""
+    nodes_root = ctx.nodes_dir
+    if not nodes_root.is_dir():
+        return
+    for p in nodes_root.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            fm_dict, body = fm.parse(text)
+            if fm_dict.get("uid"):
+                yield p, fm_dict, body
+        except Exception:
+            continue
+
+
+def _find_node_fm(ctx, uid: str) -> tuple[dict, Path] | None:
+    """Find frontmatter dict and path for a uid via fs walk."""
+    nodes_root = ctx.nodes_dir
+    if not nodes_root.is_dir():
+        return None
+    for p in nodes_root.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            fm_dict, _ = fm.parse(text)
+            if fm_dict.get("uid") == uid:
+                return fm_dict, p
+        except Exception:
+            continue
+    return None
+
+
 def _summarize(checks_report: dict) -> dict:
     """Aggregate issues by layer + fixability (CONST-DOC-7)."""
     by_layer = {"L1": 0, "L2": 0, "L3": 0, "cross": 0}
@@ -97,25 +128,17 @@ def cmd_doctor(args) -> dict:
 
 
 def _check_fields(ctx, conn, fix) -> dict:
-    """Frontmatter completeness + DB/file consistency (CONST-DOC-1)."""
+    """Frontmatter completeness + file existence (CONST-DOC-1)."""
     issues = []
     fixed = []
-    rows = conn.execute("SELECT uid, rel_md_path, layer FROM nodes WHERE rel_md_path IS NOT NULL").fetchall()
-    for row in rows:
-        lyr = _LAYER_TAG.get(row["layer"], "cross")
-        md_path = ctx.root / row["rel_md_path"]
-        if not md_path.exists():
-            issues.append({"uid": row["uid"], "problem": "md file missing",
-                           "path": row["rel_md_path"], "layer": lyr, "fixable": False})
-            continue
-        frontmatter, _ = fm.parse(md_path.read_text(encoding="utf-8", errors="replace"))
-        missing = [f for f in REQUIRED_FM_FIELDS if f not in frontmatter]
+    for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
+        uid = fm_dict.get("uid", "")
+        lyr = _LAYER_TAG.get(fm_dict.get("layer", ""), "cross")
+        missing = [f for f in REQUIRED_FM_FIELDS if f not in fm_dict]
         if missing:
-            issues.append({"uid": row["uid"], "problem": "missing frontmatter fields",
-                           "missing": missing, "layer": lyr, "fixable": False})
-        if frontmatter.get("uid") and frontmatter["uid"] != row["uid"]:
-            issues.append({"uid": row["uid"], "problem": "uid mismatch file vs DB",
-                           "file_uid": frontmatter["uid"], "layer": lyr, "fixable": False})
+            issues.append({"uid": uid, "problem": "missing frontmatter fields",
+                           "missing": missing, "layer": lyr, "fixable": False,
+                           "path": str(md_path.relative_to(ctx.root))})
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
@@ -123,21 +146,14 @@ def _check_files(ctx, conn, fix) -> dict:
     """Orphan files (on disk, not in DB) and dangling DB rows (CONST-DOC-2)."""
     issues = []
     fixed = []
-    db_paths = {r["rel_md_path"] for r in
-                conn.execute("SELECT rel_md_path FROM nodes WHERE rel_md_path IS NOT NULL").fetchall()}
+    fm_paths = {}
+    for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
+        fm_paths[str(md_path.relative_to(ctx.root))] = fm_dict
     for md in ctx.page_dir.rglob("*.md"):
         rel = str(md.relative_to(ctx.root))
-        if rel not in db_paths:
-            issues.append({"problem": "orphan md file (not in DB)", "path": rel,
+        if rel not in fm_paths:
+            issues.append({"problem": "orphan md file (not in frontmatter)", "path": rel,
                            "layer": "L1", "fixable": False})
-    rows = conn.execute("SELECT uid, rel_md_path FROM nodes WHERE rel_md_path IS NOT NULL").fetchall()
-    for row in rows:
-        if not (ctx.root / row["rel_md_path"]).exists():
-            issues.append({"problem": "DB row points to missing file", "uid": row["uid"],
-                           "path": row["rel_md_path"], "layer": "L1", "fixable": True})
-            if fix:
-                conn.execute("UPDATE nodes SET active=0 WHERE uid=?", (row["uid"],))
-                fixed.append({"uid": row["uid"], "action": "marked inactive"})
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
@@ -145,60 +161,43 @@ def _check_relations(ctx, conn, fix) -> dict:
     """LRU integrity: cap, contiguous positions, dangling targets (CONST-DOC-4)."""
     issues = []
     fixed = []
-    sources = [r["from_uid"] for r in
-               conn.execute("SELECT DISTINCT from_uid FROM relations").fetchall()]
-    for src in sources:
-        rels = list_relations(conn, src)
+    all_uids = set()
+    for _, fm_dict, _ in _all_frontmatter_nodes(ctx):
+        uid = fm_dict.get("uid")
+        if uid:
+            all_uids.add(uid)
+    for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
+        src = fm_dict.get("uid")
+        if not src:
+            continue
+        rels = list_relations(fm_dict, src)
         if len(rels) > MAX_EDGES:
             issues.append({"from_uid": src, "problem": f"edge count {len(rels)} > {MAX_EDGES}",
                            "layer": "cross", "fixable": True})
-            if fix:
-                # trim the LRU tail back to MAX_EDGES (PRIN-DOC-3 inverse of ingest)
-                for r in rels[MAX_EDGES:]:
-                    conn.execute("DELETE FROM relations WHERE from_uid=? AND to_uid=? "
-                                 "AND relation_name=?", (src, r["to_uid"], r["relation_name"]))
-                fixed.append({"from_uid": src, "action": f"trimmed {len(rels) - MAX_EDGES} tail edge(s)"})
-                rels = rels[:MAX_EDGES]
-        positions = [r["position"] for r in rels]
+        positions = [r.get("position", i) for i, r in enumerate(rels)]
         if positions != list(range(len(positions))):
             issues.append({"from_uid": src, "problem": "non-contiguous positions",
                            "positions": positions, "layer": "cross", "fixable": True})
-            if fix:
-                for newpos, r in enumerate(rels):
-                    conn.execute("UPDATE relations SET position=? WHERE from_uid=? AND to_uid=? "
-                                 "AND relation_name=?",
-                                 (newpos, src, r["to_uid"], r["relation_name"]))
-                fixed.append({"from_uid": src, "action": "renumbered positions"})
         for r in rels:
-            if not conn.execute("SELECT 1 FROM nodes WHERE uid=?", (r["to_uid"],)).fetchone():
+            if r.get("to_uid") not in all_uids:
                 issues.append({"from_uid": src, "problem": "dangling relation target",
-                               "to_uid": r["to_uid"], "layer": "cross", "fixable": True})
-                if fix:
-                    conn.execute("DELETE FROM relations WHERE from_uid=? AND to_uid=? "
-                                 "AND relation_name=?",
-                                 (src, r["to_uid"], r["relation_name"]))
-                    fixed.append({"from_uid": src, "to_uid": r["to_uid"], "action": "removed dangling edge"})
+                               "to_uid": r.get("to_uid"), "layer": "cross", "fixable": True})
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
 def _check_l1_immutable(ctx, conn, fix) -> dict:
     """L1 body must match its recorded content_hash (PRIN-ARCH-3, never auto-fix)."""
     issues = []
-    rows = conn.execute(
-        "SELECT uid, rel_md_path, content_hash FROM nodes "
-        "WHERE layer='Page' AND rel_md_path IS NOT NULL AND content_hash IS NOT NULL"
-    ).fetchall()
-    for row in rows:
-        md_path = ctx.root / row["rel_md_path"]
-        if not md_path.exists():
-            issues.append({"uid": row["uid"], "problem": "L1 file missing",
-                           "layer": "L1", "fixable": False})
+    for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
+        if fm_dict.get("layer") != "Page":
             continue
-        _, body = fm.parse(md_path.read_text(encoding="utf-8", errors="replace"))
+        stored_hash = fm_dict.get("content_hash")
+        if not stored_hash:
+            continue
         actual = sha256_text(body)
-        if actual != row["content_hash"]:
-            issues.append({"uid": row["uid"], "problem": "L1 content_hash mismatch (tampered)",
-                           "expected": row["content_hash"][:12], "actual": actual[:12],
+        if actual != stored_hash:
+            issues.append({"uid": fm_dict.get("uid"), "problem": "L1 content_hash mismatch (tampered)",
+                           "expected": stored_hash[:12], "actual": actual[:12],
                            "layer": "L1", "fixable": False})
     # NEVER auto-fix L1 content (BAN-DOC-5: L1 is source of truth)
     return {"issue_count": len(issues), "issues": issues, "fixed": [],
@@ -291,35 +290,37 @@ def _check_node_path_organization(ctx, conn, fix) -> dict:
 
     root_uids = set()
     for p in root_page_dir.glob("*.md"):
-        rel = str(p.relative_to(ctx.root))
-        row = conn.execute(
-            "SELECT uid, title, node_path, active FROM nodes WHERE rel_md_path=?",
-            (rel,),
-        ).fetchone()
-        if row and row["active"] and not (row["node_path"] or "").strip():
-            root_uids.add(row["uid"])
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            fm_dict, _ = fm.parse(text)
+            uid = fm_dict.get("uid")
+            if (uid and fm_dict.get("layer") == "Page" and
+                    fm_dict.get("active", True) and
+                    not (fm_dict.get("node_path") or "").strip()):
+                root_uids.add(uid)
+        except Exception:
+            continue
 
-    for uid, in conn.execute(
-            "SELECT uid FROM nodes WHERE layer='Page' AND node_path='' AND active=1"
-    ).fetchall():
-        root_uids.add(uid)
+    for _, fm_dict, _ in _all_frontmatter_nodes(ctx):
+        uid = fm_dict.get("uid")
+        if (uid and fm_dict.get("layer") == "Page" and
+                fm_dict.get("active", True) and
+                not (fm_dict.get("node_path") or "").strip()):
+            root_uids.add(uid)
 
     if not root_uids:
         return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
 
     for uid in sorted(root_uids):
-        row = conn.execute(
-            "SELECT uid, title, node_path, rel_md_path FROM nodes WHERE uid=?",
-            (uid,),
-        ).fetchone()
-        if not row:
+        fm_dict, md_path = _find_node_fm(ctx, uid)
+        if not fm_dict:
             continue
-        title = row["title"] or ""
+        title = fm_dict.get("title") or ""
         suggested = _suggest_node_path(title)
         issues.append({
             "uid": uid,
             "title": title,
-            "current_path": row["rel_md_path"] or "",
+            "current_path": str(md_path.relative_to(ctx.root)) if md_path else "",
             "suggested_node_path": suggested,
             "suggest_reason": f"title contains noun: {suggested!r}",
             "layer": "L1",

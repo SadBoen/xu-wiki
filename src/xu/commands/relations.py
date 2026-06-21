@@ -1,14 +1,15 @@
 """query-relation — manage the 50-edge LRU relation list (01-wiki-architecture.md).
 
-50 edges per node, single ordered list, no strong/weak category, no score.
-add = touch (head insert + tail eviction); list = ordered view.
+Relations stored in each node's frontmatter `relations` YAML list.
+No SQLite; frontmatter is the sole store.
 """
 from __future__ import annotations
 
 from ..ingest.relations_lru import add_relation, list_relations
+from ..utils import frontmatter as _fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
-from ..utils.wiki import resolve_wiki
+from ..utils.wiki import resolve_wiki, find_node_md
 
 
 def cmd_query_relation(args) -> dict:
@@ -26,56 +27,85 @@ def _rel_add(args) -> dict:
     if args.from_uid == args.to_uid:
         return error("a node cannot relate to itself", "SelfRelation")
 
-    conn = ctx.connect()
-    try:
-        for uid in (args.from_uid, args.to_uid):
-            if not conn.execute("SELECT 1 FROM nodes WHERE uid=?", (uid,)).fetchone():
-                return error(f"node not found: {uid}", "NodeNotFound")
+    from_fm, _ = find_node_md(ctx, args.from_uid)
+    if not from_fm:
+        return error(f"node not found: {args.from_uid}", "NodeNotFound")
 
-        max_edges = cfg_get(ctx.config, "relation.max_edges", 50)
-        result = add_relation(conn, args.from_uid, args.to_uid,
-                              args.relation_name, args.comment, max_edges)
-        conn.commit()
+    to_fm, _ = find_node_md(ctx, args.to_uid)
+    if not to_fm:
+        return error(f"node not found: {args.to_uid}", "NodeNotFound")
 
-        rels = list_relations(conn, args.from_uid)
-        data = {
-            "from_uid": args.from_uid,
-            "to_uid": args.to_uid,
-            "relation_name": args.relation_name,
-            "action": result["action"],
-            "evicted": result["evicted"],
-            "edge_count": len(rels),
-        }
-        if result["evicted"]:
-            return warning(
-                data,
-                f"relation {result['action']}; LRU full → evicted tail "
-                f"{result['evicted']['to_uid']} (PRIN-ARCH-7)",
-                hints=["evicted edges are gone; re-add to restore at head"],
-            )
-        return success(data, f"relation {result['action']} at head (LRU touch)")
-    finally:
-        conn.close()
+    max_edges = cfg_get(ctx.config, "relation.max_edges", 50)
+    result = add_relation(from_fm, args.from_uid, args.to_uid,
+                          args.relation_name, args.comment, max_edges)
+
+    # Write back updated frontmatter
+    from_path = _node_path_to_file(ctx, args.from_uid)
+    if from_path:
+        _write_frontmatter(from_path, from_fm)
+
+    rels = list_relations(from_fm, args.from_uid)
+    data = {
+        "from_uid": args.from_uid,
+        "to_uid": args.to_uid,
+        "relation_name": args.relation_name,
+        "action": result["action"],
+        "evicted": result["evicted"],
+        "edge_count": len(rels),
+    }
+    if result["evicted"]:
+        return warning(
+            data,
+            f"relation {result['action']}; LRU full → evicted tail "
+            f"{result['evicted']['to_uid']} (PRIN-ARCH-7)",
+            hints=["evicted edges are gone; re-add to restore at head"],
+        )
+    return success(data, f"relation {result['action']} at head (LRU touch)")
 
 
 def _rel_list(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
-    conn = ctx.connect()
+
+    from_fm, _ = find_node_md(ctx, args.from_uid)
+    if not from_fm:
+        return error(f"node not found: {args.from_uid}", "NodeNotFound")
+
+    rels = list_relations(from_fm, args.from_uid)
+    for r in rels:
+        to_fm, _ = find_node_md(ctx, r["to_uid"])
+        r["to_title"] = to_fm.get("title", "(missing)") if to_fm else "(missing)"
+        r["to_layer"] = to_fm.get("layer") if to_fm else None
+    return success(
+        {"from_uid": args.from_uid, "relations": rels, "edge_count": len(rels)},
+        f"{len(rels)} edge(s) in LRU order (head = most recently touched)",
+    )
+
+
+def _node_path_to_file(ctx, uid: str):
+    """Find the .md path for a uid."""
+    nodes_root = ctx.nodes_dir
+    if not nodes_root.is_dir():
+        return None
+    for p in nodes_root.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            import frontmatter
+            fm_dict, _ = frontmatter.parse(text)
+            if fm_dict.get("uid") == uid:
+                return p
+        except Exception:
+            continue
+    return None
+
+
+def _write_frontmatter(path, fm: dict) -> None:
+    """Rewrite a .md file with updated frontmatter, preserving body."""
     try:
-        if not conn.execute("SELECT 1 FROM nodes WHERE uid=?", (args.from_uid,)).fetchone():
-            return error(f"node not found: {args.from_uid}", "NodeNotFound")
-        rels = list_relations(conn, args.from_uid)
-        # enrich with target titles
-        for r in rels:
-            row = conn.execute("SELECT title, layer FROM nodes WHERE uid=?",
-                               (r["to_uid"],)).fetchone()
-            r["to_title"] = row["title"] if row else "(missing)"
-            r["to_layer"] = row["layer"] if row else None
-        return success(
-            {"from_uid": args.from_uid, "relations": rels, "edge_count": len(rels)},
-            f"{len(rels)} edge(s) in LRU order (head = most recently touched)",
-        )
-    finally:
-        conn.close()
+        text = path.read_text(encoding="utf-8")
+        _, body = _fm.parse(text)
+        new_text = _fm.render(fm, body)
+        path.write_text(new_text, encoding="utf-8")
+    except Exception:
+        pass

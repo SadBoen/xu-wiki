@@ -90,3 +90,22 @@ def find_node_md(ctx: WikiContext, uid: str) -> tuple[dict, str] | None:
         except Exception:
             continue
     return None
+
+
+def find_by_source_hash(ctx: WikiContext, source_hash: str) -> dict | None:
+    """Find a node by its source_hash via fs walk. Returns frontmatter or None.
+
+    Used for Level-2 dedup — frontmatter is the source of truth (FS).
+    """
+    nodes_root = ctx.nodes_dir
+    if not nodes_root.is_dir():
+        return None
+    for p in nodes_root.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, _ = _fm.parse(text)
+            if fm_dict.get("source_hash") == source_hash:
+                return fm_dict
+        except Exception:
+            continue
+    return None

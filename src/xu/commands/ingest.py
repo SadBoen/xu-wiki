@@ -46,7 +46,7 @@ from ..utils.paths import (
     sha256_text,
 )
 from ..utils.response import error, success, warning, make_response
-from ..utils.wiki import resolve_wiki, find_node_md
+from ..utils.wiki import resolve_wiki, find_node_md, find_by_source_hash, find_by_source_hash
 
 
 def cmd_ingest_file(args) -> dict:
@@ -82,18 +82,14 @@ def cmd_ingest_file(args) -> dict:
 
     # Level-2 dedup: check BEFORE calling parser (especially MinerU — costs money).
     # Level-2 is all-pages, not active-only, so re-ingesting a deactivated source
-    # is also caught here (PRIN-ING-3).
+    # is also caught here (PRIN-ING-3). Frontmatter is source of truth (FS).
     source_hash = sha256_file(src)
-    conn = ctx.connect()
-    dup = conn.execute(
-        "SELECT uid, title, active FROM nodes WHERE source_hash=? LIMIT 1",
-        (source_hash,),
-    ).fetchone()
-    if dup:
+    dup_fm = find_by_source_hash(ctx, source_hash)
+    if dup_fm:
         return warning(
-            {"existing_uid": dup["uid"], "existing_title": dup["title"],
-             "existing_active": bool(dup["active"]), "source_hash": source_hash},
-            f"source already ingested as {dup['uid']} (BAN-ING-4); Phase 1 skipped to avoid wasted parse cost",
+            {"existing_uid": dup_fm["uid"], "existing_title": dup_fm.get("title", ""),
+             "existing_active": dup_fm.get("active", True), "source_hash": source_hash},
+            f"source already ingested as {dup_fm['uid']} (BAN-ING-4); Phase 1 skipped to avoid wasted parse cost",
             hints=["use 'revise' to update; ingest never overwrites (PRIN-ING-3)"],
         )
 
