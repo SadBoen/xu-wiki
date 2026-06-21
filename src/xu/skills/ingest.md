@@ -160,44 +160,33 @@ When to call reorganize:
 
 ## Post-commit reflection (PRIN-CR-1, asymmetric bias)
 
-After **every** `ingest-commit` (single page, album, or batch), the agent MUST
-run a creation-value reflection **before declaring the task done**. The CLI
-does not run this reflection (PRIN-QRY-3) and never auto-creates (PRIN-ING-*).
+After **every** `ingest-commit` (single page, album, or batch), the agent runs
+a creation-value reflection **before declaring the task done**. LLM decides
+autonomously — no user approval needed. The CLI does not run this reflection
+(PRIN-QRY-3) and never auto-creates (PRIN-ING-*).
 
-**Why ingest leans List (PRIMARY), not Report:**
-L1 adds fresh facts. A List curates a comparable group of facts; a Report
-needs a conclusion that doesn't yet exist. So:
+**Step 1 — Find similar List (mandatory, before any creation decision):**
+Run a query to find existing Lists that overlap with the new page(s) on
+dimension or members. If one exists → call `list create` with existing +
+new members combined (extend the existing List). Do not ask the user.
 
-1. **List valuation — PRIMARY (bias toward proposing).**
-   Ask all three:
-   - Did this ingest add ≥ 1 page that is comparable to ≥ 1 existing L1
-     page on an obvious axis (parameter count / accuracy / date / location /
-     category / model family / phase)?
-   - Or did this ingest add ≥ 2 pages that share an obvious dimension?
-   - Would a Node_List save future "find me the X" queries time, or
-     prevent duplication of future ingests?
-   → If all three: draft `list create` payload
-   (`--title` / `--dimension` / `--members`), show the preview to the user
-   in **one** sentence (e.g. "建一个 List 把 X、Y、Z 放一起，按
-   parameter count 对比？"), wait for explicit approval.
+**Step 2 — Assess List value (only if no similar found):**
+- Did this ingest add ≥ 1 page comparable to ≥ 1 existing L1 on an obvious
+  axis (parameter count / accuracy / date / location / category / model family / phase)?
+- Or did this ingest add ≥ 2 pages sharing an obvious dimension?
+- Would a Node_List save future "find me the X" queries or prevent duplication?
+→ If yes: call `list create` autonomously. Do not ask the user.
 
-2. **Report valuation — SECONDARY (opportunistic only).**
-   - Did the new page CONTRADICT something in the existing wiki?
-   - Did it force a re-evaluation of an existing Report's conclusion?
-   - Is there a documented conflict the user should know about?
-   → Only propose if signal is strong. By default, after ingest, do NOT
-   propose Report.
+**Step 3 — Report valuation (SECONDARY, opportunistic):**
+Only if the new page clearly contradicts or forces re-evaluation of an
+existing Report. Otherwise, by default, do not propose Report after ingest.
 
-3. **Neither** — say nothing. Don't manufacture value.
+**Single-page ingest also triggers this reflection** — "just one page" is not
+an excuse; the value can be "this page joins an existing group".
 
-**Important**: single-page ingest also triggers reflection (item 1's first
-bullet). "Just one page" is not an excuse; the value can be "this page
-joins an existing group". The CLI provides no hint here — the reflection is
-the agent's job entirely.
-
-**Important**: this section is the **ingest-side counterpart** to the
-query-side reflection in `query.md §Workflow` step 5. Same asymmetric bias,
-opposite default type.
+This section is the **ingest-side counterpart** to the query-side reflection
+in `query.md §Workflow` step 5. Same asymmetric bias (List primary after
+ingest, Report primary after query), opposite default type.
 
 ## Example — prose
 

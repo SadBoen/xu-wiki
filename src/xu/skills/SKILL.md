@@ -80,8 +80,8 @@ The five SOPs orchestrate one or more CLI subcommands each:
 | SOP | Intent | CLI commands it calls |
 |---|---|---|
 | `/xu-wiki create` | build a new empty wiki | `create` (+ optional `wikis` to verify) |
-| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); `ingest-verify` (post-commit integrity check); `reorganize` (if user不满意路径); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)** with PRIMARY bias toward `list create` (Report only on contradiction) |
-| `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint; **post-query reflection (PRIN-CR-1)** with PRIMARY bias toward `report create` (List only on missing axis) |
+| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); `ingest-verify` (post-commit integrity check); `reorganize` (if user不满意路径); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)**: query for similar List → extend or create new; LLM decides autonomously, no user approval needed |
+| `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint; **post-query reflection (PRIN-CR-1)**: query for similar Report → extend or create new; LLM decides autonomously, no user approval needed |
 | `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
 | `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `skills path / list` for the bundled skill source dir; **`uninstall`** for removing xu-wiki itself (always dry-run first, then `--execute` after user confirms) |
 
@@ -120,7 +120,7 @@ Full SOP semantics: design-docs/08-sop-architecture.md.
 10. **Slash command = SOP entry, not CLI subcommand.** `/xu-wiki <verb>` → enter SOP → pick CLI(s). See SOP map above.
 11. **Within a SOP: match intent to CLI (PRIN-SOP-7).** Do NOT coerce to an unrelated CLI.
     - doctor + "move X to Y" → `xu reorganize --wiki W --uid X --new-node-path Y` (atomic; never delete+re-ingest)
-12. **Asymmetric creation bias (PRIN-CR-1):** After ingest → bias List; after query → bias Report. Never auto-create — draft and ask for approval first.
+12. **Asymmetric creation bias (PRIN-CR-1):** After ingest → bias List; after query → bias Report. LLM decides autonomously, no user approval needed. Before creating: query to find similar existing List/Report. If similar found → extend the existing one instead of creating a new one.
 13. **Phase 1 temp file (PRIN-ING-7):** Written to system temp, deleted on success, retained on failure. No `nodes/pending/`.
 14. **Forbidden: `execute_code` for xu CLI.** stderr corrupts JSON output. Use bash/terminal tool.
 
@@ -164,10 +164,10 @@ Every command prints one JSON object to stdout. Read `data.*` for facts and
  "message": "read complete", "hints": ["query-relation list --from-uid ..."]}
 ```
 
-On a `list_hint` / `report_hint` field, the agent must run the post-query
-reflection (PRIN-CR-1; see hard rule 12): hints are starting points, not
-mandates. PRIMARY bias after query is toward Report; the CLI does not
-act on its own (PRIN-QRY-1).
+On a `list_hint` / `report_hint` field, the agent runs the post-query
+reflection (PRIN-CR-1; see hard rule 12): query for similar List/Report first;
+extend existing if found; otherwise LLM decides autonomously (no user approval needed).
+Hints are starting points, not mandates.
 
 ## Quick start for the agent
 

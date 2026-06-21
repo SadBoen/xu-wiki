@@ -76,33 +76,32 @@ xu report create --wiki <w> --title <t> --body <md> \
 2. **Invoke `query`** with `--core` (required) and `--expansion` (recommended).
 3. **Inspect the result's `data.hits`** — list of UIDs with relevance score.
 4. **Read the top hits** with `read --wiki W --uid <uid>`.
-5. **Post-query reflection (PRIN-CR-1, asymmetric bias)** — the agent MUST run
-   this before answering the user. The CLI's `list_hint` / `report_hint` are
-   **starting points, not mandates**. The reflection:
-   - **Report valuation — PRIMARY (bias toward proposing).**
-     Ask all three:
-     - Do the hits + any existing `report_hint` form an evidence chain
-       (premise → evidence → conclusion)?
-     - Is there a conclusion emerging that future "what's the verdict on X"
-       queries would benefit from being able to look up?
-     - Would writing this up as a Node_Report prevent the user (or others)
-       from having to re-ask the same question later?
-     → If all three: draft `report create` payload (`--title` / `--body`
-     LLM-summarized / `--references` from the hits), show preview in
-     **one** sentence (e.g. "把这次的发现写成一份 Report？"),
-     wait for explicit approval.
-   - **List valuation — SECONDARY (opportunistic only).**
-     - Do the hits form a natural comparable group on a missing axis?
-     - Is there an existing `list_hint` that should be extended rather
-       than a new List created?
-     → Only propose if signal is strong. By default, after query, do NOT
-     propose List.
-   - **Neither** — answer from L1 hits + existing L2/L3, don't manufacture
-     value.
+5. **Post-query reflection (PRIN-CR-1, asymmetric bias)** — the agent runs
+   this before answering the user. LLM decides autonomously — no user approval needed.
+   The CLI's `list_hint` / `report_hint` are **starting points, not mandates**.
+
+   **Step 1 — Find similar Report (mandatory, before any creation decision):**
+   Run a query to find existing Reports that reference the same or overlapping L1
+   nodes as the current hits. If one exists → extend that Report (add the new
+   hits as additional evidence or update the conclusion). Do not ask the user.
+
+   **Step 2 — Assess Report value (only if no similar found):**
+   - Do the hits + any existing `report_hint` form an evidence chain
+     (premise → evidence → conclusion)?
+   - Is there a conclusion emerging that future "what's the verdict on X"
+     queries would benefit from being able to look up?
+   - Would writing this up as a Node_Report prevent the user (or others)
+     from having to re-ask the same question later?
+   → If yes: call `report create` autonomously. Do not ask the user.
+
+   **Step 3 — List valuation (SECONDARY, opportunistic):**
+   Only if the hits form a natural comparable group on a missing axis and no
+   similar List exists. Otherwise, by default, do not propose List after query.
+
    **Why query leans Report, not List**: query is "I asked a question"; the
-   natural follow-up is "save the answer". A List would just bundle
-   related hits without synthesizing anything. **CLI does NOT run this
-   reflection** (PRIN-QRY-3) and never auto-creates (PRIN-QRY-1).
+   natural follow-up is "save the answer". A List would just bundle related
+   hits without synthesizing anything. **CLI does NOT run this reflection**
+   (PRIN-QRY-3) and never auto-creates (PRIN-QRY-1).
 6. **If the user wants to wire edges** — `query-relation add` with
    `--from-uid` / `--to-uid` / `--relation-name`.
 7. **If the user wants the neighborhood** — re-run with `--neighbors`.
@@ -135,7 +134,8 @@ xu query-relation add --wiki research \
   are starting points, not mandates. The post-query reflection in step 5
   is the **agent's** job; the agent must always run the valuation and
   only propose if value is real, with PRIMARY bias toward Report
-  (PRIN-CR-1). **Never auto-create** without user confirmation.
+  (PRIN-CR-1). LLM decides autonomously; always query for similar Report first
+  and extend existing if found.
 - **Forgetting the 50-edge limit** — when wiring relations, adding a
   51st evicts the tail (hard rule 3 in `SKILL.md`). Don't re-add the
   evicted one unless the user really needs it.

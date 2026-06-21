@@ -178,8 +178,8 @@ def cmd_query(args) -> dict:
             hints.append("list show <uid> for L2 comparison")
         if report_hint:
             hints.append("report show <uid> for L3 conclusion + evidence")
-        hints.append("consider: propose report create if hits form an evidence chain (PRIN-CR-1 primary bias)")
-        hints.append("consider: propose list create if hits share a comparable dimension (PRIN-CR-1 secondary, opportunistic)")
+        hints.append("run post-query reflection (PRIN-CR-1): query for similar Report first, extend existing if found; otherwise LLM decides autonomously (no user approval needed)")
+        hints.append("post-query reflection (PRIN-CR-1): query for similar List only if hits share a comparable dimension and no similar exists (secondary, opportunistic)")
     if not top:
         hints.append("no hits; try different keywords or check ingest")
 
