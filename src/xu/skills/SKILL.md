@@ -23,62 +23,19 @@ The
 slash command `/xu-wiki` (Trae) is the agent's UX entry into a SOP and is
 not a CLI invocation.
 
-## File layout
-
-This skill is split into 8 files per the principles in
-`design-docs/09-skill-architecture.md` (PRIN-SKILL-1~7, BAN-SKILL-1/2/3/3a):
-
-| File | Purpose | When to load |
-|---|---|---|
-| `SKILL.md` (this file) | Index + cross-cutting rules | **Always** |
-| `create.md` | `/xu-wiki create` SOP — full self-contained | When entering create SOP |
-| `ingest.md` | `/xu-wiki ingest` SOP — full self-contained | When entering ingest SOP |
-| `query.md` | `/xu-wiki query` SOP — full self-contained | When entering query SOP |
-| `doctor.md` | `/xu-wiki doctor` SOP — full self-contained | When entering doctor SOP |
-| `config.md` | `/xu-wiki config` SOP — full self-contained | When entering config SOP |
-| `reference/error-catalog.md` | placeholder — future error_class catalog | On demand |
-
-**No file links to another SOP file** (BAN-SKILL-1). If an SOP file needs to
-mention a CLI from another SOP, it says "see SKILL.md §X" — never links
-directly. The agent places all 8 files in its own skill discovery dir
-(via its platform's skill manager — Hermes / Trae / Claude / Cursor).
-
-## When to use this skill
-
-The skill exposes **five SOPs** (Standard Operating Procedures). The
-slash command `/xu-wiki <verb>` enters a SOP, which orchestrates one or
-more CLI subcommands. The five SOPs cover the full wiki lifecycle:
-
-- **create** — `/xu-wiki create` — build a new empty wiki at a path
-  (raws/, nodes/{page,list,report}/, .xu/).
-- **ingest** — `/xu-wiki ingest` — add content (PDF / DOCX / PPTX / MD /
-  image / album) to a wiki as Node_Page (L1, immutable). Two-phase flow
-  for prose / document content (`ingest-file` → `ingest-commit`,
-  PRIN-ING-1); **single-shot album flow** for a group of images
-  (`ingest-album`, PRIN-ING-14). Body style must match content type
-  (PRIN-ING-13: table / prose / code block).
-- **query** — `/xu-wiki query` — find knowledge with elastic slicing,
-  IDF, Fast Pass; read individual nodes; follow L2/L3 hints.
-- **doctor** — `/xu-wiki doctor` — read-only consistency checks on
-  fields / files / relations / L1 immutability / Report evidence / IDF;
-  apply `--fix` for safe repairs; rebuild derived layers when needed.
-- **config** — `/xu-wiki config` — manage configuration: set / change
-  wiki alias, register / unregister existing directories, manage the
-  MinerU API key, inspect the registered wikis, **and uninstall the
-  xu-wiki package itself** (`xu uninstall`).
-
-## SOP map (slash command ↔ CLI orchestration)
+## SOP map
 
 A slash command `/xu-wiki <verb>` enters a SOP — **not** a CLI subcommand.
-The five SOPs orchestrate one or more CLI subcommands each:
+Each SOP is self-contained in its own file (`*.md` below); the agent says
+"see SKILL.md §SOP map" rather than linking directly (BAN-SKILL-1).
 
-| SOP | Intent | CLI commands it calls |
-|---|---|---|
-| `/xu-wiki create` | build a new empty wiki | `create` (+ optional `wikis` to verify) |
-| `/xu-wiki ingest` | add content to a wiki | `ingest-file` → `ingest-commit` (PRIN-ING-1 two-phase, prose / code block); `ingest-album` (PRIN-ING-14 single-shot, table-form album); `ingest-verify` (post-commit integrity check); `reorganize` (if user不满意路径); optional `query-relation add`; **post-commit reflection (PRIN-CR-1)**: query for similar List → extend or create new; LLM decides autonomously, no user approval needed |
-| `/xu-wiki query` | find knowledge | `query`; then `read`, `list show`, or `report show` per hint; **post-query reflection (PRIN-CR-1)**: query for similar Report → extend or create new; LLM decides autonomously, no user approval needed |
-| `/xu-wiki doctor` | check / repair / destructive ops | `doctor-all`; per-check subcommands; `--fix` for safe auto-repair; `delete-node`; `rebuild`; `nodes` (for dangling lookup) |
-| `/xu-wiki config` | manage configuration | `wikis` to inspect; `alias set/unset/show` for aliases; `register` / `unregister` for wiki registry; `config set-mineru-key / show / path` for global settings; `skills path / list` for the bundled skill source dir; **`uninstall`** for removing xu-wiki itself (always dry-run first, then `--execute` after user confirms) |
+| SOP | Intent | CLI commands it calls | File |
+|---|---|---|---|
+| `/xu-wiki create` | build a new empty wiki at a path (raws/, nodes/{page,list,report}/, .xu/) | `create` (+ optional `wikis` to verify) | `create.md` |
+| `/xu-wiki ingest` | add content (PDF / DOCX / PPTX / MD / image / album) as immutable L1 Node_Page. Two-phase prose/doc flow (`ingest-file` → `ingest-commit`); single-shot album flow (`ingest-album`). Body style must match content type. **Post-commit reflection (PRIN-CR-1)**: query for similar List → extend or create new; LLM decides autonomously | `ingest-file` → `ingest-commit` (PRIN-ING-1); `ingest-album` (PRIN-ING-14); `ingest-verify`; `reorganize` (if user不满意路径); optional `query-relation add` | `ingest.md` |
+| `/xu-wiki query` | find knowledge with elastic slicing, IDF, Fast Pass; read nodes; follow L2/L3 hints. **Post-query reflection (PRIN-CR-1)**: query for similar Report → extend or create new; LLM decides autonomously | `query`; then `read`, `list show`, or `report show` per hint | `query.md` |
+| `/xu-wiki doctor` | read-only consistency checks on fields / files / relations / L1 immutability / Report evidence / IDF; apply `--fix` for safe repairs; rebuild derived layers | `doctor-all`; per-check subcommands; `--fix`; `delete-node`; `rebuild`; `nodes` (dangling lookup) | `doctor.md` |
+| `/xu-wiki config` | manage wiki aliases, register/unregister directories, set MinerU API key, inspect wikis, **and uninstall xu-wiki** | `wikis`; `alias set/unset/show`; `register` / `unregister`; `config set-mineru-key / show / path`; `skills path / list`; **`uninstall`** (always dry-run first, then `--execute` after user confirms) | `config.md` |
 
 Full SOP semantics: design-docs/08-sop-architecture.md.
 
