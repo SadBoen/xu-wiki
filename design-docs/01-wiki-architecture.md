@@ -402,8 +402,8 @@ nodes/ 与 raws/ 按同一 node_path 镜像对应。Page 移位时两侧联动�
 ### [DESIGN-ARCH-1] L2/L3 只存 .md，不存 SQLite
 
 Node_List 与 Node_Report 是**逻辑视图**，统一以 .md 文件存储，不写入 SQLite。
-- L2: `nodes/list/<uid>.md`，frontmatter 含 `uid/title/layer/dimension/created_at/updated_at`，body 是 YAML list of dicts（uid/title/layer/note），顺序即位置
-- L3: `nodes/report/<uid>.md`，frontmatter 含 `references[]`（uid/title/layer/note），body 是报告正文
+- L2: `nodes/list/<node_path>.md`，frontmatter 含 `uid/title/layer/node_path/split_index/parent_uid/dimension/created_at/updated_at`，body 是 YAML list of dicts（uid/title/layer/note），顺序即位置；split_index=1，parent_uid=self（不分页时）
+- L3: `nodes/report/<node_path>.md`，frontmatter 含 `uid/title/layer/node_path/split_index/parent_uid/references[]`（uid/title/layer/note），body 是报告正文；split_index=1，parent_uid=self（不分页时）
 
 L1 必写 .md（不可变 + 可溯源）；L2 / L3 同样写 .md，保证所有节点统一文件系统访问。
 
@@ -555,7 +555,7 @@ Node_Report 必须能追溯到 L1 / L2 的证据——没有证据链的 Report 
 | 动作 | 命令族 | 备注 |
 |---|---|---|
 | **建 Page** | `ingest-commit` | L1 不可变，落地后写 patches 表初值 |
-| **建 List** | `list create` | L2 .md-only（nodes/list/<uid>.md） |
+| **建 List** | `list create` | L2 .md-only（nodes/list/<node_path>.md） |
 | **建 Report** | `report create` | L3 必须引用 L1 / L2 证据链 |
 | **读 Page** | `read --uid` | 叠加 patches 还原当前视图 |
 | **读 List** | `list show` | 横向对比表 |

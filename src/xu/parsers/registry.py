@@ -1,20 +1,168 @@
 """Parser plugins + fallback chain (PRIN-ING-5, CONST-ING-1).
 
-Each parser exposes:  name, can_parse(path) -> bool, parse(path, **kw) -> str|None
-Fallback chains are grouped by format; failure auto-falls-back; tail is a
-"store-without-parsing" safety net. "Must have a parse result to enter Phase 2"
-is unbreakable (PRIN-ING-5): a fully empty result rejects Phase 2.
+Architecture absorbed from Ref/xu/routing/:
+  - Intent-driven routing: (ext, intent) -> parser list
+  - Rich ParseResult: success / content_markdown / metadata / skipped_reason
+  - Dedicated parsers: ExcelParser (YAML), CsvParser (YAML), VisionParser (YAML)
+  - Graceful fallback chains per format
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
+@dataclass
 class ParseResult:
-    def __init__(self, text: str, parser: str, ok: bool = True):
-        self.text = text or ""
-        self.parser = parser
-        self.ok = ok and bool(text and text.strip())
+    success: bool = False
+    content_markdown: str = ""
+    metadata: dict = field(default_factory=dict)
+    skipped_reason: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.success and bool(self.content_markdown.strip())
+
+    @property
+    def text(self) -> str:
+        return self.content_markdown
+
+
+# ---- ExcelParser: openpyxl -> YAML list of dicts (table content_type) ----
+class ExcelParser:
+    name = "excel"
+    SUPPORTED = {".xlsx", ".xls"}
+
+    def can_parse(self, path: Path) -> bool:
+        return path.suffix.lower() in self.SUPPORTED
+
+    def parse(self, path: Path, **kw) -> ParseResult | None:
+        import yaml
+        try:
+            import openpyxl
+        except ImportError:
+            return None
+        try:
+            wb = openpyxl.load_workbook(str(path), data_only=True)
+        except Exception:
+            return None
+        try:
+            parts = []
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                rows = list(ws.iter_rows(values_only=True))
+                if not rows:
+                    continue
+                header_idx = 0
+                headers = []
+                for i, row in enumerate(rows):
+                    cells = [str(c).strip() if c is not None else "" for c in row]
+                    if sum(1 for c in cells if c) >= 3:
+                        header_idx = i
+                        headers = cells
+                        break
+                if not headers:
+                    headers = [str(c).strip() if c is not None else "" for c in rows[0]]
+                if header_idx > 0:
+                    meta_lines = []
+                    for row in rows[:header_idx]:
+                        cells = [str(c) for c in row if c is not None and str(c).strip()]
+                        if cells:
+                            meta_lines.append(" | ".join(cells))
+                    if meta_lines:
+                        parts.append("## Sheet: " + sheet_name + "\\n")
+                        parts.append("\\n".join(meta_lines) + "\\n")
+                items = []
+                for row in rows[header_idx + 1:]:
+                    cells = [str(c).strip() if c is not None else "" for c in row]
+                    if not any(cells):
+                        continue
+                    item = {}
+                    for j, h in enumerate(headers):
+                        if h and j < len(cells) and cells[j]:
+                            item[h] = cells[j]
+                    if item:
+                        items.append(item)
+                parts.append("## Sheet: " + sheet_name + "\\n")
+                parts.append(yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False))
+            text = "".join(parts)
+            return ParseResult(success=True, content_markdown=text,
+                              metadata={"parser": self.name, "sheets": wb.sheetnames})
+        except Exception:
+            return None
+
+
+# ---- CsvParser: csv -> YAML list of dicts (table content_type) ----
+class CsvParser:
+    name = "csv"
+    SUPPORTED = {".csv"}
+
+    def can_parse(self, path: Path) -> bool:
+        return path.suffix.lower() in self.SUPPORTED
+
+    def parse(self, path: Path, **kw) -> ParseResult | None:
+        import csv, yaml
+        try:
+            with open(str(path), encoding="utf-8", newline="") as f:
+                rows = list(csv.reader(f))
+        except Exception:
+            return None
+        if not rows:
+            return None
+        header = rows[0]
+        items = []
+        for row in rows[1:]:
+            cells = (row + [""] * len(header))[:len(header)]
+            if not any(c.strip() for c in cells):
+                continue
+            item = {}
+            for j, h in enumerate(header):
+                if h and j < len(cells) and cells[j]:
+                    item[h] = cells[j]
+            if item:
+                items.append(item)
+        try:
+            text = yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        except Exception:
+            return None
+        return ParseResult(success=True, content_markdown=text,
+                          metadata={"parser": self.name, "rows": len(items)})
+
+
+# ---- VisionParser: PIL/EXIF -> YAML list of dicts (gallery content_type) ----
+class VisionParser:
+    name = "vision"
+    SUPPORTED = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
+
+    def can_parse(self, path: Path) -> bool:
+        return path.suffix.lower() in self.SUPPORTED
+
+    def parse(self, path: Path, **kw) -> ParseResult | None:
+        import os, yaml
+        p = Path(path)
+        if not p.is_file():
+            return None
+        size = os.path.getsize(p)
+        item: dict = {"filename": p.name, "size_bytes": size}
+        try:
+            from PIL import Image
+            img = Image.open(p)
+            item["width"] = img.width
+            item["height"] = img.height
+            exif = img.getexif()
+            if exif:
+                from PIL.ExifTags import TAGS
+                for tag_id, value in exif.items():
+                    tag = TAGS.get(tag_id, "")
+                    if tag in ("DateTimeOriginal", "Make", "Model"):
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8", errors="replace").replace(chr(0), "")
+                        item[tag] = str(value)
+        except (OSError, ValueError, AttributeError):
+            pass
+        text = yaml.dump([item], allow_unicode=True, default_flow_style=False, sort_keys=False)
+        return ParseResult(success=True, content_markdown=text,
+                          metadata={"parser": self.name})
 
 
 # ---- MinerU primary (cloud API; silent fallback if key missing) ----
@@ -29,14 +177,15 @@ class MinerUParser:
         from ..parsers.mineru_parser import mineru_parse
         text = mineru_parse(str(path), api_key=kw.get("mineru_key", ""))
         if text and text.strip():
-            return ParseResult(text, self.name)
-        return None  # silent fallback (CONST-ING-1) — by design, not a bug
+            return ParseResult(success=True, content_markdown=text,
+                              metadata={"parser": self.name})
+        return None
 
 
 # ---- markitdown local fallback (offline, no API) ----
 class MarkitdownParser:
     name = "markitdown"
-    SUPPORTED = {".pdf", ".docx", ".pptx", ".xlsx", ".html", ".htm", ".csv"}
+    SUPPORTED = {".pdf", ".docx", ".pptx", ".html", ".htm"}
 
     def can_parse(self, path: Path) -> bool:
         return path.suffix.lower() in self.SUPPORTED
@@ -46,91 +195,69 @@ class MarkitdownParser:
             from markitdown import MarkItDown
             md = MarkItDown()
             r = md.convert(str(path))
-            return ParseResult(r.text_content, self.name)
+            content = r.text_content or ""
+            if not content.strip():
+                return None
+            return ParseResult(success=True, content_markdown=content,
+                              metadata={"parser": self.name})
         except Exception:
             return None
 
 
-# ---- plain text / markdown / csv ----
+# ---- plain text / markdown ----
 class TextParser:
     name = "text"
-    SUPPORTED = {".txt", ".md", ".markdown", ".csv", ".log", ".json", ".yaml", ".yml"}
+    SUPPORTED = {".txt", ".md", ".markdown", ".log", ".json", ".yaml", ".yml"}
 
     def can_parse(self, path: Path) -> bool:
         return path.suffix.lower() in self.SUPPORTED
 
     def parse(self, path: Path, **kw) -> ParseResult | None:
         try:
-            return ParseResult(path.read_text(encoding="utf-8", errors="replace"), self.name)
+            content = path.read_text(encoding="utf-8", errors="replace")
+            if not content.strip():
+                return None
+            return ParseResult(success=True, content_markdown=content,
+                              metadata={"parser": self.name})
         except Exception:
             return None
 
 
-# ---- image fallback (description placeholder; vision/ocr would slot here) ----
-class ImageParser:
-    name = "image-fallback"
-    SUPPORTED = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
-
-    def can_parse(self, path: Path) -> bool:
-        return path.suffix.lower() in self.SUPPORTED
-
-    def parse(self, path: Path, **kw) -> ParseResult | None:
-        # No vision/ocr engine wired in this build; emit a minimal descriptor so
-        # the image is still traceable. Real deploy slots vision(主)→ocr(次) here.
-        from ..utils.paths import sha256_file
-        try:
-            size = path.stat().st_size
-            digest = sha256_file(path)[:16]
-        except OSError:
-            return None
-        text = (
-            f"# Image: {path.name}\n\n"
-            f"- filename: {path.name}\n"
-            f"- size_bytes: {size}\n"
-            f"- sha256_prefix: {digest}\n\n"
-            f"_No vision/OCR engine configured; stored as image descriptor._\n"
-        )
-        return ParseResult(text, self.name)
-
-
-# Fallback chains grouped by format (PRIN-ING-5 default chain).
-_RICHDOC = [MinerUParser(), MarkitdownParser()]
-_SPREADSHEET = [MarkitdownParser()]
-_IMAGE = [ImageParser()]
-_TEXT = [TextParser()]
+# Fallback chains (PRIN-ING-5)
+_CHAINS: dict[str, list] = {
+    ".xlsx": [ExcelParser()],
+    ".xls":  [ExcelParser()],
+    ".csv":  [CsvParser()],
+    ".pdf":  [MinerUParser(), MarkitdownParser()],
+    ".docx": [MinerUParser(), MarkitdownParser()],
+    ".pptx": [MinerUParser(), MarkitdownParser()],
+    ".png":  [VisionParser()],
+    ".jpg":  [VisionParser()],
+    ".jpeg": [VisionParser()],
+    ".gif":  [VisionParser()],
+    ".webp": [VisionParser()],
+    ".bmp":  [VisionParser()],
+    ".tiff": [VisionParser()],
+    ".html": [MarkitdownParser(), TextParser()],
+    ".htm":  [MarkitdownParser(), TextParser()],
+}
 
 
 def _chain_for(path: Path) -> list:
-    ext = path.suffix.lower()
-    if ext in {".pdf", ".docx", ".pptx"}:
-        return _RICHDOC
-    if ext in {".xlsx", ".xls"}:
-        return _SPREADSHEET
-    if ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}:
-        return _IMAGE
-    if ext in {".txt", ".md", ".markdown", ".csv", ".log", ".json", ".yaml", ".yml", ".html", ".htm"}:
-        # html best handled by markitdown; csv/text by TextParser
-        if ext in {".html", ".htm"}:
-            return [MarkitdownParser(), TextParser()]
-        return _TEXT
-    return [MarkitdownParser(), TextParser()]  # generic best-effort
+    return _CHAINS.get(path.suffix.lower(), [TextParser()])
 
 
 def parse_file(path: str | Path, **kw) -> ParseResult:
-    """Run the fallback chain. Returns a ParseResult; .ok=False means rejected."""
     p = Path(path)
     chain = _chain_for(p)
-    attempts = []
     for parser in chain:
         if not parser.can_parse(p):
             continue
         try:
             res = parser.parse(p, **kw)
-        except Exception as e:
-            attempts.append(f"{parser.name}: {e}")
+        except Exception:
             continue
         if res and res.ok:
             return res
-        attempts.append(f"{parser.name}: empty")
-    # All failed — reject Phase 2 (PRIN-ING-5)
-    return ParseResult("", "none", ok=False)
+    return ParseResult(success=False,
+                      skipped_reason="all parsers failed for " + str(Path(path).name) + "; cannot enter Phase 2 (PRIN-ING-5)")

@@ -11,7 +11,7 @@ import yaml
 
 from ..utils import frontmatter as fm
 from ..utils.response import error, success, warning
-from ..utils.paths import atomic_write_text, gen_uid, now_ts
+from ..utils.paths import atomic_write_text, gen_uid, now_ts, safe_slug, safe_node_path
 from ..utils.wiki import find_node_md, resolve_wiki
 
 
@@ -56,24 +56,35 @@ def _list_create(args) -> dict:
     uid = gen_uid()
     ts = now_ts()
 
+    try:
+        if getattr(args, "node_path", ""):
+            node_path = safe_node_path(args.node_path)
+        else:
+            node_path = safe_slug(args.title)
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
+
     frontmatter = {
         "uid": uid,
         "title": args.title,
         "layer": "List",
         "dimension": args.dimension,
+        "node_path": node_path,
+        "split_index": 1,
+        "parent_uid": uid,
         "created_at": ts,
         "updated_at": ts,
     }
 
-    md_path = ctx.list_dir / f"{uid}.md"
+    md_path = ctx.list_dir / f"{node_path}.md"
     body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
     atomic_write_text(md_path, fm.render(frontmatter, body))
 
     return success(
         {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_items],
-         "dimension": args.dimension},
+         "dimension": args.dimension, "node_path": node_path},
         f"created Node_List {uid} with {len(member_items)} member(s)",
-        hints=[f"nodes/list/{uid}.md"],
+        hints=[f"nodes/list/{node_path}.md"],
     )
 
 
@@ -82,16 +93,18 @@ def _list_show(args) -> dict:
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
-    md_path = ctx.list_dir / f"{args.uid}.md"
-    if not md_path.exists():
+    frontmatter, body = None, ""
+    for p in ctx.list_dir.glob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, bd = fm.parse(text)
+            if fm_dict.get("uid") == args.uid:
+                frontmatter, body = fm_dict, bd
+                break
+        except Exception:
+            continue
+    if frontmatter is None:
         return error(f"List not found: {args.uid}", "ListNotFound")
-
-    try:
-        text = md_path.read_text(encoding="utf-8")
-    except Exception as e:
-        return error(f"failed to read List file: {e}", "ReadError")
-
-    frontmatter, body = fm.parse(text)
     members = []
     if body.strip():
         try:
@@ -148,23 +161,34 @@ def _report_create(args) -> dict:
     uid = gen_uid()
     ts = now_ts()
 
+    try:
+        if getattr(args, "node_path", ""):
+            node_path = safe_node_path(args.node_path)
+        else:
+            node_path = safe_slug(args.title)
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
+
     frontmatter = {
         "uid": uid,
         "title": args.title,
         "layer": "Report",
         "references": ref_meta,
+        "node_path": node_path,
+        "split_index": 1,
+        "parent_uid": uid,
         "created_at": ts,
         "updated_at": ts,
     }
 
-    md_path = ctx.report_dir / f"{uid}.md"
+    md_path = ctx.report_dir / f"{node_path}.md"
     atomic_write_text(md_path, fm.render(frontmatter, args.body or ""))
 
     return success(
         {"uid": uid, "layer": "Report", "references": [r["uid"] for r in ref_meta],
          "ref_count": len(ref_meta)},
         f"created Node_Report {uid} with {len(ref_meta)} evidence link(s)",
-        hints=[f"nodes/report/{uid}.md"],
+        hints=[f"nodes/report/{node_path}.md"],
     )
 
 
@@ -173,16 +197,18 @@ def _report_show(args) -> dict:
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
-    md_path = ctx.report_dir / f"{args.uid}.md"
-    if not md_path.exists():
+    frontmatter, body = None, ""
+    for p in ctx.report_dir.glob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, bd = fm.parse(text)
+            if fm_dict.get("uid") == args.uid:
+                frontmatter, body = fm_dict, bd
+                break
+        except Exception:
+            continue
+    if frontmatter is None:
         return error(f"Report not found: {args.uid}", "ReportNotFound")
-
-    try:
-        text = md_path.read_text(encoding="utf-8")
-    except Exception as e:
-        return error(f"failed to read Report file: {e}", "ReadError")
-
-    frontmatter, body = fm.parse(text)
     references = frontmatter.get("references", [])
     dangling = [r["uid"] for r in references if not find_node_md(ctx, r["uid"])]
     data = {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),

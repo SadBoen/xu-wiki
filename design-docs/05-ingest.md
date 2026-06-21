@@ -80,9 +80,11 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 回退链按文件格式分组(同一格式内按优先级串联,失败自动回退,末尾兜底为「不解析直接存」)。当前默认回退链:
 
 - PDF / DOCX / PPTX → minerU(主) → markitdown(次) → 兜底
-- XLSX → markitdown(主) → excel(次) → 兜底
+- XLSX / XLS → excel(主) → 兜底（openpyxl → YAML list of dicts）
 - 图片 → vision(主) → ocr(次) → 兜底
-- 文本/Markdown/CSV → 单一解析器即可
+- CSV → csv(主) → 兜底（csv.reader → YAML list of dicts）
+- 文本/Markdown → text(主)
+- HTML → markitdown(主) → text(次) → 兜底
 
 **事实锚点**:主矿换引擎(比如未来加 PaddleOCR、Unstructured、docling)不需要重写设计,只更新 [CONST-ING-1] 的「当前默认」表即可——架构本身不绑死任何具体引擎。
 
@@ -364,19 +366,22 @@ Page 一旦写入，**commit 命令绝不修改 Markdown 内容**。发现错误
 |---|---|
 | 纯文本 / Markdown | 纯文本 |
 | 富文档（PDF / Office / HTML 等） | markdown |
-| 图片 | markdown（图像描述，作为 fallback） |
+| 图片 | YAML list of dicts（gallery，每项含 filename/size/width/height） |
 | 扫描件（图片型 PDF / 扫描图） | markdown（OCR 文本） |
 | 高质量结构化提取（含表格/公式） | markdown |
-| 表格文件（CSV / 电子表格） | markdown table |
+| 表格文件（CSV / 电子表格） | YAML list of dicts（每行为一个 dict） |
 
 原则：**解析路由可扩展，但「必须先有解析结果才能进 Phase 2」这条不可破**（[PRIN-ING-5]）。失败时按优先级 fallback 到下一候选解析器。
 
 **当前默认引擎事实锚点**（与 [PRIN-ING-5] 的回退链对应）:
 
 - **minerU**:主引擎,云 API 形态(需要联网 + API Key;Key 缺失则静默回退,这是设计行为不是 bug)。承担高质量结构化提取(表格/公式/扫描件 OCR)。
-- **markitdown**:本地 fallback,不依赖网络、不烧 API、覆盖 PDF/DOCX/PPTX/XLSX/HTML。适合离线或 minerU 不可用场景。
+- **markitdown**:本地 fallback,不依赖网络、不烧 API、覆盖 PDF/DOCX/PPTX/HTML。适合离线或 minerU 不可用场景。（XLSX/CSV/图片已由专用解析器接管。）
 - **vision / ocr**:图片类文件双引擎,vision 优先。
-- **excel / csv / text**:专用解析器,单一即可,无回退。
+- **excel**:openpyxl → YAML list of dicts，多 sheet 时每 sheet 输出 `## Sheet: {name}` + YAML。
+- **csv**:csv.reader → YAML list of dicts，每行为一个 dict。
+- **vision**:PIL/EXIF → YAML list of dicts，gallery 内容类型专用。
+- **text**:纯文本，读取文件内容作为 markdown。
 
 **未来加引擎的路径**:把新解析器文件丢到用户级扩展目录(或注册为内置),满足 [PRIN-ING-5] 的签名即可。引擎名 / 优先级 / 适用扩展名 = 改 [PRIN-ING-5] 表格事实层的事实,不改设计。
 

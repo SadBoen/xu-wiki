@@ -69,8 +69,9 @@ def test_list_create_body_is_yaml_list(wiki):
     ))
     assert r["status"] == "success", r
     list_uid = r["data"]["uid"]
+    node_path = "my-list"
 
-    text = (ctx.list_dir / f"{list_uid}.md").read_text()
+    text = (ctx.list_dir / f"{node_path}.md").read_text()
     _, body = fm_parse(text)
     body = body.strip()
     assert body.startswith("- "), f"body should be YAML list, got: {body[:60]}"
@@ -94,15 +95,17 @@ def test_list_create_frontmatter_has_no_members_array(wiki):
                             dimension="by-type", members="PAGE0001"))
     assert r["status"] == "success"
     list_uid = r["data"]["uid"]
+    node_path = "list-no-members"
 
-    text = (ctx.list_dir / f"{list_uid}.md").read_text()
+    text = (ctx.list_dir / f"{node_path}.md").read_text()
     frontmatter, _ = fm_parse(text)
     assert "members" not in frontmatter
     assert frontmatter["uid"] == list_uid
     assert frontmatter["title"] == "List No Members"
     assert frontmatter["dimension"] == "by-type"
     assert frontmatter["layer"] == "List"
-
+    assert frontmatter["split_index"] == 1
+    assert frontmatter["parent_uid"] == list_uid
 
 # ---------------------------------------------------------------------------
 # List show
