@@ -50,7 +50,7 @@ def _global_config() -> Path:
 
 
 CRITICAL = {"cli_on_path", "python_version", "skill_bundle_readable",
-            "global_dir_writable", "agent_skill_deployed"}
+            "global_dir_writable"}
 
 
 def _check_cli_on_path() -> dict:

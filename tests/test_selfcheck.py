@@ -200,10 +200,11 @@ def test_agent_skill_deployed_env_var_not_deployed(xu_home, monkeypatch):
     assert check["missing"][0]["agent"] == "custom"
 
 
-def test_agent_skill_deployed_is_critical_check():
-    """Bug 4: agent_skill_deployed must be in CRITICAL — without this the
-    check failure wouldn't block success."""
-    assert "agent_skill_deployed" in cmd_mod.CRITICAL
+def test_agent_skill_deployed_is_non_critical():
+    """agent_skill_deployed is non-critical — deployment is a post-install
+    step, not an installation-success criterion. Check failure returns
+    warning (not error) and surfaces next_actions."""
+    assert "agent_skill_deployed" not in cmd_mod.CRITICAL
 
 
 # ----------------------------------------------------------------------
@@ -281,15 +282,17 @@ def test_critical_failure_returns_error(xu_home, monkeypatch):
     assert "skill_bundle_readable" in r["data"]["failed_critical"]
 
 
-def test_agent_skill_not_deployed_returns_error(xu_home, monkeypatch):
-    """Bug 4: agent_skill_deployed failure → status=error (critical)."""
-    _all_ok_patcher.__wrapped__ if hasattr(_all_ok_patcher, '__wrapped__') else None
-    # Don't apply the all_ok patcher — let it actually run.
-    # But since the test env has no ~/.hermes/skills/xu-wiki/SKILL.md,
-    # it will fail; we want it to fail with status=error.
+def test_agent_skill_not_deployed_returns_warning(xu_home, monkeypatch):
+    """agent_skill_deployed failure is non-critical → status=warning (not error).
+
+    Deploying the skill to an agent is a separate post-install step,
+    not an installation-success criterion. The check still runs and
+    surfaces actionable next_actions, but does not make selfcheck fail.
+    """
     r = cmd_mod.cmd_selfcheck(_args())
-    assert r["status"] == "error"
-    assert "agent_skill_deployed" in r["data"]["failed_critical"]
+    assert r["status"] == "warning"
+    assert "agent_skill_deployed" in r["data"]["failed_noncritical"]
+    assert any("deploy" in a.lower() for a in r["data"]["next_actions"])
 
 
 def test_non_critical_failure_returns_warning(xu_home, monkeypatch):
@@ -366,6 +369,9 @@ def test_selfcheck_next_actions_empty_when_all_green(xu_home, monkeypatch):
                                  "hint": "fallback"})
     monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
                         lambda: {"ok": True, "path": "/tmp/xu", "hint": "writable"})
+    monkeypatch.setattr(cmd_mod, "_check_agent_skill_deployed",
+                        lambda: {"ok": True, "found": [{"agent": "hermes", "path": "/fake"}],
+                                 "missing": [], "hint": "deployed"})
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "success"
     assert r["data"]["next_actions"] == []
