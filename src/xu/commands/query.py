@@ -7,6 +7,7 @@ nodes: DB metadata query (read-only, no ripgrep).
 """
 from __future__ import annotations
 
+import yaml
 from pathlib import Path
 
 from ..ingest.relations_lru import list_relations, touch_relation
@@ -229,9 +230,14 @@ def _build_hints(ctx, hit_uids: list[str]) -> tuple[list, str | None]:
     if list_dir.is_dir():
         for p in list_dir.glob("*.md"):
             try:
-                fm_dict, _ = fm.parse(p.read_text(encoding="utf-8", errors="replace"))
-                members = fm_dict.get("members", [])
-                if any(m.get("uid") in hit_set for m in members):
+                fm_dict, body = fm.parse(p.read_text(encoding="utf-8", errors="replace"))
+                members = []
+                if body.strip():
+                    try:
+                        members = yaml.safe_load(body) or []
+                    except yaml.YAMLError:
+                        members = []
+                if any(isinstance(m, dict) and m.get("uid") in hit_set for m in members):
                     list_hint.append(fm_dict.get("uid", p.stem))
             except Exception:
                 continue

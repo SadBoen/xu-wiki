@@ -171,7 +171,7 @@ create 全程确定性逻辑：路径校验、目录创建、DB schema 注册、
 | 节点类型 | 层级字段值 | 文件位置 | 创建命令 |
 |---|---|---|---|
 | **Node_Page** | `Page` | `nodes/page/<按层级分区>/<slug>.md` | `ingest-commit` |
-| **Node_List** | `List` | `nodes/list/<uid>.md`（frontmatter + 对比表格） | `list create` |
+| **Node_List** | `List` | `nodes/list/<uid>.md`（frontmatter + YAML list） | `list create` |
 | **Node_Report** | `Report` | `nodes/report/<uid>.md`（frontmatter + 正文） | `report create` |
 
 create 命令本身不创建节点——但必须为三种类型预留 schema。

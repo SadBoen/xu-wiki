@@ -33,7 +33,7 @@
 | 层 | 名称 | 职责 | 可变性 | 命令 |
 |---|---|---|---|---|
 | **L1** | **Node_Page** | 物理事实切片、原文留痕 | **不可变**（修订走 patches 表） | `ingest-commit` |
-| **L2** | **Node_List** | 横向聚合、对比表格 | 可改 | `list create` |
+| **L2** | **Node_List** | 横向聚合、YAML list 成员 | 可改 | `list create` |
 | **L3** | **Node_Report** | 逻辑推演、因果总结 | 可改、可重建 | `report create` |
 
 **职责分离**：
