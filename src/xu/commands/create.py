@@ -94,7 +94,6 @@ def _build_skeleton(target: Path, name: str) -> None:
     (target / "nodes" / "page").mkdir(parents=True)
     (target / "nodes" / "list").mkdir(parents=True)
     (target / "nodes" / "report").mkdir(parents=True)
-    (target / "nodes" / "pending").mkdir(parents=True)
     (target / ".xu").mkdir(parents=True)
 
     # wiki marker (CONST-CRT-1)
@@ -192,7 +191,7 @@ def cmd_create(args) -> dict:
         "name": name,
         "path": str(target),
         "version": WIKI_FORMAT_VERSION,
-        "layout": ["raws/", "nodes/page/", "nodes/list/", "nodes/report/", "nodes/pending/", ".xu/"],
+        "layout": ["raws/", "nodes/page/", "nodes/list/", "nodes/report/", ".xu/"],
         "tables": ["nodes", "patches", "idf", "relations", "evidence", "list_members"],
     }
     if alias_warning:

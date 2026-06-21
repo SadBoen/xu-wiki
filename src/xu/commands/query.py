@@ -61,7 +61,7 @@ def cmd_query(args) -> dict:
         for h in hits:
             by_file.setdefault(h["file"], []).append((kw, h))
 
-    # Map md file -> uid (skip inactive/pending: pending dir not searched anyway)
+    # Map md file -> uid (skip inactive nodes)
     uid_cache: dict[str, dict] = {}
 
     def lookup_node(file_path: str) -> dict | None:
