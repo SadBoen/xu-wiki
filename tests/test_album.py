@@ -98,15 +98,19 @@ def test_album_happy_table(wiki, tmp_path):
     assert [i["filename"] for i in items] == ["001.jpeg", "002.jpeg", "003.jpeg"]
     assert items[0]["raw_rel_path"] == "raws/船舶/SGW001/照片/001.jpeg"
 
-    # attrs.album.sources stored: verify via SQL (raw JSON column)
+    # attrs.album.sources stored: verify via frontmatter
     ctx = resolve_wiki(name)
-    conn = ctx.connect()
-    row = conn.execute(
-        "SELECT attrs FROM nodes WHERE uid=?", (data["uid"],),
-    ).fetchone()
-    conn.close()
-    assert row is not None
-    attrs_obj = json.loads(row["attrs"])
+    found = None
+    for p in ctx.page_dir.rglob("*.md"):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        fd, _ = fm.parse(text)
+        if fd.get("uid") == data["uid"]:
+            found = p
+            break
+    assert found is not None, f"node {data['uid']} not found in {ctx.page_dir}"
+    text = found.read_text(encoding="utf-8")
+    fd, _ = fm.parse(text)
+    attrs_obj = fd.get("attrs", {})
     assert attrs_obj["album"]["layout"] == "table"
     assert attrs_obj["album"]["count"] == 3
     assert attrs_obj["album"]["vision"] is False
@@ -298,10 +302,16 @@ def test_album_vision_flag_recorded(wiki, tmp_path):
     assert body.startswith("- filename:")
     # attrs.album.vision stored for backend to pick up later
     ctx = resolve_wiki(name)
-    conn = ctx.connect()
-    row = conn.execute("SELECT attrs FROM nodes WHERE uid=?", (r["data"]["uid"],)).fetchone()
-    conn.close()
-    attrs_obj = json.loads(row["attrs"])
+    found = None
+    for p in ctx.page_dir.rglob("*.md"):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        fd, _ = fm.parse(text)
+        if fd.get("uid") == r["data"]["uid"]:
+            found = p
+            break
+    assert found is not None
+    fd, _ = fm.parse(found.read_text(encoding="utf-8"))
+    attrs_obj = fd.get("attrs", {})
     assert attrs_obj["album"]["vision"] is True
     # hint surfaces the deferred-caption expectation
     assert any("vision" in h for h in r["hints"])
@@ -380,14 +390,19 @@ def test_resolve_wiki_after_album_creation(wiki, tmp_path):
         layout="table", vision=False, captions="", author="tester",
     ))
     assert r["status"] == "success", r
-    # Re-resolve and confirm the L1 is queryable via raw SQL
-    conn = ctx.connect()
-    row = conn.execute(
-        "SELECT uid, title, layer, content_type FROM nodes WHERE title=?",
-        ("resolve test",),
-    ).fetchone()
-    conn.close()
-    assert row is not None
-    assert row["title"] == "resolve test"
-    assert row["layer"] == "Page"
-    assert row["content_type"] == "gallery"
+    # Re-resolve and confirm the L1 is queryable via frontmatter
+    ctx2 = resolve_wiki(name)
+    assert ctx2 is not None
+    uid = r["data"]["uid"]
+    found = None
+    for p in ctx2.page_dir.rglob("*.md"):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        fd, _ = fm.parse(text)
+        if fd.get("uid") == uid:
+            found = p
+            break
+    assert found is not None, f"node {uid} not found"
+    fd, _ = fm.parse(found.read_text(encoding="utf-8"))
+    assert fd.get("title") == "resolve test"
+    assert fd.get("layer") == "Page"
+    assert fd.get("content_type") == "gallery"

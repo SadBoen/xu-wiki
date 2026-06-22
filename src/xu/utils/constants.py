@@ -20,6 +20,9 @@ FM_SOURCE_HASH = "source_hash"
 FM_SPLIT_INDEX = "split_index"
 FM_PARENT_UID = "parent_uid"
 FM_RELATIONS = "relations"    # YAML list of {to_uid, relation_name, comment, created_at}
+FM_PATCHES = "patches"        # YAML list of {version, op, delta, author, created_at}
+FM_EVIDENCE = "evidence"       # YAML list of {ref_uid, note} on Report nodes
+FM_MEMBERS = "members"        # YAML list of {uid, note, position} on List nodes
 
 REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_CONTENT_TYPE, FM_ACTIVE, FM_CREATED, FM_CONTENT_HASH]
 

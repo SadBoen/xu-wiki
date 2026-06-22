@@ -29,19 +29,20 @@ from ..ingest.splitter import extract_nouns
 from ..parsers.image_meta import read_image_meta
 from ..utils import frontmatter as fm
 from ..utils.paths import safe_slug, safe_node_path
-from ..utils.db import idf_increment
 from ..utils.constants import (
     FM_ACTIVE,
     FM_CONTENT_HASH,
     FM_CREATED,
     FM_LAYER,
     FM_NODE_PATH,
+    FM_PATCHES,
     FM_SOURCE_HASH,
     FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
     IDF_CONSTANT,
 )
+from ..utils.idf import increment_idf
 from ..utils.paths import (
     atomic_write_text,
     gen_uid,
@@ -93,6 +94,12 @@ def _render_body(rows: list[dict[str, Any]]) -> str:
             item["caption"] = r["caption"]
         items.append(item)
     return yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+
+def _scan_fm_index(ctx) -> tuple[dict, dict]:
+    """Scan all Page frontmatter files. Returns (source_hash_map, content_hash_map)."""
+    from ..commands.ingest import _scan_fm_index as _scan
+    return _scan(ctx)
 
 
 def cmd_ingest_album(args) -> dict:
@@ -189,66 +196,52 @@ def cmd_ingest_album(args) -> dict:
             "caption": captions.get(src.name, ""),
         })
 
-    conn = ctx.connect()
-    try:
-        # Level-2 dedup (CONST-ING-3): any source_hash already in DB
-        # (single Page or another album) → album rejected (BAN-ING-4)
-        collides: list[dict[str, Any]] = []
-        for r in rows:
-            dup = conn.execute(
-                "SELECT uid, title, layer, active FROM nodes "
-                "WHERE source_hash=? LIMIT 1",
-                (r["source_hash"],),
-            ).fetchone()
-            if dup:
-                collides.append({
-                    "filename": r["filename"],
-                    "source_hash": r["source_hash"],
-                    "existing_uid": dup["uid"],
-                    "existing_title": dup["title"],
-                    "existing_layer": dup["layer"],
-                    "existing_active": bool(dup["active"]),
-                })
-        if collides:
-            return warning(
-                {"collisions": collides, "checked": len(rows),
-                 "wiki": args.wiki, "title": args.title},
-                f"{len(collides)} source file(s) already ingested; album rejected (BAN-ING-4)",
-                hints=[
-                    "remove colliding files from --files, or use 'revise' to update the existing node",
-                    "an album cannot reuse a source_hash (CONST-ING-3 Level-2)",
-                ],
-            )
+    # Level-2 dedup (CONST-ING-3): scan frontmatter for existing source_hash
+    source_index, _ = _scan_fm_index(ctx)
+    collides: list[dict[str, Any]] = []
+    for r in rows:
+        sh = r["source_hash"]
+        if sh in source_index:
+            existing_uid, existing_title, existing_active = source_index[sh]
+            collides.append({
+                "filename": r["filename"],
+                "source_hash": sh,
+                "existing_uid": existing_uid,
+                "existing_title": existing_title,
+                "existing_layer": "Page",
+                "existing_active": existing_active,
+            })
+    if collides:
+        return warning(
+            {"collisions": collides, "checked": len(rows),
+             "wiki": args.wiki, "title": args.title},
+            f"{len(collides)} source file(s) already ingested; album rejected (BAN-ING-4)",
+            hints=[
+                "remove colliding files from --files, or use 'revise' to update the existing node",
+                "an album cannot reuse a source_hash (CONST-ING-3 Level-2)",
+            ],
+        )
 
-        body = _render_body(rows)
-        content_hash = sha256_text(body)
+    body = _render_body(rows)
+    content_hash = sha256_text(body)
 
-        uid = gen_uid()
-        base_slug = safe_slug(args.title)
-        slug = f"{base_slug}-{uid}"
-        ts = now_ts()
+    uid = gen_uid()
+    base_slug = safe_slug(args.title)
+    slug = f"{base_slug}-{uid}"
+    ts = now_ts()
 
-        frontmatter = {
-            FM_UID: uid,
-            FM_TITLE: args.title,
-            FM_LAYER: "Page",
-            FM_CONTENT_TYPE: ALBUM_CONTENT_TYPE,
-            FM_ACTIVE: True,
-            FM_CREATED: ts,
-            FM_CONTENT_HASH: content_hash,
-            FM_NODE_PATH: node_path,
-        }
-        if rows:
-            frontmatter[FM_SOURCE_HASH] = rows[0]["source_hash"]
-
-        rel_md = (Path("nodes") / "page" / Path(node_path) / f"{slug}.md") \
-            if node_path else Path("nodes") / "page" / f"{slug}.md"
-        md_path = ctx.root / rel_md
-        md_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(md_path, fm.render(frontmatter, body))
-
-        primary_raw = str(Path("raws") / Path(node_path)) if node_path else "raws"
-        attrs = json.dumps({
+    frontmatter = {
+        FM_UID: uid,
+        FM_TITLE: args.title,
+        FM_LAYER: "Page",
+        FM_CONTENT_TYPE: ALBUM_CONTENT_TYPE,
+        FM_ACTIVE: True,
+        FM_CREATED: ts,
+        FM_CONTENT_HASH: content_hash,
+        FM_NODE_PATH: node_path,
+        FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
+                      "author": args.author or "agent", "created_at": ts}],
+        "attrs": {
             "album": {
                 "layout": layout,
                 "count": len(rows),
@@ -266,56 +259,42 @@ def cmd_ingest_album(args) -> dict:
                     for r in rows
                 ],
             },
-        }, ensure_ascii=False)
+        },
+    }
+    if rows:
+        frontmatter[FM_SOURCE_HASH] = rows[0]["source_hash"]
 
-        conn.execute(
-            "INSERT INTO nodes(uid, layer, content_type, title, node_path, slug, "
-            "rel_md_path, raw_path, content_hash, source_hash, active, "
-            "attrs, created_at, updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,1,?,?,?)",
-            (uid, "Page", ALBUM_CONTENT_TYPE, args.title, node_path, slug,
-             str(rel_md).replace("\\", "/"), primary_raw.replace("\\", "/"),
-             content_hash, rows[0]["source_hash"] if rows else None,
-             attrs, ts, ts),
-        )
-        # patches v1 (PRIN-ING-10, CONST-ING-7)
-        conn.execute(
-            "INSERT INTO patches(page_uid, version, op, delta, author, created_at) "
-            "VALUES(?,1,'create',?,?,?)",
-            (uid, content_hash, args.author, ts),
-        )
-        # IDF incremental (PRIN-ING-9, CONST-ING-6)
-        idf_increment(conn, body, extract_nouns_fn=extract_nouns, constant=IDF_CONSTANT)
+    rel_md = (Path("nodes") / "page" / Path(node_path) / f"{slug}.md") \
+        if node_path else Path("nodes") / "page" / f"{slug}.md"
+    md_path = ctx.root / rel_md
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(md_path, fm.render(frontmatter, body))
 
-        conn.commit()
+    # IDF incremental (PRIN-ING-9, CONST-ING-6)
+    increment_idf(ctx, extract_nouns(body))
 
-        data = {
-            "uid": uid,
-            "title": args.title,
-            "node_path": node_path,
-            "layout": layout,
-            "count": len(rows),
-            "md_path": str(rel_md).replace("\\", "/"),
-            "sources": [
-                {k: r[k] for k in
-                 ("filename", "source_hash", "raw_rel_path",
-                  "width", "height", "gps", "captured")}
-                for r in rows
-            ],
-        }
-        hints = ["read by UID to view; revise to update captions"]
-        if vision:
-            hints.append(
-                "vision intent was set; per-photo captions will be added "
-                "when a vision backend is configured"
-            )
-        return success(
-            data,
-            f"album committed: {len(rows)} photos → 1 Node_Page (L1, content_type={ALBUM_CONTENT_TYPE})",
-            hints=hints,
+    data = {
+        "uid": uid,
+        "title": args.title,
+        "node_path": node_path,
+        "layout": layout,
+        "count": len(rows),
+        "md_path": str(rel_md).replace("\\", "/"),
+        "sources": [
+            {k: r[k] for k in
+             ("filename", "source_hash", "raw_rel_path",
+              "width", "height", "gps", "captured")}
+            for r in rows
+        ],
+    }
+    hints = ["read by UID to view; revise to update captions"]
+    if vision:
+        hints.append(
+            "vision intent was set; per-photo captions will be added "
+            "when a vision backend is configured"
         )
-    except Exception as e:
-        conn.rollback()
-        return error(f"album commit failed, rolled back: {e}", type(e).__name__)
-    finally:
-        conn.close()
+    return success(
+        data,
+        f"album committed: {len(rows)} photos → 1 Node_Page (L1, content_type={ALBUM_CONTENT_TYPE})",
+        hints=hints,
+    )

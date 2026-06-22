@@ -13,7 +13,8 @@ from pathlib import Path
 from ..ingest.splitter import extract_nouns
 from ..ingest.relations_lru import list_relations
 from ..utils import frontmatter as fm
-from ..utils.constants import IDF_CONSTANT, MAX_EDGES, REQUIRED_FM_FIELDS
+from ..utils.constants import IDF_CONSTANT, FM_EVIDENCE, FM_MEMBERS, FM_PATCHES, MAX_EDGES, REQUIRED_FM_FIELDS
+from ..utils.idf import load_idf, dump_idf
 from ..utils.paths import now_ts, sha256_text
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
@@ -89,13 +90,23 @@ def cmd_doctor(args) -> dict:
             "doctor-node-path-organization": _check_node_path_organization,
         }
         if kind in ("doctor", "doctor-all"):
-            report = {fn_name: fn(ctx, conn, fix) for fn_name, fn in checks.items()}
+            report = {}
+            for fn_name, fn in checks.items():
+                if fn_name in ("doctor-report-evidence", "doctor-idf"):
+                    report[fn_name] = fn(ctx, fix)
+                else:
+                    report[fn_name] = fn(ctx, conn, fix)
             conn.commit()
             summary = _summarize(report)
             data = {"checks": report, "fix_applied": fix, **summary}
             # re-check after fix to verify repairs actually worked (CONST-DOC-8)
             if fix:
-                recheck = {fn_name: fn(ctx, conn, False) for fn_name, fn in checks.items()}
+                recheck = {}
+                for fn_name, fn in checks.items():
+                    if fn_name in ("doctor-report-evidence", "doctor-idf"):
+                        recheck[fn_name] = fn(ctx, False)
+                    else:
+                        recheck[fn_name] = fn(ctx, conn, False)
                 post = _summarize(recheck)
                 data["post_fix"] = {"residual_issues": post["total_issues"],
                                     "by_layer": post["by_layer"]}
@@ -111,12 +122,19 @@ def cmd_doctor(args) -> dict:
         fn = checks.get(kind)
         if not fn:
             return error(f"unknown doctor check: {kind}", "UnknownCheck")
-        r = fn(ctx, conn, fix)
+        if kind in ("doctor-report-evidence", "doctor-idf"):
+            r = fn(ctx, fix)
+        else:
+            r = fn(ctx, conn, fix)
         conn.commit()
         summary = _summarize({kind: r})
         data = {kind: r, "fix_applied": fix, **summary}
         if fix:
-            post = _summarize({kind: fn(ctx, conn, False)})
+            if kind in ("doctor-report-evidence", "doctor-idf"):
+                post_r = fn(ctx, False)
+            else:
+                post_r = fn(ctx, conn, False)
+            post = _summarize({kind: post_r})
             data["post_fix"] = {"residual_issues": post["total_issues"],
                                 "by_layer": post["by_layer"]}
         status = success if summary["total_issues"] == 0 else warning
@@ -204,60 +222,80 @@ def _check_l1_immutable(ctx, conn, fix) -> dict:
             "note": "L1 mismatches are reported only; manual review required (BAN-DOC-5)"}
 
 
-def _check_report_evidence(ctx, conn, fix) -> dict:
+def _check_report_evidence(ctx, fix) -> dict:
     """Every Report must have >=1 evidence ref, no dangling refs (CONST-DOC-3).
 
-    --fix is mechanical: removes dangling / inactive refs from the evidence table.
+    --fix is mechanical: removes dangling / inactive refs from Report frontmatter.
     It does NOT delete the Report itself (BAN-DOC-6: LLM推理成果不自动删).
     A Report with zero evidence is reported but NOT auto-deleted.
     """
     issues = []
     fixed = []
-    reports = conn.execute("SELECT uid FROM nodes WHERE layer='Report'").fetchall()
-    for r in reports:
-        refs = conn.execute("SELECT ref_uid FROM evidence WHERE report_uid=?", (r["uid"],)).fetchall()
-        if not refs:
-            issues.append({"report_uid": r["uid"], "problem": "report with zero evidence (BAN-ARCH-5)",
+
+    uid_active: dict[str, bool] = {}
+    for _, fd, _ in _all_frontmatter_nodes(ctx):
+        uid = fd.get("uid")
+        if uid:
+            uid_active[uid] = fd.get("active", True)
+
+    for md_path, fd, _ in _all_frontmatter_nodes(ctx):
+        if fd.get("layer") != "Report":
+            continue
+        uid = fd.get("uid")
+        evidence_list = fd.get(FM_EVIDENCE, [])
+        if not evidence_list:
+            issues.append({"report_uid": uid, "problem": "report with zero evidence (BAN-ARCH-5)",
                            "layer": "L3", "fixable": False})
             continue
-        for ref in refs:
-            target = conn.execute("SELECT active FROM nodes WHERE uid=?", (ref["ref_uid"],)).fetchone()
-            if not target:
-                issues.append({"report_uid": r["uid"], "problem": "dangling evidence ref",
-                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": True})
+        to_remove = []
+        for ref in evidence_list:
+            ref_uid = ref.get("ref_uid") if isinstance(ref, dict) else ref
+            active = uid_active.get(ref_uid)
+            if active is None:
+                issues.append({"report_uid": uid, "problem": "dangling evidence ref",
+                               "ref_uid": ref_uid, "layer": "L3", "fixable": True})
                 if fix:
-                    conn.execute("DELETE FROM evidence WHERE report_uid=? AND ref_uid=?",
-                                 (r["uid"], ref["ref_uid"]))
-                    fixed.append({"report_uid": r["uid"], "ref_uid": ref["ref_uid"],
+                    to_remove.append(ref)
+                    fixed.append({"report_uid": uid, "ref_uid": ref_uid,
                                   "action": "removed dangling ref"})
-            elif not target["active"]:
-                issues.append({"report_uid": r["uid"], "problem": "evidence ref points to inactive node",
-                               "ref_uid": ref["ref_uid"], "layer": "L3", "fixable": True})
+            elif not active:
+                issues.append({"report_uid": uid, "problem": "evidence ref points to inactive node",
+                               "ref_uid": ref_uid, "layer": "L3", "fixable": True})
                 if fix:
-                    conn.execute("DELETE FROM evidence WHERE report_uid=? AND ref_uid=?",
-                                 (r["uid"], ref["ref_uid"]))
-                    fixed.append({"report_uid": r["uid"], "ref_uid": ref["ref_uid"],
+                    to_remove.append(ref)
+                    fixed.append({"report_uid": uid, "ref_uid": ref_uid,
                                   "action": "removed ref to inactive node"})
+        if fix and to_remove:
+            for ref in to_remove:
+                evidence_list.remove(ref)
+            text = md_path.read_text(encoding="utf-8", errors="replace")
+            _, body = fm.parse(text)
+            md_path.write_text(fm.render(fd, body), encoding="utf-8")
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed,
-            "note": "--fix removes dangling/inactive refs from evidence table; Report itself is never deleted (BAN-DOC-6)"}
+            "note": "--fix removes dangling/inactive refs from Report frontmatter; Report itself is never deleted (BAN-DOC-6)"}
 
 
-def _check_idf(ctx, conn, fix) -> dict:
+def _check_idf(ctx, fix) -> dict:
     """IDF weight = const/(freq+1) consistency (CONST-ING-6 / CONST-DOC-5)."""
     issues = []
     fixed = []
-    rows = conn.execute("SELECT noun, freq, weight FROM idf").fetchall()
-    for row in rows:
-        expected = IDF_CONSTANT / (row["freq"] + 1)
-        if abs(expected - row["weight"]) > 1e-6:
-            issues.append({"noun": row["noun"], "problem": "weight mismatch",
-                           "expected": round(expected, 4), "actual": row["weight"],
+    idf = load_idf(ctx)
+    new_idf = {}
+    for noun, (freq, weight) in idf.items():
+        expected = IDF_CONSTANT / (freq + 1)
+        if abs(expected - weight) > 1e-6:
+            issues.append({"noun": noun, "problem": "weight mismatch",
+                           "expected": round(expected, 4), "actual": weight,
                            "layer": "cross", "fixable": True})
             if fix:
-                conn.execute("UPDATE idf SET weight=? WHERE noun=?", (expected, row["noun"]))
-                fixed.append(row["noun"])
+                new_idf[noun] = (freq, expected)
+                fixed.append(noun)
+    if fix and new_idf:
+        for noun in new_idf:
+            idf[noun] = new_idf[noun]
+        dump_idf(ctx, idf)
     return {"issue_count": len(issues), "issues": issues[:50], "fixed": fixed,
-            "total_nouns": len(rows)}
+            "total_nouns": len(idf)}
 
 
 def _suggest_node_path(title: str) -> str:
@@ -350,82 +388,118 @@ def cmd_delete_node(args) -> dict:
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
-    conn = ctx.connect()
-    try:
-        node = conn.execute("SELECT * FROM nodes WHERE uid=?", (args.uid,)).fetchone()
-        if not node:
-            return error(f"node not found: {args.uid}", "NodeNotFound")
-        node = dict(node)
 
-        # who references this node? (L2 members, L3 evidence, relations)
-        list_refs = [r["list_uid"] for r in
-                     conn.execute("SELECT list_uid FROM list_members WHERE member_uid=?",
-                                  (args.uid,)).fetchall()]
-        evidence_refs = [r["report_uid"] for r in
-                         conn.execute("SELECT report_uid FROM evidence WHERE ref_uid=?",
-                                      (args.uid,)).fetchall()]
-        rel_refs = [r["from_uid"] for r in
-                    conn.execute("SELECT DISTINCT from_uid FROM relations WHERE to_uid=?",
-                                 (args.uid,)).fetchall()]
+    node_fd = None
+    node_path = None
+    for md_path, fd, _ in _all_frontmatter_nodes(ctx):
+        if fd.get("uid") == args.uid:
+            node_fd = fd
+            node_path = md_path
+            break
+    if not node_fd:
+        return error(f"node not found: {args.uid}", "NodeNotFound")
 
-        blocking = bool(list_refs or evidence_refs)
-        if blocking and not args.force:
-            return error(
-                f"node {args.uid} is referenced by L2/L3; refusing delete (use --force)",
-                "NodeReferenced",
-                data={"list_refs": list_refs, "evidence_refs": evidence_refs,
-                      "relation_refs": rel_refs},
-                hints=["remove the references first, or pass --force to cascade"],
-            )
+    # who references this node? (L2 members, L3 evidence, relations)
+    list_refs = []
+    evidence_refs = []
+    rel_refs = []
+    for md_p, fd, _ in _all_frontmatter_nodes(ctx):
+        layer = fd.get("layer")
+        uid = fd.get("uid")
+        if layer == "List":
+            members = fd.get(FM_MEMBERS, [])
+            for m in members:
+                m_uid = m.get("uid") if isinstance(m, dict) else m
+                if m_uid == args.uid:
+                    list_refs.append(uid)
+                    break
+        elif layer == "Report":
+            evidence = fd.get(FM_EVIDENCE, [])
+            for e in evidence:
+                e_uid = e.get("ref_uid") if isinstance(e, dict) else e
+                if e_uid == args.uid:
+                    evidence_refs.append(uid)
+                    break
+        relations = fd.get("relations", [])
+        for rel in relations:
+            if rel.get("to_uid") == args.uid:
+                rel_refs.append(uid)
+                break
 
-        # Decrement IDF frequencies contributed by this Page's body so deleted
-        # nodes don't leave ghost nouns skewing query scores (CONST-ING-6).
-        if node["layer"] == "Page" and node["rel_md_path"]:
-            mp = ctx.root / node["rel_md_path"]
-            if mp.exists():
-                _, body = fm.parse(mp.read_text(encoding="utf-8", errors="replace"))
-                ts = now_ts()
-                for noun, cnt in extract_nouns(body).items():
-                    rw = conn.execute("SELECT freq FROM idf WHERE noun=?", (noun,)).fetchone()
-                    if not rw:
-                        continue
-                    new_freq = rw["freq"] - cnt
-                    if new_freq <= 0:
-                        conn.execute("DELETE FROM idf WHERE noun=?", (noun,))
-                    else:
-                        conn.execute("UPDATE idf SET freq=?, weight=?, updated_at=? WHERE noun=?",
-                                     (new_freq, IDF_CONSTANT / (new_freq + 1), ts, noun))
-
-        # Commit the DB cascade FIRST, then unlink files. Files are
-        # unrecoverable; the DB is transactional. If a file unlink fails after
-        # commit we only leak an orphan (doctor-files catches it) — far safer
-        # than deleting files first and losing them when the DB write fails.
-        conn.execute("DELETE FROM relations WHERE to_uid=?", (args.uid,))
-        conn.execute("DELETE FROM evidence WHERE ref_uid=?", (args.uid,))
-        conn.execute("DELETE FROM list_members WHERE member_uid=?", (args.uid,))
-        conn.execute("DELETE FROM nodes WHERE uid=?", (args.uid,))  # FK cascades patches/evidence/relations(from)
-        conn.commit()
-
-        # DB committed — now remove md file + raw if present (best-effort)
-        removed_files = []
-        for rel in (node["rel_md_path"], node["raw_path"]):
-            if rel:
-                p = ctx.root / rel
-                if p.exists():
-                    p.unlink()
-                    removed_files.append(rel)
-
-        return success(
-            {"uid": args.uid, "removed_files": removed_files,
-             "cleaned_list_refs": list_refs, "cleaned_evidence_refs": evidence_refs,
-             "cleaned_relation_refs": rel_refs, "forced": args.force},
-            f"deleted node {args.uid} (UID is retired, never reused — BAN-ARCH-2)",
+    blocking = bool(list_refs or evidence_refs)
+    if blocking and not args.force:
+        return error(
+            f"node {args.uid} is referenced by L2/L3; refusing delete (use --force)",
+            "NodeReferenced",
+            data={"list_refs": list_refs, "evidence_refs": evidence_refs,
+                  "relation_refs": rel_refs},
+            hints=["remove the references first, or pass --force to cascade"],
         )
-    except Exception as e:
-        conn.rollback()
-        return error(f"delete failed, rolled back: {e}", type(e).__name__)
-    finally:
-        conn.close()
+
+    # Decrement IDF frequencies (CONST-ING-6)
+    if node_fd.get("layer") == "Page" and node_path and node_path.exists():
+        _, body = fm.parse(node_path.read_text(encoding="utf-8", errors="replace"))
+        idf = load_idf(ctx)
+        changed = False
+        for noun, cnt in extract_nouns(body).items():
+            freq, _ = idf.get(noun, (0, 0.0))
+            new_freq = freq - cnt
+            if new_freq <= 0:
+                idf.pop(noun, None)
+            else:
+                idf[noun] = (new_freq, IDF_CONSTANT / (new_freq + 1))
+            changed = True
+        if changed:
+            dump_idf(ctx, idf)
+
+    # Remove references from List members and Report evidence and Page relations
+    for md_p, fd, _ in _all_frontmatter_nodes(ctx):
+        layer = fd.get("layer")
+        uid = fd.get("uid")
+        changed = False
+        if layer == "List" and uid in list_refs:
+            members = fd.get(FM_MEMBERS, [])
+            new_members = [m for m in members
+                           if (m.get("uid") if isinstance(m, dict) else m) != args.uid]
+            if len(new_members) != len(members):
+                fd[FM_MEMBERS] = new_members
+                changed = True
+        elif layer == "Report" and uid in evidence_refs:
+            evidence = fd.get(FM_EVIDENCE, [])
+            new_evidence = [e for e in evidence
+                           if (e.get("ref_uid") if isinstance(e, dict) else e) != args.uid]
+            if len(new_evidence) != len(evidence):
+                fd[FM_EVIDENCE] = new_evidence
+                changed = True
+        elif uid in rel_refs:
+            relations = fd.get("relations", [])
+            new_relations = [r for r in relations if r.get("to_uid") != args.uid]
+            if len(new_relations) != len(relations):
+                fd["relations"] = new_relations
+                changed = True
+        if changed:
+            text = md_p.read_text(encoding="utf-8", errors="replace")
+            _, body = fm.parse(text)
+            md_p.write_text(fm.render(fd, body), encoding="utf-8")
+
+    # Remove the node file itself
+    removed_files = []
+    if node_path and node_path.exists():
+        node_path.unlink()
+        removed_files.append(str(node_path))
+    raw_path_str = node_fd.get("raw_path")
+    if raw_path_str:
+        raw_p = ctx.root / raw_path_str
+        if raw_p.exists():
+            raw_p.unlink()
+            removed_files.append(raw_path_str)
+
+    return success(
+        {"uid": args.uid, "removed_files": removed_files,
+         "cleaned_list_refs": list_refs, "cleaned_evidence_refs": evidence_refs,
+         "cleaned_relation_refs": rel_refs, "forced": args.force},
+        f"deleted node {args.uid} (UID is retired, never reused — BAN-ARCH-2)",
+    )
 
 
 def cmd_rebuild(args) -> dict:
@@ -434,64 +508,48 @@ def cmd_rebuild(args) -> dict:
     granularity:
       keep-l1     : rebuild IDF + renumber relation positions from frontmatter (default)
       keep-l1-l2  : also leave L2 lists intact, rebuild IDF/relations
-      full        : same as keep-l1 (DB reconciliation deprecated; frontmatter is source of truth)
+      full        : same as keep-l1 (frontmatter is source of truth)
     """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
     gran = args.granularity
-    conn = ctx.connect()
-    try:
-        actions = []
+    actions = []
 
-        if gran == "full":
-            actions.append("DB reconciliation skipped (frontmatter is source of truth)")
+    if gran == "full":
+        actions.append("DB reconciliation skipped (frontmatter is source of truth)")
 
-        # rebuild IDF from all active L1 bodies (always, for any granularity)
-        # reads from frontmatter via fs walk; writes to SQLite (IDF still in SQLite)
-        if conn:
-            conn.execute("DELETE FROM idf")
-        freq: dict[str, int] = {}
-        for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
-            if fm_dict.get("layer") != "Page":
-                continue
-            if not fm_dict.get("active", True):
-                continue
-            for noun, cnt in extract_nouns(body).items():
-                freq[noun] = freq.get(noun, 0) + cnt
-        ts = now_ts()
-        if conn:
-            for noun, f in freq.items():
-                conn.execute("INSERT INTO idf(noun,freq,weight,updated_at) VALUES(?,?,?,?)",
-                             (noun, f, IDF_CONSTANT / (f + 1), ts))
-        actions.append(f"rebuilt IDF: {len(freq)} noun(s)")
+    # rebuild IDF from all active L1 bodies (always, for any granularity)
+    # reads from frontmatter via fs walk; writes to idf.md
+    freq: dict[str, tuple[int, float]] = {}
+    for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
+        if fm_dict.get("layer") != "Page":
+            continue
+        if not fm_dict.get("active", True):
+            continue
+        for noun, cnt in extract_nouns(body).items():
+            freq[noun] = (freq.get(noun, (0, 0.0))[0] + cnt,
+                          IDF_CONSTANT / (freq.get(noun, (0, 0.0))[0] + cnt + 1))
+    dump_idf(ctx, {noun: (f, w) for noun, (f, w) in freq.items()})
+    actions.append(f"rebuilt IDF: {len(freq)} noun(s)")
 
-        # renumber relation positions to contiguous in frontmatter
-        for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
-            src = fm_dict.get("uid")
-            if not src:
-                continue
-            raw = fm_dict.get("relations", [])
-            if not isinstance(raw, list):
-                continue
-            positions = [r.get("position", i) for i, r in enumerate(raw)]
-            if positions == list(range(len(positions))):
-                continue
-            for i, r in enumerate(raw):
-                r["position"] = i
-            text = md_path.read_text(encoding="utf-8", errors="replace")
-            _, body = fm.parse(text)
-            md_path.write_text(fm.render(fm_dict, body), encoding="utf-8")
-        actions.append("renumbered relation LRU positions in frontmatter")
+    # renumber relation positions to contiguous in frontmatter
+    for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
+        src = fm_dict.get("uid")
+        if not src:
+            continue
+        raw = fm_dict.get("relations", [])
+        if not isinstance(raw, list):
+            continue
+        positions = [r.get("position", i) for i, r in enumerate(raw)]
+        if positions == list(range(len(positions))):
+            continue
+        for i, r in enumerate(raw):
+            r["position"] = i
+        text = md_path.read_text(encoding="utf-8", errors="replace")
+        _, body = fm.parse(text)
+        md_path.write_text(fm.render(fm_dict, body), encoding="utf-8")
+    actions.append("renumbered relation LRU positions in frontmatter")
 
-        if conn:
-            conn.commit()
-        return success({"granularity": gran, "actions": actions},
-                       f"rebuild ({gran}) complete; L1 content untouched (PRIN-ARCH-3)")
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        return error(f"rebuild failed, rolled back: {e}", type(e).__name__)
-    finally:
-        if conn:
-            conn.close()
+    return success({"granularity": gran, "actions": actions},
+                   f"rebuild ({gran}) complete; L1 content untouched (PRIN-ARCH-3)")

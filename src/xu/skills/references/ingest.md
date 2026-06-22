@@ -12,16 +12,15 @@ to ingest.
 
 ## Hard rule for this SOP
 
-> **Route by content form first; Phase 1↔2 intermediate values are LLM-generated.**
+> **Route by content form first; Phase 1↔2↔3 intermediate values are LLM-generated.**
 >
 > Content form routing (before Phase 1 — only this step requires a user question):
 >
 > | User says | Route to | Agent action |
 > |---|---|---|
-> | PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` | Auto-fill `--content-type` from `CONTENT_TYPE_MAP` (`.xlsx/.csv`→`table`, images→`gallery`, rest→`article`); do not ask |
+> | PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` → `ingest-verify` | Auto-fill `--content-type` from `CONTENT_TYPE_MAP` (`.xlsx/.csv`→`table`, images→`gallery`, rest→`article`); do not ask |
 > | N images, one theme | `ingest-album` | Ask "vision per-photo? (yes/no)" before calling |
 > | code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article`; do not ask |
-> | After commit: verify integrity | `ingest-verify` | 5 read-only checks (DB / nodes/ / hash / raw / format); run before declaring task done |
 >
 > After `ingest-file` succeeds, the Agent reads the temp file and synthesizes ALL
 > intermediate values **without asking the user**: title, node_path, relations,
@@ -40,7 +39,7 @@ to ingest.
 ## CLI palette
 
 ```bash
-# Two-phase prose flow
+# Three-phase prose flow
 xu ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
 xu ingest-commit --wiki <w> --pending <f> --title <t> \
                       [--content-type article|table|gallery] \
@@ -84,7 +83,13 @@ xu report create --wiki <w> --title <t> --body <md> \
 3. **Agent synthesizes all metadata** from the temp file:
    title, node_path, relations, content_type — all LLM-generated, never asked
    of the user. `--title` is required by CLI but the value comes from the LLM.
-4. **取证副本**: after `ingest-commit` succeeds, the CLI copies
+4. **Phase 2 — `ingest-commit --pending <f> --title <t>`**: promotes temp file
+   to L1. All intermediate values (content_type, node_path, relations, author)
+   are synthesized by the LLM and passed as CLI arguments. **Commit includes
+   internal verify + atomic rollback on failure** — if verify fails, all written
+   files are deleted and IDF is restored; the response returns `VerifyFailed`
+   error with `hints=["fix the failed checks and re-run ingest-commit"]`.
+5. **取证副本**: after `ingest-commit` succeeds, the CLI copies
    the source file to `raws/<node_path>/<original_name>` (first page only).
    **This is mandatory for all document types** — `.md / .pdf / .docx / .pptx`
    must all be physically stored. The response `data.created[].raw_path` should
@@ -92,16 +97,19 @@ xu report create --wiki <w> --title <t> --body <md> \
    > **Exception**: `--native` mode has no source file (agent-synthesized text),
    > so `raw_path` is null by design. But `--native` still requires `--source`
    > (a reference path) for dedup. Use `--pending` for any external document.
-5. **Phase 2 — `ingest-commit --pending <f> --title <t>`**: promotes temp file
-   to L1. All intermediate values (content_type, node_path, relations, author)
-   are synthesized by the LLM and passed as CLI arguments.
-6. **Page splitting notice**: if `data.page_count > 1`, tell the user
+6. **Phase 3 — `ingest-verify --wiki <w> --uid <uid>`**: explicit verification
+   after commit succeeds. **Must be run after every commit** before declaring
+   the task done. Re-runnable at any time (read-only). On failure: LLM fixes
+   the issue and re-runs `ingest-commit` (pending file was deleted on success;
+   start from Phase 1 again if needed).
+   > Commit succeeded + verify failed = files were rolled back; start fresh.
+7. **Page splitting notice**: if `data.page_count > 1`, tell the user
    "文档较长，已自动按容量分片为 N 个 L1 节点"。This is normal behavior, not an error.
-7. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
+8. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
    An empty `raws/` directory with populated `nodes/page/` = copy was
    bypassed (usually from `--native` on a document).
-8. **(Optional) Wire relations** with `query-relation add`.
-9. **(Optional) Group into L2/L3** with `list create` / `report create`.
+9. **(Optional) Wire relations** with `query-relation add`.
+10. **(Optional) Group into L2/L3** with `list create` / `report create`.
 
 ## Workflow — album (multiple images, one theme)
 
@@ -110,7 +118,10 @@ xu report create --wiki <w> --title <t> --body <md> \
    (never decide for the user).
 3. **Single-shot `ingest-album`**: writes ONE L1 page with a markdown
    table (or list if `--layout list`). Album theme = `--title`.
-4. **(Optional) Wire relations / group** as in prose flow.
+   Includes internal verify + rollback on failure.
+4. **Phase 3 — `ingest-verify --wiki <w> --uid <uid>`**: explicit verify
+   after album commit (same as prose flow).
+5. **(Optional) Wire relations / group** as in prose flow.
 
 ## Workflow — code block / terminal output
 
@@ -209,28 +220,31 @@ xu ingest-album --wiki research \
   --vision
 # → {"status": "success", "data": {"uid": "...", "rows": 3}, ...}
 
-### Verify
+### Verify (Phase 3)
 
-After commit, verify the node integrity (read-only, non-destructive):
+Phase 3 is a mandatory, explicit verification step after every commit:
 
 ```bash
 xu ingest-verify --wiki research --uid <uid from commit response>
-# → {"status": "success", "data": {"passed": ["DB record", "nodes_file", ...], "failed": [], "checks": [...]}, ...}
+# → {"status": "success", "data": {"passed": [...], "failed": [], "checks": [...]}, ...}
 ```
 
-5 checks: DB record, nodes/ frontmatter completeness, content_hash match, raw file exists (non-native), content_type ↔ body format match.
+**7 checks**: nodes/ frontmatter completeness, content_hash match, content_type ↔ body format match, raw file exists, raw_path ↔ node_path mirroring (both top-level `raw_path` for regular pages and `attrs.album.sources[].raw_rel_path` for albums), raw path mirrors node_path structure.
+
+If Phase 2 commit returned `VerifyFailed`: files were rolled back. Start fresh from Phase 1.
 
 ### Multi-file serial ingest
 
-When ingesting N files, repeat the two-phase cycle **per file** — serial, not parallel:
+When ingesting N files, repeat the three-phase cycle **per file** — serial, not parallel:
 
 ```bash
 # File 1
 xu ingest-file --wiki <w> --file /abs/path/to/a.pdf
 # Agent reads temp file, decides title/node_path/relations, then:
 xu ingest-commit --wiki <w> --pending <temp_a.md> --title a ...
+# (verify + rollback happen inside commit; if VerifyFailed → start Phase 1 over)
 xu ingest-verify --wiki <w> --uid <uid_from_commit_a>
-# Only proceed if ingest-verify passes; fix and re-commit if it fails
+# Only proceed if ingest-verify passes
 
 # File 2
 xu ingest-file --wiki <w> --file /abs/path/to/b.pdf

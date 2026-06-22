@@ -17,6 +17,7 @@ from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
 from ..utils.wiki import find_node_md, resolve_wiki
+from ..utils.idf import load_idf
 
 
 def _split_kw(s: str) -> list[str]:
@@ -49,12 +50,12 @@ def cmd_query(args) -> dict:
     all_kw = core + expansion
     raw_hits = scan(ctx.page_dir, all_kw, timeout=timeout)
 
-    # IDF weights (PRIN-QRY-11, BAN-QRY-5: must come from IDF table)
-    conn = ctx.connect()
+    # IDF weights (PRIN-QRY-11, BAN-QRY-5: from idf.md)
+    idf_table = load_idf(ctx)
     idf_weight = {}
     for kw in all_kw:
-        row = conn.execute("SELECT weight FROM idf WHERE noun=?", (kw.lower(),)).fetchone()
-        idf_weight[kw] = row["weight"] if row else 0.0
+        freq, weight = idf_table.get(kw.lower(), (0, 0.0))
+        idf_weight[kw] = weight
 
     # Group hits by file, build slices
     by_file: dict[str, list] = {}
@@ -62,22 +63,24 @@ def cmd_query(args) -> dict:
         for h in hits:
             by_file.setdefault(h["file"], []).append((kw, h))
 
-    # Map md file -> uid (skip inactive nodes)
+    # Map md file -> uid (skip inactive nodes); pre-load from frontmatter
     uid_cache: dict[str, dict] = {}
+    for p in ctx.page_dir.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            fd, _ = fm.parse(text)
+            uid_cache[str(p)] = {
+                "uid": fd.get("uid"),
+                "title": fd.get("title"),
+                "layer": fd.get("layer"),
+                "active": fd.get("active", True),
+                "node_path": fd.get("node_path", ""),
+            }
+        except Exception:
+            continue
 
     def lookup_node(file_path: str) -> dict | None:
-        if file_path in uid_cache:
-            return uid_cache[file_path]
-        try:
-            rel = str(Path(file_path).resolve().relative_to(ctx.root.resolve()))
-        except ValueError:
-            return None
-        row = conn.execute(
-            "SELECT uid, title, layer, active, node_path FROM nodes WHERE rel_md_path=?", (rel,)
-        ).fetchone()
-        info = dict(row) if row else None
-        uid_cache[file_path] = info
-        return info
+        return uid_cache.get(file_path)
 
     scored_blocks = []
     for file_path, kw_hits in by_file.items():
@@ -115,7 +118,6 @@ def cmd_query(args) -> dict:
                 "matched": sorted(blk["hits"]), "score": round(score, 2),
             })
 
-    conn_for_hints = conn
     scored_blocks.sort(key=lambda b: b["score"], reverse=True)
     top = scored_blocks[:top_k]
 
@@ -156,8 +158,6 @@ def cmd_query(args) -> dict:
             for r in rels:
                 touch_relation(fm_node, uid, r["to_uid"])
             _write_node_fm(ctx, uid, fm_node)
-
-    conn.close()
 
     data = {
         "related_nodes": top,
