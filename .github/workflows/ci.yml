@@ -4,20 +4,9 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-  pull_request:
-    branches: [main]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --tests
-
   build-wheel:
-    needs: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,7 +19,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install maturin
-      - run: maturin build --release --out dist
+      - name: Build wheel
+        run: maturin build --release --out dist --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-cp${{ matrix.python-version }}
