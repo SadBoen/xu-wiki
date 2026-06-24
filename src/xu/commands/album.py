@@ -27,14 +27,11 @@ from typing import Any
 
 from ..ingest.splitter import extract_nouns
 from ..parsers.image_meta import read_image_meta
-from ..utils import frontmatter as fm
-from ..utils.paths import safe_slug, safe_node_path
 from ..utils.constants import (
     FM_ACTIVE,
     FM_CONTENT_HASH,
     FM_CREATED,
     FM_LAYER,
-    FM_NODE_PATH,
     FM_PATCHES,
     FM_SOURCE_HASH,
     FM_CONTENT_TYPE,
@@ -42,12 +39,10 @@ from ..utils.constants import (
     FM_UID,
     IDF_CONSTANT,
 )
-from ..utils.idf import increment_idf
+from ..utils import db as sqlite_db
 from ..utils.paths import (
-    atomic_write_text,
     gen_uid,
     now_ts,
-    safe_node_path,
     safe_slug,
     sha256_file,
     sha256_text,
@@ -96,20 +91,14 @@ def _render_body(rows: list[dict[str, Any]]) -> str:
     return yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
-def _scan_fm_index(ctx) -> tuple[dict, dict]:
+def _scan_fm_index(ctx):
     """Scan all Page frontmatter files. Returns (source_hash_map, content_hash_map)."""
     from ..commands.ingest import _scan_fm_index as _scan
     return _scan(ctx)
 
 
 def cmd_ingest_album(args) -> dict:
-    """Album scenario: many images → one L1 Page with table or list body.
-
-    Single-shot (no two-phase). The L1 Page stores a markdown table or
-    list with one row/entry per photo; minimal per-photo metadata
-    (filename, source_hash, resolution, GPS, captured) goes into
-    attrs.album.sources for queryability.
-    """
+    """Album scenario: many images → one L1 Page with table or list body."""
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(
@@ -130,13 +119,12 @@ def cmd_ingest_album(args) -> dict:
 
     vision = bool(args.vision)
 
-    try:
-        if args.node_path:
-            node_path = safe_node_path(args.node_path)
-        else:
-            node_path = safe_slug(args.title)
-    except ValueError as e:
-        return error(str(e), "BadNodePath")
+    # LLM decides raw placement via --raw-path; fallback to safe_slug(title).
+    # Always places under raws/<raw_path_arg>/ (never flat).
+    if args.raw_path:
+        raw_path_arg = args.raw_path
+    else:
+        raw_path_arg = safe_slug(args.title)
 
     raw_files = [p.strip() for p in (args.files or "").split(",") if p.strip()]
     if not raw_files:
@@ -150,8 +138,7 @@ def cmd_ingest_album(args) -> dict:
         p = Path(f).expanduser()
         if not p.is_absolute():
             return error(
-                f"file path must be absolute: {p}",
-                "PathNotAbsolute",
+                f"file path must be absolute: {p}", "PathNotAbsolute",
                 data={"file": str(p)},
                 hints=["album CLI requires absolute paths (hard rule 9)"],
             )
@@ -165,20 +152,18 @@ def cmd_ingest_album(args) -> dict:
             captions = _parse_captions(args.captions)
         except (ValueError, json.JSONDecodeError) as e:
             return error(
-                f"--captions invalid: {e}",
-                "BadCaptionsJSON",
+                f"--captions invalid: {e}", "BadCaptionsJSON",
                 data={"hint": "use a JSON object {\"001.jpeg\": \"船头整体\"}"},
             )
 
     rows: list[dict[str, Any]] = []
-    album_raw_dir = ctx.raws_dir / (Path(node_path) if node_path else Path("."))
+    album_raw_dir = ctx.raws_dir / raw_path_arg
     album_raw_dir.mkdir(parents=True, exist_ok=True)
 
     for src in files:
         sha = sha256_file(src)
         meta = read_image_meta(src)
-        rel_raw = (Path("raws") / Path(node_path) / src.name) if node_path \
-            else Path("raws") / src.name
+        rel_raw = Path("raws") / raw_path_arg / src.name
         dst = ctx.root / rel_raw
         dst.parent.mkdir(parents=True, exist_ok=True)
         if not dst.exists():
@@ -230,56 +215,64 @@ def cmd_ingest_album(args) -> dict:
     slug = f"{base_slug}-{uid}"
     ts = now_ts()
 
-    frontmatter = {
-        FM_UID: uid,
-        FM_TITLE: args.title,
-        FM_LAYER: "Page",
-        FM_CONTENT_TYPE: ALBUM_CONTENT_TYPE,
-        FM_ACTIVE: True,
-        FM_CREATED: ts,
-        FM_CONTENT_HASH: content_hash,
-        FM_NODE_PATH: node_path,
-        FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
-                      "author": args.author or "agent", "created_at": ts}],
-        "attrs": {
-            "album": {
-                "layout": layout,
-                "count": len(rows),
-                "vision": vision,
-                "sources": [
-                    {
-                        "filename": r["filename"],
-                        "source_hash": r["source_hash"],
-                        "raw_rel_path": r["raw_rel_path"],
-                        "width": r["width"],
-                        "height": r["height"],
-                        "gps": r["gps"],
-                        "captured": r["captured"],
-                    }
-                    for r in rows
-                ],
-            },
-        },
-    }
-    if rows:
-        frontmatter[FM_SOURCE_HASH] = rows[0]["source_hash"]
-
-    rel_md = (Path("nodes") / "page" / Path(node_path) / f"{slug}.md") \
-        if node_path else Path("nodes") / "page" / f"{slug}.md"
-    md_path = ctx.root / rel_md
-    md_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(md_path, fm.render(frontmatter, body))
-
-    # IDF incremental (PRIN-ING-9, CONST-ING-6)
-    increment_idf(ctx, extract_nouns(body))
+    # SQLite INSERT: write node + patch atomically (DB-only, no .md file)
+    conn = ctx.connect()
+    try:
+        conn.execute(
+            "INSERT INTO nodes("
+            "uid, layer, content_type, title, slug, rel_md_path, "
+            "content_hash, source_hash, active, attrs, created_at, updated_at, body"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                uid,
+                "Page",
+                ALBUM_CONTENT_TYPE,
+                args.title,
+                slug,
+                None,           # rel_md_path: DB-only
+                content_hash,
+                rows[0]["source_hash"] if rows else None,
+                1,
+                json.dumps({
+                    "album": {
+                        "layout": layout,
+                        "count": len(rows),
+                        "vision": vision,
+                        "sources": [
+                            {
+                                "filename": r["filename"],
+                                "source_hash": r["source_hash"],
+                                "raw_rel_path": r["raw_rel_path"],
+                                "width": r["width"],
+                                "height": r["height"],
+                                "gps": r["gps"],
+                                "captured": r["captured"],
+                            }
+                            for r in rows
+                        ],
+                    },
+                }),
+                ts,
+                ts,
+                body,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO patches(page_uid, version, op, delta, author, created_at) "
+            "VALUES (?,1,?,?,?,?)",
+            (uid, "create", content_hash, args.author or "agent", ts),
+        )
+        sqlite_db.idf_increment(conn, body, extract_nouns_fn=extract_nouns, constant=IDF_CONSTANT)
+        conn.commit()
+    finally:
+        conn.close()
 
     data = {
         "uid": uid,
         "title": args.title,
-        "node_path": node_path,
+        "raw_path": str(Path("raws") / raw_path_arg),
         "layout": layout,
         "count": len(rows),
-        "md_path": str(rel_md).replace("\\", "/"),
         "sources": [
             {k: r[k] for k in
              ("filename", "source_hash", "raw_rel_path",

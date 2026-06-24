@@ -12,10 +12,10 @@ from pathlib import Path
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
     uid           TEXT PRIMARY KEY,
-    layer         TEXT NOT NULL CHECK (layer IN ('Page','List','Report')),
+    layer         TEXT NOT NULL CHECK (layer IN ('Page','List','Report','Entity')),
+                                          -- Entity: L2 aggregation of entity attributes (DESIGN-ARCH-1)
     content_type  TEXT NOT NULL,
     title         TEXT NOT NULL,
-    node_path     TEXT NOT NULL DEFAULT '',
     slug          TEXT,
     rel_md_path   TEXT,                 -- relative path to .md (NULL only for legacy DB-only L2/L3 rows)
     raw_path      TEXT,                 -- relative path under raws/
@@ -25,13 +25,13 @@ CREATE TABLE IF NOT EXISTS nodes (
     active        INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
     attrs         TEXT,                 -- JSONB extension attributes
     created_at    INTEGER NOT NULL,
-    updated_at    INTEGER NOT NULL
+    updated_at    INTEGER NOT NULL,
+    body          TEXT                  -- inlined page body (L1 storage)
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_layer ON nodes(layer);
 CREATE INDEX IF NOT EXISTS idx_nodes_active ON nodes(active);
 CREATE INDEX IF NOT EXISTS idx_nodes_content_hash ON nodes(content_hash);
 CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash);
-CREATE INDEX IF NOT EXISTS idx_nodes_node_path ON nodes(node_path);
 
 -- L1 revision table (PRIN-ARCH-3, CONST-ING-7)
 CREATE TABLE IF NOT EXISTS patches (
@@ -139,3 +139,25 @@ def idf_increment(conn, body: str, *, extract_nouns_fn, constant: float) -> None
             "ON CONFLICT(noun) DO UPDATE SET freq=?, weight=?, updated_at=?",
             (noun, new_freq, weight, ts, new_freq, weight, ts),
         )
+
+
+def write_node_body(conn: sqlite3.Connection, uid: str, body: str) -> None:
+    """Upsert the inlined body for a node (L1 write, PRIN-ARCH-16)."""
+    from .paths import now_ts
+    ts = now_ts()
+    conn.execute(
+        "UPDATE nodes SET body=?, updated_at=? WHERE uid=?",
+        (body, ts, uid),
+    )
+    if conn.total_changes == 0:
+        conn.execute(
+            "INSERT INTO nodes(uid, layer, content_type, title, body, created_at, updated_at) "
+            "VALUES (?, 'Page', 'text/markdown', ?, ?, ?, ?)",
+            (uid, uid, body, ts, ts),
+        )
+
+
+def read_node_body(conn: sqlite3.Connection, uid: str) -> str | None:
+    """Read the inlined body for a node (L1 read, PRIN-ARCH-16)."""
+    row = conn.execute("SELECT body FROM nodes WHERE uid=?", (uid,)).fetchone()
+    return row["body"] if row else None

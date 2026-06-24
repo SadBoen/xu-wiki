@@ -15,6 +15,7 @@ import tempfile
 import yaml
 from pathlib import Path
 
+from .. import db as db_module
 from ..ingest.relations_lru import add_relation
 from ..ingest.splitter import extract_nouns, split_pages
 from ..parsers.registry import parse_file
@@ -25,7 +26,6 @@ from ..utils.constants import (
     FM_CONTENT_HASH,
     FM_CREATED,
     FM_LAYER,
-    FM_NODE_PATH,
     FM_PATCHES,
     FM_PARENT_UID,
     FM_SOURCE_HASH,
@@ -41,7 +41,6 @@ from ..utils.paths import (
     atomic_write_text,
     gen_uid,
     now_ts,
-    safe_node_path,
     safe_slug,
     sha256_file,
     sha256_text,
@@ -51,9 +50,31 @@ from ..utils.wiki import resolve_wiki, find_node_md, find_by_source_hash, find_b
 
 
 def _scan_fm_index(ctx) -> tuple[dict, dict]:
-    """Scan all Page frontmatter files. Returns (source_hash_map, content_hash_map)."""
+    """Scan all Page frontmatter (SQLite primary + FS fallback).
+    Returns (source_hash_map, content_hash_map).
+
+    SQLite is authoritative for nodes written after this change.
+    Legacy .md files are scanned as a fallback for pre-existing data.
+    """
     source_map: dict[str, tuple[str, str, bool]] = {}
     content_map: dict[str, tuple[str, str]] = {}
+
+    # SQLite (authoritative for current L1 pages)
+    conn = ctx.connect()
+    try:
+        rows = conn.execute(
+            "SELECT uid, title, active, content_hash, source_hash FROM nodes WHERE layer='Page'"
+        ).fetchall()
+        for row in rows:
+            uid, title, active, content_hash, source_hash = row
+            if source_hash:
+                source_map[source_hash] = (uid, title or "", bool(active))
+            if content_hash:
+                content_map[content_hash] = (uid, title or "")
+    finally:
+        conn.close()
+
+    # Legacy FS fallback (pre-existing .md files not yet migrated)
     page_dir = ctx.page_dir
     if page_dir.is_dir():
         for p in page_dir.rglob("*.md"):
@@ -64,11 +85,12 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
                 active = fd.get("active", True)
                 if not uid:
                     continue
+                # Only register if not already in SQLite map (DB wins)
                 sh = fd.get("source_hash")
-                if sh:
+                if sh and sh not in source_map:
                     source_map[sh] = (uid, fd.get("title", ""), active)
                 ch = fd.get("content_hash")
-                if ch:
+                if ch and ch not in content_map:
                     content_map[ch] = (uid, fd.get("title", ""))
             except Exception:
                 continue
@@ -131,10 +153,6 @@ def cmd_ingest_file(args) -> dict:
             data={"file": str(src)},
         )
 
-    try:
-        safe_node_path(args.node_path)
-    except ValueError as e:
-        return error(str(e), "BadNodePath")
     stem = safe_slug(src.stem)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix="-pre.md", prefix=f"{stem}-",
@@ -159,8 +177,8 @@ def cmd_ingest_file(args) -> dict:
         f"parsed via {res.parser} → pending temp file (Phase 1). No node created yet.",
         hints=[
             "review pending content, then run ingest-commit with --pending and --title",
-            "Agent decides title/node_path/relations between phases (PRIN-ING-2)",
-            "if node_path is empty, all pages land at nodes/page/ root — consider passing --node-path to organize by category (e.g. certificates/qsa, contracts/ta)",
+            "Agent decides title/raw_path/relations between phases (PRIN-ING-2)",
+            "use --raw-path to organize raw files by category (e.g. certificates/qsa)",
         ],
     )
 
@@ -250,7 +268,7 @@ def cmd_ingest_commit(args) -> dict:
         content = args.native
         raw_src_path = str(src_path)
         source_hash = sha256_text(args.native)
-        node_path_arg = args.node_path
+        raw_path_arg = args.raw_path
     elif args.pending:
         pending_path = Path(args.pending).expanduser()
         if not pending_path.is_file():
@@ -260,14 +278,9 @@ def cmd_ingest_commit(args) -> dict:
         source_hash = meta.get("source_hash")
         parser_used = meta.get("parser", "unknown")
         raw_src_path = meta.get("source")
-        node_path_arg = args.node_path
+        raw_path_arg = args.raw_path
     else:
         return error("ingest-commit requires --pending or --native", "MissingInput")
-
-    try:
-        node_path = safe_node_path(node_path_arg or "")
-    except ValueError as e:
-        return error(str(e), "BadNodePath")
 
     if not args.title:
         return error("ingest-commit requires --title (CONST-ING-4)", "MissingTitle",
@@ -323,91 +336,149 @@ def cmd_ingest_commit(args) -> dict:
     # Track files written so we can roll back on verify failure
     written: list[dict] = []
 
-    for idx, page_body in enumerate(pages):
-        page_body = page_body.rstrip()
+    conn = ctx.connect()
+    try:
+        # Use savepoint for atomicity within this connection
+        conn.execute("SAVEPOINT ingest_pages")
 
-        body_err = _validate_body_format(page_body, args.content_type)
-        if body_err:
-            dump_idf(ctx, idf_snapshot)
-            return error(body_err, "BodyFormatMismatch")
+        for idx, page_body in enumerate(pages):
+            page_body = page_body.rstrip()
 
-        content_hash = sha256_text(page_body)
-        if content_hash in content_index:
-            dup_pages.append({"part": idx + 1, "existing_uid": content_index[content_hash][0]})
-            continue
-        if content_hash in new_content_hashes:
-            dup_pages.append({"part": idx + 1, "existing_uid": "duplicate in this commit"})
-            continue
+            body_err = _validate_body_format(page_body, args.content_type)
+            if body_err:
+                conn.execute("ROLLBACK TO SAVEPOINT ingest_pages")
+                dump_idf(ctx, idf_snapshot)
+                return error(body_err, "BodyFormatMismatch")
 
-        uid = first_uid if idx == 0 else gen_uid()
-        split_index = idx + 1
-        parent_uid = first_uid
-        title = args.title if not multi else f"{args.title} (part {idx + 1}/{len(pages)})"
-        base_slug = safe_slug(args.title)
-        slug = f"{base_slug}-{idx + 1}-{uid}" if multi else f"{base_slug}-{uid}"
-        ts = now_ts()
+            content_hash = sha256_text(page_body)
+            if content_hash in content_index:
+                dup_pages.append({"part": idx + 1, "existing_uid": content_index[content_hash][0]})
+                continue
+            if content_hash in new_content_hashes:
+                dup_pages.append({"part": idx + 1, "existing_uid": "duplicate in this commit"})
+                continue
 
-        frontmatter = {
-            FM_UID: uid,
-            FM_TITLE: title,
-            FM_LAYER: "Page",
-            FM_CONTENT_TYPE: args.content_type,
-            FM_ACTIVE: True,
-            FM_CREATED: ts,
-            FM_CONTENT_HASH: content_hash,
-            FM_NODE_PATH: node_path,
-            FM_SPLIT_INDEX: split_index,
-            FM_PARENT_UID: parent_uid,
-            FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
-                          "author": args.author or "agent", "created_at": ts}],
-        }
-        if source_hash:
-            frontmatter[FM_SOURCE_HASH] = source_hash
+            uid = first_uid if idx == 0 else gen_uid()
+            split_index = idx + 1
+            parent_uid = first_uid
+            title = args.title if not multi else f"{args.title} (part {idx + 1}/{len(pages)})"
+            base_slug = safe_slug(args.title)
+            slug = f"{base_slug}-{idx + 1}-{uid}" if multi else f"{base_slug}-{uid}"
+            ts = now_ts()
 
-        rel_md = Path("nodes/page") / node_path / f"{slug}.md" if node_path \
-            else Path("nodes/page") / f"{slug}.md"
-        md_path = ctx.root / rel_md
-        md_path.parent.mkdir(parents=True, exist_ok=True)
-        doc = fm.render(frontmatter, page_body)
-        atomic_write_text(md_path, doc)
+            rel_raw = None
+            raw_written = None
+            if raw_src_path and Path(raw_src_path).is_file() and idx == 0:
+                # LLM decides raw placement via --raw-path (e.g. certs/qsa/cert.pdf).
+                # Fallback: filename-only under raws/ (prevents flat raws/ root).
+                # Validate path stays under raws/ (BAN-ARCH-7 equivalent for raw files).
+                if raw_path_arg:
+                    raw_rel = Path("raws") / raw_path_arg
+                else:
+                    raw_rel = Path("raws") / Path(raw_src_path).name
+                raw_dst = ctx.root / raw_rel
+                raw_dst.parent.mkdir(parents=True, exist_ok=True)
+                if not raw_dst.exists():
+                    shutil.copy2(raw_src_path, raw_dst)
+                raw_written = raw_dst
 
-        rel_raw = None
-        raw_written = None
-        if raw_src_path and Path(raw_src_path).is_file() and idx == 0:
-            rel_raw = (Path("raws") / node_path / Path(raw_src_path).name
-                        ) if node_path else Path("raws") / Path(raw_src_path).name
-            raw_dst = ctx.root / rel_raw
-            raw_dst.parent.mkdir(parents=True, exist_ok=True)
-            if not raw_dst.exists():
-                shutil.copy2(raw_src_path, raw_dst)
-            raw_written = raw_dst
+            # Write L1 Page to SQLite (PRIN-ING-1)
+            conn.execute(
+                "INSERT INTO nodes(uid, layer, content_type, title, slug, "
+                "rel_md_path, raw_path, content_hash, source_hash, active, attrs, "
+                "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    uid,
+                    "Page",
+                    args.content_type,
+                    title,
+                    slug,
+                    None,           # rel_md_path: no .md file written
+                    str(rel_raw) if rel_raw else None,
+                    content_hash,
+                    source_hash or None,
+                    1,               # active
+                    None,            # attrs
+                    ts,
+                    ts,
+                    page_body,      # inlined body (PRIN-ARCH-16)
+                ),
+            )
+            # Write initial patch v1 (CONST-ING-7)
+            conn.execute(
+                "INSERT INTO patches(page_uid, version, op, delta, author, created_at) "
+                "VALUES(?,?,?,?,?,?)",
+                (uid, 1, "create", content_hash, args.author or "agent", ts),
+            )
 
-        # IDF (PRIN-ING-9, CONST-ING-6)
-        increment_idf(ctx, extract_nouns(page_body))
+            # IDF (PRIN-ING-9, CONST-ING-6)
+            increment_idf(ctx, extract_nouns(page_body))
 
-        new_content_hashes.add(content_hash)
-        written.append({"md": md_path, "raw": raw_written})
-        created.append({"uid": uid, "title": title, "md_path": str(rel_md),
-                        "raw_path": str(rel_raw) if rel_raw else None,
-                        "body": page_body,
-                        "lines": len(page_body.splitlines())})
+            new_content_hashes.add(content_hash)
+            written.append({"uid": uid, "raw": raw_written})
+            created.append({
+                "uid": uid,
+                "title": title,
+                "slug": slug,
+                "raw_path": str(rel_raw) if rel_raw else None,
+                "body": page_body,
+                "lines": len(page_body.splitlines()),
+            })
+
+        conn.execute("RELEASE SAVEPOINT ingest_pages")
+    finally:
+        conn.close()
 
     # Verify all created nodes after writes (post-write, with rollback on failure)
+    # For SQLite-backed L1 pages, verify by reading back from DB.
+    # Rollback: DELETE from SQLite + delete raw files.
     verify_failed = []
-    for item in created:
-        md_p = ctx.root / item["md_path"]
-        v_checks, v_passed, v_failed = _verify_committed(ctx, md_p, item["uid"])
-        if v_failed:
-            verify_failed.append({"uid": item["uid"], "failed": v_failed, "checks": v_checks})
+    conn_verify = ctx.connect()
+    try:
+        for item in created:
+            row = conn_verify.execute(
+                "SELECT uid, title, layer, content_type, active, created_at, "
+                "content_hash, slug FROM nodes WHERE uid=?",
+                (item["uid"],),
+            ).fetchone()
+            v_checks = []
+            v_passed = []
+            v_failed = []
+            def vcheck(name, cond, detail=""):
+                v_checks.append({"check": name, "status": "pass" if cond else "fail", "detail": detail})
+                if cond:
+                    v_passed.append(name)
+                else:
+                    v_failed.append(name)
+            if not row:
+                vcheck("db_record_exists", False, f"uid={item['uid']} not found in DB")
+            else:
+                vcheck("db_record_exists", True, f"uid={item['uid']}")
+                required = ["uid", "title", "layer", "content_type", "active", "created_at", "content_hash"]
+                # Check all required fields are non-null/empty
+                for f in required:
+                    vcheck(f"db_field_{f}", bool(row[f]), f"{f}={row[f]}")
+                vcheck("db_content_hash_match", row["content_hash"] == sha256_text(item["body"]),
+                      f"stored={row['content_hash'][:8]}... body={sha256_text(item['body'])[:8]}...")
+            if v_failed:
+                verify_failed.append({"uid": item["uid"], "failed": v_failed, "checks": v_checks})
+    finally:
+        conn_verify.close()
 
     if verify_failed:
-        # Rollback: restore IDF + delete written files
+        # Rollback: restore IDF + delete SQLite rows + delete raw files
         dump_idf(ctx, idf_snapshot)
+        conn_rb = ctx.connect()
+        try:
+            for w in written:
+                conn_rb.execute("DELETE FROM nodes WHERE uid=?", (w["uid"],))
+                conn_rb.execute("DELETE FROM patches WHERE page_uid=?", (w["uid"],))
+            conn_rb.commit()
+        finally:
+            conn_rb.close()
         for w in written:
-            if w["md"].exists():
-                w["md"].unlink()
-            if w["raw"] and w["raw"].exists():
-                w["raw"].unlink()
+            if w["raw"] and Path(w["raw"]).exists():
+                Path(w["raw"]).unlink()
         return error(
             f"verify failed for {len(verify_failed)} node(s): {[f['uid'] for f in verify_failed]}",
             "VerifyFailed",
@@ -415,30 +486,46 @@ def cmd_ingest_commit(args) -> dict:
             hints=["fix the failed checks and re-run ingest-commit"]
         )
 
-    # relations: attach to the first created page (CONST-ING-5)
+    # relations: attach to the first created page via SQLite (CONST-ING-5)
     invalid_relations = []
     if relations and created:
         anchor = created[0]
-        anchor_fm_path = ctx.root / anchor["md_path"]
+        anchor_uid = anchor["uid"]
+        conn_rel = ctx.connect()
         try:
-            anchor_text = anchor_fm_path.read_text(encoding="utf-8")
-            anchor_fd, _ = fm.parse(anchor_text)
-        except Exception:
-            anchor_fd = {}
-        for rel in relations:
-            to_uid = rel.get("to")
-            rname = rel.get("relation_name")
-            if not to_uid or not rname:
-                invalid_relations.append({"relation": rel, "reason": "missing to/relation_name"})
-                continue
-            if to_uid not in all_uids:
-                existing = find_node_md(ctx, to_uid)
-                if not existing:
-                    invalid_relations.append({"relation": rel, "reason": "to_uid not found"})
+            # Get current max position for this anchor
+            max_pos_row = conn_rel.execute(
+                "SELECT MAX(position) FROM relations WHERE from_uid=?", (anchor_uid,)
+            ).fetchone()
+            position = (max_pos_row[0] + 1) if max_pos_row and max_pos_row[0] is not None else 0
+
+            for rel in relations:
+                to_uid = rel.get("to")
+                rname = rel.get("relation_name")
+                if not to_uid or not rname:
+                    invalid_relations.append({"relation": rel, "reason": "missing to/relation_name"})
                     continue
-                all_uids.add(to_uid)
-            add_relation(anchor_fd, anchor["uid"], to_uid, rname, rel.get("comment", ""))
-        anchor_fm_path.write_text(fm.render(anchor_fd, anchor.get("body", "")), encoding="utf-8")
+                if to_uid not in all_uids:
+                    # Check if target exists in DB
+                    exists = conn_rel.execute(
+                        "SELECT 1 FROM nodes WHERE uid=?", (to_uid,)
+                    ).fetchone()
+                    if not exists:
+                        existing = find_node_md(ctx, to_uid)
+                        if not existing:
+                            invalid_relations.append({"relation": rel, "reason": "to_uid not found"})
+                            continue
+                    all_uids.add(to_uid)
+                ts = now_ts()
+                conn_rel.execute(
+                    "INSERT OR REPLACE INTO relations(from_uid, to_uid, relation_name, comment, position, created_at) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (anchor_uid, to_uid, rname, rel.get("comment", ""), position, ts),
+                )
+                position += 1
+            conn_rel.commit()
+        finally:
+            conn_rel.close()
 
     # Phase 2 success → delete pending temp file (PRIN-ING-7)
     if args.pending:
@@ -454,57 +541,7 @@ def cmd_ingest_commit(args) -> dict:
     if invalid_relations:
         return warning(data, f"created {len(created)} page(s); some relations invalid",
                        hints=["fix invalid_relations and retry via query-relation add"])
-    hints = ["query to retrieve; read --uid for full body"]
-    if parser_used == "native":
-        hints.insert(0, "DEPRECATED: --native is deprecated; use --pending for external documents (PRIN-ING-6)")
-    if created and created[0]["md_path"].startswith("nodes/page/"):
-        bare = created[0]["md_path"][len("nodes/page/"):]
-        if "/" not in bare:
-            hints.append("node_path is empty — all pages are piling at nodes/page/ root; future ingest should pass --node-path to organize by category")
     return success(data, f"committed {len(created)} Node_Page (L1) via {parser_used}", hints=hints)
-
-
-def _raw_path_checks(ctx, frontmatter) -> list[dict]:
-    """Check raw files exist and mirror node_path. Returns list of check dicts."""
-    checks = []
-    node_path = frontmatter.get("node_path", "")
-    attrs = frontmatter.get("attrs", {})
-    album_sources = attrs.get("album", {}).get("sources", []) if isinstance(attrs, dict) else []
-
-    def add_check(name, status, detail=""):
-        checks.append({"check": name, "status": status, "detail": detail})
-
-    if album_sources:
-        for src in album_sources:
-            raw_rel = src.get("raw_rel_path", "") if isinstance(src, dict) else ""
-            if not raw_rel:
-                add_check("raw_file_exists", "fail", "source missing raw_rel_path")
-                continue
-            raw_file = ctx.root / raw_rel
-            add_check("raw_file_exists", "pass" if raw_file.exists() else "fail", str(raw_file))
-            if node_path:
-                expected_prefix = f"raws/{node_path}"
-                ok = raw_rel.startswith(expected_prefix + "/") or raw_rel == expected_prefix
-                add_check("raw_path_node_path_mirror",
-                         "pass" if ok else "fail",
-                         f"raw_rel_path={raw_rel} should be under raws/{node_path}/" if not ok else "")
-            else:
-                add_check("raw_path_node_path_mirror", "skip", "node_path empty for album")
-    elif raw_path_str := frontmatter.get("raw_path", ""):
-        raw_file = ctx.root / raw_path_str
-        add_check("raw_file_exists", "pass" if raw_file.exists() else "fail", str(raw_file))
-        if node_path:
-            expected_prefix = f"raws/{node_path}"
-            ok = raw_path_str.startswith(expected_prefix + "/") or raw_path_str == expected_prefix
-            add_check("raw_path_node_path_mirror",
-                     "pass" if ok else "fail",
-                     f"raw_path={raw_path_str} should be under raws/{node_path}/" if not ok else "")
-        else:
-            add_check("raw_path_node_path_mirror", "skip", "node_path empty")
-    else:
-        add_check("raw_file_exists", "skip", "native ingest (no source file)")
-        add_check("raw_path_node_path_mirror", "skip", "native ingest (no raw file)")
-    return checks
 
 
 def _verify_committed(ctx, md_path, uid) -> tuple[list[dict], list[str], list[str]]:

@@ -77,7 +77,29 @@ def resolve_wiki(name_or_path: str) -> WikiContext | None:
 
 
 def find_node_md(ctx: WikiContext, uid: str) -> tuple[dict, str] | None:
-    """Find a node .md file by UID via fs walk. Returns (frontmatter, body) or None."""
+    """Find a node by UID. SQLite-first: query DB for rel_md_path, then read .md from fs.
+    Falls back to fs walk if DB lookup fails or rel_md_path is NULL/empty.
+
+    Returns (frontmatter, body) or None.
+    """
+    # SQLite-first: try to get rel_md_path from DB
+    try:
+        conn = ctx.connect()
+        try:
+            row = conn.execute(
+                "SELECT rel_md_path FROM nodes WHERE uid=? AND active=1", (uid,)
+            ).fetchone()
+            if row and row["rel_md_path"]:
+                md_path = ctx.root / row["rel_md_path"]
+                text = md_path.read_text(encoding="utf-8")
+                fm_dict, body = _fm.parse(text)
+                return fm_dict, body
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # Fallback: fs walk
     nodes_root = ctx.nodes_dir
     if not nodes_root.is_dir():
         return None
@@ -93,10 +115,33 @@ def find_node_md(ctx: WikiContext, uid: str) -> tuple[dict, str] | None:
 
 
 def find_by_source_hash(ctx: WikiContext, source_hash: str) -> dict | None:
-    """Find a node by its source_hash via fs walk. Returns frontmatter or None.
+    """Find a node by its source_hash. Checks SQLite first, then FS fallback.
 
-    Used for Level-2 dedup — frontmatter is the source of truth (FS).
+    Used for Level-2 dedup — SQLite is authoritative for current L1 pages.
     """
+    # SQLite first
+    conn = ctx.connect()
+    try:
+        row = conn.execute(
+            "SELECT uid, title, active, content_type, content_hash, source_hash, "
+            "layer, created_at FROM nodes WHERE source_hash=?",
+            (source_hash,),
+        ).fetchone()
+        if row:
+            return {
+                "uid": row["uid"],
+                "title": row["title"],
+                "active": bool(row["active"]),
+                "content_type": row["content_type"],
+                "content_hash": row["content_hash"],
+                "source_hash": row["source_hash"],
+                "layer": row["layer"],
+                "created_at": row["created_at"],
+            }
+    finally:
+        conn.close()
+
+    # Legacy FS fallback
     nodes_root = ctx.nodes_dir
     if not nodes_root.is_dir():
         return None

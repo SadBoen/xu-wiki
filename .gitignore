@@ -14,5 +14,11 @@ dist/
 /.mimocode/
 # Design credentials are NEVER in version control.
 design-docs/CREDENTIALS.md
+# Rust build artifacts
+src/rust/target/
+
+# Legacy migration scripts
+scripts/
+
 # Generic safety net (matches MinerU JWT, github_pat_, etc.)
 design-docs/**/CREDENTIALS*.md

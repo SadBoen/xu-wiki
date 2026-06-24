@@ -1,12 +1,10 @@
 """query-relation — manage the 50-edge LRU relation list (01-wiki-architecture.md).
 
-Relations stored in each node's frontmatter `relations` YAML list.
-No SQLite; frontmatter is the sole store.
+Relations stored in the SQLite relations table (PRIN-ARCH-8, CONST-ARCH-4).
 """
 from __future__ import annotations
 
 from ..ingest.relations_lru import add_relation, list_relations
-from ..utils import frontmatter as _fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki, find_node_md
@@ -36,15 +34,10 @@ def _rel_add(args) -> dict:
         return error(f"node not found: {args.to_uid}", "NodeNotFound")
 
     max_edges = cfg_get(ctx.config, "relation.max_edges", 50)
-    result = add_relation(from_fm, args.from_uid, args.to_uid,
+    result = add_relation(ctx, args.from_uid, args.to_uid,
                           args.relation_name, args.comment, max_edges)
 
-    # Write back updated frontmatter
-    from_path = _node_path_to_file(ctx, args.from_uid)
-    if from_path:
-        _write_frontmatter(from_path, from_fm)
-
-    rels = list_relations(from_fm, args.from_uid)
+    rels = list_relations(ctx, args.from_uid)
     data = {
         "from_uid": args.from_uid,
         "to_uid": args.to_uid,
@@ -72,7 +65,7 @@ def _rel_list(args) -> dict:
     if not from_fm:
         return error(f"node not found: {args.from_uid}", "NodeNotFound")
 
-    rels = list_relations(from_fm, args.from_uid)
+    rels = list_relations(ctx, args.from_uid)
     for r in rels:
         to_fm, _ = find_node_md(ctx, r["to_uid"])
         r["to_title"] = to_fm.get("title", "(missing)") if to_fm else "(missing)"
@@ -81,31 +74,3 @@ def _rel_list(args) -> dict:
         {"from_uid": args.from_uid, "relations": rels, "edge_count": len(rels)},
         f"{len(rels)} edge(s) in LRU order (head = most recently touched)",
     )
-
-
-def _node_path_to_file(ctx, uid: str):
-    """Find the .md path for a uid."""
-    nodes_root = ctx.nodes_dir
-    if not nodes_root.is_dir():
-        return None
-    for p in nodes_root.rglob("*.md"):
-        try:
-            text = p.read_text(encoding="utf-8")
-            import frontmatter
-            fm_dict, _ = frontmatter.parse(text)
-            if fm_dict.get("uid") == uid:
-                return p
-        except Exception:
-            continue
-    return None
-
-
-def _write_frontmatter(path, fm: dict) -> None:
-    """Rewrite a .md file with updated frontmatter, preserving body."""
-    try:
-        text = path.read_text(encoding="utf-8")
-        _, body = _fm.parse(text)
-        new_text = _fm.render(fm, body)
-        path.write_text(new_text, encoding="utf-8")
-    except Exception:
-        pass

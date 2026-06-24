@@ -84,24 +84,6 @@ def normalize_within(root: str | Path, candidate: str | Path) -> Path:
         raise ValueError(f"path escapes wiki root: {candidate}")
     return cand_resolved
 
-
-def safe_node_path(node_path: str) -> str:
-    """Validate a user-supplied logical node_path (BAN-ARCH-7).
-
-    node_path is a relative logical partition like ``papers/ml``. It must stay
-    in-tree: no absolute paths, no '..' traversal segments. Returns the cleaned
-    (slash-stripped) value. Raises ValueError on any escape attempt.
-    """
-    np = (node_path or "").strip().replace("\\", "/").strip("/")
-    if not np:
-        return ""
-    if Path(np).is_absolute():
-        raise ValueError(f"node_path must be relative: {node_path!r}")
-    if any(part == ".." for part in np.split("/")):
-        raise ValueError(f"node_path must not contain '..': {node_path!r}")
-    return np
-
-
 def safe_slug(text: str, maxlen: int = 80) -> str:
     s = re.sub(r"[^\w\-]+", "-", (text or "").strip().lower(), flags=re.UNICODE)
     s = re.sub(r"-+", "-", s).strip("-")

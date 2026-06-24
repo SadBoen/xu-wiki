@@ -74,7 +74,7 @@ Each SOP is self-contained in its own file (`*.md` below); the agent says
 
 Before declaring an ingest done, run through this every time:
 
-1. **`raws/<node_path>/` has the source file copy?** — if empty but `nodes/page/`
+1. **`raws/<raw_path>/` has the source file copy?** — if empty but `nodes/page/`
    has content, the copy was bypassed. Stop and re-investigate.
 2. **Phase 1 temp file was deleted on success?** — if `ingest-commit` succeeded but
    the temp file still exists, that is a bug. Re-run `ingest-commit` (it will

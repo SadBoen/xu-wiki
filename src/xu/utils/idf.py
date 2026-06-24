@@ -1,66 +1,65 @@
-"""IDF (Inverse Document Frequency) storage in idf.md.
+"""IDF (Inverse Document Frequency) storage in SQLite idf table.
 
-idf.md lives at the wiki root. Format:
-  nouns:
-    <noun>: {freq: N, weight: W}
-  updated_at: <timestamp>
+Schema (defined in utils.db):
+  CREATE TABLE idf (
+      noun       TEXT PRIMARY KEY,
+      freq       INTEGER NOT NULL,
+      weight     REAL NOT NULL,
+      updated_at INTEGER
+  )
 
-Read: load_idf(ctx) → dict[noun, (freq, weight)]
-Write: dump_idf(ctx, idf_dict)
-Increment: increment_idf(ctx, nouns_dict) — add counts and rewrite
+Read:  load_idf(ctx)     → dict[noun, (freq, weight)]
+Write: dump_idf(ctx, idf)→ None (replaces all rows)
+Increment: increment_idf(ctx, nouns_dict) — upsert per-noun counts
 """
 from __future__ import annotations
-
-from pathlib import Path
 
 from ..utils.constants import IDF_CONSTANT
 from ..utils.paths import now_ts
 
 
-def _idf_path(ctx) -> Path:
-    return ctx.root / "idf.md"
-
-
 def load_idf(ctx) -> dict[str, tuple[int, float]]:
-    """Load IDF noun table from idf.md. Returns {noun: (freq, weight)}."""
-    p = _idf_path(ctx)
-    if not p.exists():
-        return {}
+    """Load IDF noun table from SQLite. Returns {noun: (freq, weight)}."""
+    conn = ctx.connect()
     try:
-        import yaml
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        nouns = data.get("nouns", {})
-        result = {}
-        for noun, v in nouns.items():
-            if isinstance(v, dict):
-                result[noun] = (v.get("freq", 0), v.get("weight", 0.0))
-            else:
-                result[noun] = (0, 0.0)
-        return result
-    except Exception:
-        return {}
+        rows = conn.execute("SELECT noun, freq, weight FROM idf").fetchall()
+        return {row["noun"]: (row["freq"], row["weight"]) for row in rows}
+    finally:
+        conn.close()
 
 
 def dump_idf(ctx, idf: dict[str, tuple[int, float]]) -> None:
-    """Write IDF table to idf.md."""
-    import yaml
-    p = _idf_path(ctx)
-    data = {
-        "nouns": {noun: {"freq": freq, "weight": weight} for noun, (freq, weight) in idf.items()},
-        "updated_at": now_ts(),
-    }
-    p.write_text(yaml.dump(data, allow_unicode=True), encoding="utf-8")
+    """Replace all IDF rows in SQLite."""
+    conn = ctx.connect()
+    try:
+        ts = now_ts()
+        conn.execute("DELETE FROM idf")
+        for noun, (freq, weight) in idf.items():
+            conn.execute(
+                "INSERT INTO idf(noun, freq, weight, updated_at) VALUES (?,?,?,?)",
+                (noun, freq, weight, ts),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def increment_idf(ctx, nouns: dict[str, int]) -> None:
-    """Add noun counts to IDF table and rewrite idf.md."""
+    """Upsert noun counts into SQLite idf table (CONST-ING-6)."""
     if not nouns:
         return
-    idf = load_idf(ctx)
-    ts = now_ts()
-    for noun, cnt in nouns.items():
-        freq, weight = idf.get(noun, (0, 0.0))
-        new_freq = freq + cnt
-        new_weight = IDF_CONSTANT / (new_freq + 1)
-        idf[noun] = (new_freq, new_weight)
-    dump_idf(ctx, idf)
+    conn = ctx.connect()
+    try:
+        ts = now_ts()
+        for noun, cnt in nouns.items():
+            row = conn.execute("SELECT freq FROM idf WHERE noun=?", (noun,)).fetchone()
+            new_freq = (row["freq"] if row else 0) + cnt
+            new_weight = IDF_CONSTANT / (new_freq + 1)
+            conn.execute(
+                "INSERT INTO idf(noun, freq, weight, updated_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(noun) DO UPDATE SET freq=?, weight=?, updated_at=?",
+                (noun, new_freq, new_weight, ts, new_freq, new_weight, ts),
+            )
+        conn.commit()
+    finally:
+        conn.close()

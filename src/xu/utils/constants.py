@@ -14,7 +14,6 @@ FM_CONTENT_TYPE = "content_type"  # ∈ {article, table, gallery, ...}
 FM_ACTIVE = "active"        # bool (not 0/1)
 FM_CREATED = "created_at"
 FM_CONTENT_HASH = "content_hash"
-FM_NODE_PATH = "node_path"
 FM_RAW_PATH = "raw_path"
 FM_SOURCE_HASH = "source_hash"
 FM_SPLIT_INDEX = "split_index"

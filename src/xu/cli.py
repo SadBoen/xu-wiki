@@ -61,12 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--pending", required=False, help="Phase 1 temp file to commit")
     sp.add_argument("--title", required=False, help="title (required unless --native with frontmatter)")
-    sp.add_argument("--node-path", default="")
     sp.add_argument("--content-type", default="article", choices=["article", "table", "gallery"],
                     help="body form: article (prose) | table | gallery")
     sp.add_argument("--relations", default="", help="JSON array of {to, relation_name, comment?}")
     sp.add_argument("--native", default="", help="raw markdown string (bypass parse, still validate)")
     sp.add_argument("--source", default="", help="abs path to source file (required when --native is used, for PRIN-ING-6 raws copy)")
+    sp.add_argument("--raw-path", default="", help="LLM-chosen raw file path under raws/ (e.g. certs/qsa/cert.pdf)")
     sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_commit")
 
@@ -76,7 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--title", required=True, help="album theme (becomes the L1 title)")
     sp.add_argument("--files", required=True,
                     help="comma-separated absolute image paths")
-    sp.add_argument("--node-path", default="", help="logical partition path (album lives under nodes/page/<node-path>/)")
+    sp.add_argument("--raw-path", default="",
+                    help="LLM-chosen raw dir under raws/ (e.g. certs/qsa)")
     sp.add_argument("--layout", default="table", choices=["table", "list"],
                     help="body layout: table (default) or list")
     sp.add_argument("--vision", action="store_true",
@@ -108,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("nodes", help="DB node metadata query (read-only)")
     sp.add_argument("--wiki", required=True)
-    sp.add_argument("--layer", default=None, choices=["Page", "List", "Report"])
+    sp.add_argument("--layer", default=None, choices=["Page", "List", "Report", "Entity"])
     sp.add_argument("--include-inactive", action="store_true")
     sp.set_defaults(func="nodes")
 
@@ -134,7 +135,6 @@ def build_parser() -> argparse.ArgumentParser:
     lc.add_argument("--title", required=True)
     lc.add_argument("--members", required=True, help="comma-separated member UIDs")
     lc.add_argument("--dimension", default="", help="comparison dimension")
-    lc.add_argument("--node-path", default="")
     ls = lsub.add_parser("show")
     ls.add_argument("--wiki", required=True)
     ls.add_argument("--uid", required=True)
@@ -147,7 +147,6 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("--title", required=True)
     rc.add_argument("--body", required=True, help="report body (markdown)")
     rc.add_argument("--references", required=True, help="comma-separated L1/L2 evidence UIDs")
-    rc.add_argument("--node-path", default="")
     rs = rpsub.add_parser("show")
     rs.add_argument("--wiki", required=True)
     rs.add_argument("--uid", required=True)
@@ -157,7 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name in [
         "doctor", "doctor-fields", "doctor-files", "doctor-relations",
         "doctor-l1-immutable", "doctor-report-evidence", "doctor-idf",
-        "doctor-node-path-organization", "doctor-all",
+        "doctor-sqlite-md-consistency", "doctor-entity-consistency", "doctor-all",
     ]:
         spx = sub.add_parser(name, help=f"{name} health check (read-only by default)")
         spx.add_argument("--wiki", required=True)
@@ -174,14 +173,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--granularity", default="keep-l1", choices=["keep-l1", "keep-l1-l2", "full"])
     sp.set_defaults(func="rebuild")
-
-    sp = sub.add_parser("reorganize",
-                        help="atomically move a Page to a new node_path partition (PRIN-ARCH-25)")
-    sp.add_argument("--wiki", required=True)
-    sp.add_argument("--uid", required=True)
-    sp.add_argument("--new-node-path", required=True,
-                    help="target node_path (e.g. certificates/qsa)")
-    sp.set_defaults(func="reorganize")
 
     # ---- M6: SOP-config (alias / register / unregister / config) ----
     sp = sub.add_parser("alias", help="manage wiki aliases (set / unset / show)")
@@ -313,9 +304,6 @@ def _dispatch(args) -> dict:
     if func == "rebuild":
         from .commands.doctor import cmd_rebuild
         return cmd_rebuild(args)
-    if func == "reorganize":
-        from .commands.reorganize import cmd_reorganize
-        return cmd_reorganize(args)
     if func == "alias_set":
         from .commands.config import cmd_alias_set
         return cmd_alias_set(args)

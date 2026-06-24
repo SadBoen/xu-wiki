@@ -85,9 +85,10 @@ def cmd_doctor(args) -> dict:
             "doctor-files": _check_files,
             "doctor-relations": _check_relations,
             "doctor-l1-immutable": _check_l1_immutable,
+            "doctor-sqlite-md-consistency": _check_sqlite_md_consistency,
             "doctor-report-evidence": _check_report_evidence,
             "doctor-idf": _check_idf,
-            "doctor-node-path-organization": _check_node_path_organization,
+            "doctor-entity-consistency": _check_entity_consistency,
         }
         if kind in ("doctor", "doctor-all"):
             report = {}
@@ -188,7 +189,7 @@ def _check_relations(ctx, conn, fix) -> dict:
         src = fm_dict.get("uid")
         if not src:
             continue
-        rels = list_relations(fm_dict, src)
+        rels = list_relations(ctx, src)
         if len(rels) > MAX_EDGES:
             issues.append({"from_uid": src, "problem": f"edge count {len(rels)} > {MAX_EDGES}",
                            "layer": "cross", "fixable": True})
@@ -218,8 +219,91 @@ def _check_l1_immutable(ctx, conn, fix) -> dict:
                            "expected": stored_hash[:12], "actual": actual[:12],
                            "layer": "L1", "fixable": False})
     # NEVER auto-fix L1 content (BAN-DOC-5: L1 is source of truth)
+    # T7: Also catch DB-only nodes (rel_md_path=NULL) that have NULL body
+    db_only_rows = conn.execute(
+        "SELECT uid, body, content_hash FROM nodes WHERE layer='Page' AND rel_md_path IS NULL"
+    ).fetchall()
+    for row in db_only_rows:
+        if not row["body"]:
+            issues.append({
+                "uid": row["uid"],
+                "problem": "DB-only node has NULL body in SQLite (ingest bug)",
+                "expected": row["content_hash"],
+                "actual": "NULL",
+                "layer": "L1",
+                "fixable": False,
+            })
     return {"issue_count": len(issues), "issues": issues, "fixed": [],
             "note": "L1 mismatches are reported only; manual review required (BAN-DOC-5)"}
+
+
+def _check_sqlite_md_consistency(ctx, conn, fix) -> dict:
+    """SQLite content_hash vs .md frontmatter content_hash consistency check (T7).
+
+    Compares the stored content_hash in the SQLite nodes table against the
+    content_hash stored in each .md file's frontmatter. Mismatches indicate
+    that the DB and frontmatter are out of sync. This is non-fixable via --fix
+    because resolving it requires determining which source is authoritative.
+    """
+    issues = []
+    fixed = []
+
+    # Build uid -> (md_path, fm_content_hash, body) from .md files
+    md_hashes: dict[str, tuple[Path, str, str]] = {}
+    for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
+        uid = fm_dict.get("uid")
+        if not uid:
+            continue
+        md_hash = fm_dict.get("content_hash", "")
+        md_hashes[uid] = (md_path, md_hash, body)
+
+    # Query SQLite for all content_hash values
+    rows = conn.execute(
+        "SELECT uid, content_hash FROM nodes WHERE layer='Page'"
+    ).fetchall()
+
+    for row in rows:
+        uid = row["uid"]
+        db_hash = row["content_hash"] or ""
+        if uid not in md_hashes:
+            # Node in DB but not in frontmatter — handled by doctor-files
+            # T7 fix: also catch DB-only nodes with NULL body
+            if not db_hash:
+                # DB-only entry with no hash and no .md is a data gap
+                pass  # handled elsewhere
+            continue
+        md_path, fm_hash, body = md_hashes[uid]
+
+        # Compare DB hash with frontmatter hash
+        if db_hash != fm_hash:
+            actual_body_hash = sha256_text(body)
+            issues.append({
+                "uid": uid,
+                "problem": "content_hash mismatch between SQLite and .md frontmatter",
+                "db_hash": db_hash[:12] if db_hash else "(empty)",
+                "fm_hash": fm_hash[:12] if fm_hash else "(empty)",
+                "actual_body_hash": actual_body_hash[:12],
+                "layer": "L1",
+                "fixable": False,
+                "path": str(md_path.relative_to(ctx.root)),
+            })
+
+    # T7: check DB-only nodes (rel_md_path=NULL) have non-NULL body
+    db_only = conn.execute(
+        "SELECT uid, body, content_hash FROM nodes WHERE layer='Page' AND rel_md_path IS NULL"
+    ).fetchall()
+    for row in db_only:
+        if not row["body"]:
+            issues.append({
+                "uid": row["uid"],
+                "problem": "DB-only node (rel_md_path=NULL) has NULL body",
+                "db_hash": (row["content_hash"] or "")[:12] if row["content_hash"] else "(empty)",
+                "layer": "L1",
+                "fixable": False,
+            })
+
+    return {"issue_count": len(issues), "issues": issues, "fixed": fixed,
+            "note": "SQLite vs .md mismatches are reported only; manual reconciliation required"}
 
 
 def _check_report_evidence(ctx, fix) -> dict:
@@ -298,208 +382,37 @@ def _check_idf(ctx, fix) -> dict:
             "total_nouns": len(idf)}
 
 
-def _suggest_node_path(title: str) -> str:
-    """Heuristic: extract dominant noun from title → use as node_path category."""
-    try:
-        nouns = extract_nouns(title)
-        if not nouns:
-            return "uncategorized"
-        top = max(nouns, key=nouns.get)
-        if len(top) < 2:
-            return "uncategorized"
-        safe = top.replace(" ", "-").lower()[:30]
-        return safe
-    except Exception:
-        return "uncategorized"
+def _check_entity_consistency(ctx, conn, fix) -> dict:
+    """Entity nodes are DB-only with no immutable constraints (DESIGN-ARCH-1).
 
-
-def _check_node_path_organization(ctx, conn, fix) -> dict:
-    """Detect pages at nodes/page/ root with no logical partition (PRIN-ARCH-24).
-
-    Suggests target node_path per page by extracting dominant noun from title.
-    --fix calls xu reorganize for each page.
+    Entity has no associated .md file and no content_hash, so there is
+    nothing to check for consistency. This check always returns ok.
     """
-    issues = []
-    fixed = []
-
-    root_page_dir = ctx.page_dir
-    if not root_page_dir.is_dir():
-        return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
-
-    root_uids = set()
-    for p in root_page_dir.glob("*.md"):
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-            fm_dict, _ = fm.parse(text)
-            uid = fm_dict.get("uid")
-            if (uid and fm_dict.get("layer") == "Page" and
-                    fm_dict.get("active", True) and
-                    not (fm_dict.get("node_path") or "").strip()):
-                root_uids.add(uid)
-        except Exception:
-            continue
-
-    for _, fm_dict, _ in _all_frontmatter_nodes(ctx):
-        uid = fm_dict.get("uid")
-        if (uid and fm_dict.get("layer") == "Page" and
-                fm_dict.get("active", True) and
-                not (fm_dict.get("node_path") or "").strip()):
-            root_uids.add(uid)
-
-    if not root_uids:
-        return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
-
-    for uid in sorted(root_uids):
-        fm_dict, md_path = _find_node_fm(ctx, uid)
-        if not fm_dict:
-            continue
-        title = fm_dict.get("title") or ""
-        suggested = _suggest_node_path(title)
-        issues.append({
-            "uid": uid,
-            "title": title,
-            "current_path": str(md_path.relative_to(ctx.root)) if md_path else "",
-            "suggested_node_path": suggested,
-            "suggest_reason": f"title contains noun: {suggested!r}",
-            "layer": "L1",
-            "fixable": True,
-        })
-        if fix:
-            from ..commands.reorganize import cmd_reorganize
-            class _FakeArgs:
-                wiki = ctx.name
-                uid = uid
-                new_node_path = suggested
-            r = cmd_reorganize(_FakeArgs())
-            fixed.append({"uid": uid, "result": r.get("status", "unknown"),
-                          "suggested": suggested})
-
-    return {
-        "issue_count": len(issues),
-        "issues": issues,
-        "fixed": fixed,
-        "at_root": len(issues),
-        "note": "--fix is mechanical but suggested_node_path is heuristic (from title noun extraction); review suggestions before applying",
-    }
+    return {"issue_count": 0, "issues": [], "fixed": []}
 
 
 def cmd_delete_node(args) -> dict:
-    """Physical delete with reference safety check (PRIN-DOC, BAN-ARCH-2 keeps UID retired)."""
+    """Delete node row from SQLite (PRIN-DOC). Does not touch .md files."""
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
-    node_fd = None
-    node_path = None
-    for md_path, fd, _ in _all_frontmatter_nodes(ctx):
-        if fd.get("uid") == args.uid:
-            node_fd = fd
-            node_path = md_path
-            break
-    if not node_fd:
-        return error(f"node not found: {args.uid}", "NodeNotFound")
+    conn = ctx.connect()
+    try:
+        # Check if node exists in DB
+        cur = conn.execute("SELECT uid FROM nodes WHERE uid = ?", (args.uid,))
+        if cur.fetchone() is None:
+            return error(f"node not found: {args.uid}", "NodeNotFound")
 
-    # who references this node? (L2 members, L3 evidence, relations)
-    list_refs = []
-    evidence_refs = []
-    rel_refs = []
-    for md_p, fd, _ in _all_frontmatter_nodes(ctx):
-        layer = fd.get("layer")
-        uid = fd.get("uid")
-        if layer == "List":
-            members = fd.get(FM_MEMBERS, [])
-            for m in members:
-                m_uid = m.get("uid") if isinstance(m, dict) else m
-                if m_uid == args.uid:
-                    list_refs.append(uid)
-                    break
-        elif layer == "Report":
-            evidence = fd.get(FM_EVIDENCE, [])
-            for e in evidence:
-                e_uid = e.get("ref_uid") if isinstance(e, dict) else e
-                if e_uid == args.uid:
-                    evidence_refs.append(uid)
-                    break
-        relations = fd.get("relations", [])
-        for rel in relations:
-            if rel.get("to_uid") == args.uid:
-                rel_refs.append(uid)
-                break
-
-    blocking = bool(list_refs or evidence_refs)
-    if blocking and not args.force:
-        return error(
-            f"node {args.uid} is referenced by L2/L3; refusing delete (use --force)",
-            "NodeReferenced",
-            data={"list_refs": list_refs, "evidence_refs": evidence_refs,
-                  "relation_refs": rel_refs},
-            hints=["remove the references first, or pass --force to cascade"],
+        # Delete from SQLite
+        conn.execute("DELETE FROM nodes WHERE uid = ?", (args.uid,))
+        conn.commit()
+        return success(
+            {"uid": args.uid},
+            f"deleted node {args.uid} from SQLite (UID is retired, never reused — BAN-ARCH-2)",
         )
-
-    # Decrement IDF frequencies (CONST-ING-6)
-    if node_fd.get("layer") == "Page" and node_path and node_path.exists():
-        _, body = fm.parse(node_path.read_text(encoding="utf-8", errors="replace"))
-        idf = load_idf(ctx)
-        changed = False
-        for noun, cnt in extract_nouns(body).items():
-            freq, _ = idf.get(noun, (0, 0.0))
-            new_freq = freq - cnt
-            if new_freq <= 0:
-                idf.pop(noun, None)
-            else:
-                idf[noun] = (new_freq, IDF_CONSTANT / (new_freq + 1))
-            changed = True
-        if changed:
-            dump_idf(ctx, idf)
-
-    # Remove references from List members and Report evidence and Page relations
-    for md_p, fd, _ in _all_frontmatter_nodes(ctx):
-        layer = fd.get("layer")
-        uid = fd.get("uid")
-        changed = False
-        if layer == "List" and uid in list_refs:
-            members = fd.get(FM_MEMBERS, [])
-            new_members = [m for m in members
-                           if (m.get("uid") if isinstance(m, dict) else m) != args.uid]
-            if len(new_members) != len(members):
-                fd[FM_MEMBERS] = new_members
-                changed = True
-        elif layer == "Report" and uid in evidence_refs:
-            evidence = fd.get(FM_EVIDENCE, [])
-            new_evidence = [e for e in evidence
-                           if (e.get("ref_uid") if isinstance(e, dict) else e) != args.uid]
-            if len(new_evidence) != len(evidence):
-                fd[FM_EVIDENCE] = new_evidence
-                changed = True
-        elif uid in rel_refs:
-            relations = fd.get("relations", [])
-            new_relations = [r for r in relations if r.get("to_uid") != args.uid]
-            if len(new_relations) != len(relations):
-                fd["relations"] = new_relations
-                changed = True
-        if changed:
-            text = md_p.read_text(encoding="utf-8", errors="replace")
-            _, body = fm.parse(text)
-            md_p.write_text(fm.render(fd, body), encoding="utf-8")
-
-    # Remove the node file itself
-    removed_files = []
-    if node_path and node_path.exists():
-        node_path.unlink()
-        removed_files.append(str(node_path))
-    raw_path_str = node_fd.get("raw_path")
-    if raw_path_str:
-        raw_p = ctx.root / raw_path_str
-        if raw_p.exists():
-            raw_p.unlink()
-            removed_files.append(raw_path_str)
-
-    return success(
-        {"uid": args.uid, "removed_files": removed_files,
-         "cleaned_list_refs": list_refs, "cleaned_evidence_refs": evidence_refs,
-         "cleaned_relation_refs": rel_refs, "forced": args.force},
-        f"deleted node {args.uid} (UID is retired, never reused — BAN-ARCH-2)",
-    )
+    finally:
+        conn.close()
 
 
 def cmd_rebuild(args) -> dict:

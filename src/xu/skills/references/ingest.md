@@ -23,7 +23,7 @@ to ingest.
 > | code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article`; do not ask |
 >
 > After `ingest-file` succeeds, the Agent reads the temp file and synthesizes ALL
-> intermediate values **without asking the user**: title, node_path, relations,
+> intermediate values **without asking the user**: title, raw_path, relations,
 > content_type — these are LLM-generated decisions. The user never
 > sees or approves these values.
 >
@@ -81,16 +81,16 @@ xu report create --wiki <w> --title <t> --body <md> \
    markitdown chain → writes a temp file to the system temp directory.
    Returns the temp file path in `data.pending`. No node is created at this stage.
 3. **Agent synthesizes all metadata** from the temp file:
-   title, node_path, relations, content_type — all LLM-generated, never asked
+   title, raw_path, relations, content_type — all LLM-generated, never asked
    of the user. `--title` is required by CLI but the value comes from the LLM.
 4. **Phase 2 — `ingest-commit --pending <f> --title <t>`**: promotes temp file
-   to L1. All intermediate values (content_type, node_path, relations, author)
+   to L1. All intermediate values (content_type, raw_path, relations, author)
    are synthesized by the LLM and passed as CLI arguments. **Commit includes
    internal verify + atomic rollback on failure** — if verify fails, all written
    files are deleted and IDF is restored; the response returns `VerifyFailed`
    error with `hints=["fix the failed checks and re-run ingest-commit"]`.
 5. **取证副本**: after `ingest-commit` succeeds, the CLI copies
-   the source file to `raws/<node_path>/<original_name>` (first page only).
+   the source file to `raws/<raw_path>/<original_name>` (first page only).
    **This is mandatory for all document types** — `.md / .pdf / .docx / .pptx`
    must all be physically stored. The response `data.created[].raw_path` should
    be non-null. If it is null, the copy step was bypassed — stop and investigate.
@@ -152,21 +152,7 @@ by the system temp file; no wiki-internal staging directory exists.
 ## Reorganize — move a page to a different partition
 
 If the user is dissatisfied with a page's location after ingest, **never delete
-and re-ingest**. Use `xu reorganize`:
-
-```bash
-xu reorganize --wiki <w> --uid <uid> --new-node-path certificates/qsa
-# → nodes/page/old/slug.md  →  nodes/page/certificates/qsa/slug.md
-# → raws/old/file.pdf         →  raws/certificates/qsa/file.pdf
-# → DB node_path updated atomically
-```
-
-This is atomic: nodes/ + raws/ + DB are all updated in one transaction. No
-content is re-parsed; the page body and all metadata are preserved.
-
-When to call reorganize:
-- User says "move this to X folder"
-- `doctor-node-path-organization` reports the page is at root with no organization
+the page. To move a raw file to a different path, the page must be deleted and re-ingested with a different `--raw-path`.
 - Agent decides the page belongs in a different logical partition after review
 
 ## Post-commit reflection
@@ -229,7 +215,7 @@ xu ingest-verify --wiki research --uid <uid from commit response>
 # → {"status": "success", "data": {"passed": [...], "failed": [], "checks": [...]}, ...}
 ```
 
-**7 checks**: nodes/ frontmatter completeness, content_hash match, content_type ↔ body format match, raw file exists, raw_path ↔ node_path mirroring (both top-level `raw_path` for regular pages and `attrs.album.sources[].raw_rel_path` for albums), raw path mirrors node_path structure.
+**7 checks**: nodes/ frontmatter completeness, content_hash match, content_type ↔ body format match, raw file exists, raw_path format (must be under raws/ subdirectory), raw file physically present at reported path.
 
 If Phase 2 commit returned `VerifyFailed`: files were rolled back. Start fresh from Phase 1.
 
@@ -240,7 +226,7 @@ When ingesting N files, repeat the three-phase cycle **per file** — serial, no
 ```bash
 # File 1
 xu ingest-file --wiki <w> --file /abs/path/to/a.pdf
-# Agent reads temp file, decides title/node_path/relations, then:
+# Agent reads temp file, decides title/raw_path/relations, then:
 xu ingest-commit --wiki <w> --pending <temp_a.md> --title a ...
 # (verify + rollback happen inside commit; if VerifyFailed → start Phase 1 over)
 xu ingest-verify --wiki <w> --uid <uid_from_commit_a>
