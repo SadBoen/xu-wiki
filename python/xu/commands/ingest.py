@@ -63,7 +63,7 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
     conn = ctx.connect()
     try:
         rows = conn.execute(
-            "SELECT uid, title, active, content_hash, source_hash FROM node_page WHERE layer='Page'"
+            "SELECT uid, title, active, content_hash, source_hash FROM node_page"
         ).fetchall()
         for row in rows:
             uid, title, active, content_hash, source_hash = row
@@ -395,13 +395,12 @@ def cmd_ingest_commit(args) -> dict:
             conn.execute(
                 "INSERT INTO node_page(uid, title, content_type, slug, raw_path, "
                 "content_hash, source_hash, active, attrs, "
-                "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     uid,
                     title,
                     args.content_type,
                     slug,
-                    
                     str(rel_raw) if rel_raw else None,
                     content_hash,
                     source_hash or None,
@@ -445,7 +444,7 @@ def cmd_ingest_commit(args) -> dict:
     try:
         for item in created:
             row = conn_verify.execute(
-                "SELECT uid, title, layer, content_type, active, created_at, "
+                "SELECT uid, title, 'Page' as layer, content_type, active, created_at, "
                 "content_hash, slug FROM node_page WHERE uid=?",
                 (item["uid"],),
             ).fetchone()

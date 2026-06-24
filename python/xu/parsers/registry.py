@@ -244,6 +244,12 @@ _CHAINS: dict[str, list] = {
     ".tiff": [VisionParser()],
     ".html": [MarkitdownParser()],
     ".htm":  [MarkitdownParser()],
+    ".md":   [TextParser()],
+    ".txt":  [TextParser()],
+    ".log":  [TextParser()],
+    ".json": [TextParser()],
+    ".yaml": [TextParser()],
+    ".yml":  [TextParser()],
 }
 
 
