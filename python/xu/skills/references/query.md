@@ -1,149 +1,113 @@
 # query — find knowledge
 
-`/xu-wiki query` finds L1/L2/L3 nodes by graded keywords. The CLI is purely
-a matcher — **it does not interpret free-text**. The agent's job is to
-grade the user's natural language into `--core` (entities, weighted high)
-and `--expansion` (synonyms, weighted low) before invoking
-DESIGN-ARCH-4).
+`/xu-wiki query` finds L1/L2/L3 nodes by related words. The CLI is purely
+a matcher — **it does not interpret free-text**. Your job is to generate
+related words from the user's natural language: `--core` (entities, hit
+weight x3) and `--expansion` (synonyms, hit weight x1).
 
-This file is **self-contained**. Cross-cutting rules
-(4-key JSON, missing-args, paths) live in `SKILL.md`; the keyword-grading
-rule is restated here because it is the dominant failure mode of this SOP.
+This file is **self-contained**. Cross-cutting rules live in `SKILL.md`.
 
 ## CLI palette
 
 ```bash
-# Main search
-xu query --wiki <w> --core <kw,kw> [--expansion <kw,kw>] [--top-k N] \
-              [--neighbors] [--include-inactive]
+# Main search — returns top-50 snippet blocks
+xu query  --wiki <w> --core <kw,kw> --expansion <kw,kw> [--top-k N] [--neighbors]
 
-# Read individual node (L1 markdown body)
-xu read  --wiki <w> --uid <uid>
+# Pull full body + relations for specific UIDs (max 20)
+xu expand --wiki <w> --uids <uid,uid,...>
 
-# List nodes in a layer (debug / discovery)
-xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
+# Read single node
+xu read   --wiki <w> --uid <uid>
 
-# Follow a relation edge
+# Follow/wire relations
 xu query-relation list --wiki <w> --from-uid <uid>
-xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
-                            --relation-name <r> [--comment <c>]
+xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> --relation-name <r>
 
-# Follow L2 / L3 hints
-xu list   show --wiki <w> --uid <uid>
-xu list   create --wiki <w> --title <t> --members <uid,uid,...> \
-                    [--dimension <d>] [--node-path <p>]
-xu report show --wiki <w> --uid <uid>
-xu report create --wiki <w> --title <t> --body <md> \
-                      --references <uid,uid,...> [--node-path <p>]
+# L2 / L3
+xu list   show   --wiki <w> --uid <uid>
+xu list   create --wiki <w> --title <t> --members <uid,uid,...> --dimension <d>
+xu report show   --wiki <w> --uid <uid>
+xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...>
 ```
 
-| Flag | Required | Purpose |
-|---|---|---|
-| `--wiki` | yes | Wiki name or alias |
-| `--core` | yes | Comma-separated core keywords (entities, weighted high) |
-| `--expansion` | no | Comma-separated expansion keywords (synonyms, weighted low) |
-| `--top-k` | no | Max results; default 10 |
-| `--neighbors` | no | Also include 50-edge LRU neighbors of top hits |
-| `--include-inactive` | no | Include nodes marked inactive (default: active only) |
+## How query works (internal)
+
+```
+1. Scan node_page.body for core + expansion hits
+2. Each hit -> take 50 chars before + after -> snippet
+3. Snippets within 80 chars in same UID -> merged
+4. Score = core_hits x 3 + expansion_hits x 1
+5. Sort desc -> return top 50
+
+Returns: [{uid, title, layer:"Page", score, snippet}]
+No IDF. No Fast Pass. No LLM inside CLI.
+```
+
+## How expand works
+
+```
+xu expand --uids "A001,B002"
+
+Returns: {A001: {body, title, layer, relations: [...]}, B002: {...}}
+Max 20 UIDs. Relations include from_uid/to_uid/relation_name.
+```
+
+## The LLM-driven query loop (up to 5 cycles)
+
+```
+LOOP:
+  You generate related words -> xu query -> read snippets
+    |- Have conclusion? -> answer user (done)
+    |- Need more, know which UIDs -> xu expand -> read body+relations
+    |   |- Have conclusion? -> answer (done)
+    |   |- Need more -> follow relations to new UIDs -> xu expand again
+    |   |- Or: generate new related words -> back to LOOP top
+    |- Not enough, don't know which UIDs -> generate new related words -> LOOP top
+
+After 5 cycles, ask user: "expand search scope?"
+```
 
 ## Hard rule for this SOP
 
-> **Keyword grading is the Agent's job. The CLI does NOT split a free-text
-> query.** You pass already-graded `--core` (entities, weighted high) and
-> `--expansion` (synonyms, weighted low) comma lists. There is **no** `--q`,
-> **no** `--mode`, **no** `--limit`.
+> **YOU generate the related words. CLI does NOT split free-text.**
 >
-> - "find papers about BERT" → `xu query --wiki W --core "BERT,transformer" --expansion "pre-training,encoder,attention,model,architecture"`
-> - "现在库里面收录了几条船？" → `xu query --wiki W --core "船舶,IMO,MMSI,船名" --expansion "船只,舰船,货轮,ship,vessel,boat"`
+> - "find papers about BERT" -> `--core "BERT,transformer" --expansion "pretraining,encoder,attention"`
+> - "库里有几条船?" -> `--core "船舶,IMO,MMSI" --expansion "船,舰船,货轮,ship,vessel,boat"`
 >
-> If the user gives a free-text query and you cannot grade it, **ask** for
-> core entities before invoking.
+> Always include English synonyms in expansion. Always >= 1 core keyword.
 
 ## Workflow
 
-1. **Grade the user's query** into core + expansion keywords:
-   - Input: the **raw user query** (full natural language, e.g. "现在库里面收录了几条船？")
-   - **Always add English forms to expansion** — regardless of query language,
-     include English synonyms (e.g. `ship,vessel,boat` for 船). This is a hard
-     requirement: every expansion set must include English.
-   - Output: `--core` (domain-specific entities, weighted high) +
-     `--expansion` (language-aware synonyms, weighted low)
-   - Example: `"现在库里面收录了几条船？"` →
-     `--core "船舶,IMO,MMSI,船名"` `--expansion "船只,舰船,货轮,ship,vessel,boat"`
-   - Jieba plays **no role in query keyword generation** — it only runs inside
-     ingest (IDF table construction). At query time, you grade from the raw
-     query text directly.
-2. **Invoke `query`** with `--core` (required) and `--expansion` (recommended).
-3. **Inspect the result's `data.hits`** — list of UIDs with relevance score.
-4. **Read the top hits** with `read --wiki W --uid <uid>`.
-5. **Post-query reflection** — the agent runs
-   this before answering the user. LLM decides autonomously — no user approval needed.
-   The CLI's `list_hint` / `report_hint` are **starting points, not mandates**.
-
-   **Step 1 — Find similar Report (mandatory, before any creation decision):**
-   Run a query to find existing Reports that reference the same or overlapping L1
-   nodes as the current hits. If one exists → extend that Report (add the new
-   hits as additional evidence or update the conclusion). Do not ask the user.
-
-   **Step 2 — Assess Report value (only if no similar found):**
-   - Do the hits + any existing `report_hint` form an evidence chain
-     (premise → evidence → conclusion)?
-   - Is there a conclusion emerging that future "what's the verdict on X"
-     queries would benefit from being able to look up?
-   - Would writing this up as a Node_Report prevent the user (or others)
-     from having to re-ask the same question later?
-   → If yes: call `report create` autonomously. Do not ask the user.
-
-   **Step 3 — List valuation (SECONDARY, opportunistic):**
-   Only if the hits form a natural comparable group on a missing axis and no
-   similar List exists. Otherwise, by default, do not propose List after query.
-
-   **Why query leans Report, not List**: query is "I asked a question"; the
-   natural follow-up is "save the answer". A List would just bundle related
-   hits without synthesizing anything. **CLI does NOT run this reflection**
-   The CLI does not run this reflection and never auto-creates.
-6. **If the user wants to wire edges** — `query-relation add` with
-   `--from-uid` / `--to-uid` / `--relation-name`.
-7. **If the user wants the neighborhood** — re-run with `--neighbors`.
+1. **Generate related words** from user's natural language
+2. **`xu query`** with core + expansion
+3. **Read snippets** in response. Do you have an answer?
+   - If yes: answer user and stop.
+   - If you know which UIDs need full body: `xu expand --uids "A,B"`
+   - If you need different keywords: go back to step 1.
+4. **Read body+relations** from expand response
+   - Conclusion reached? Answer.
+   - Relations point to relevant UIDs? `xu expand` those.
+   - Need different angle? Go back to step 1.
+5. **5 cycles max.** Then ask user.
 
 ## Example
 
 ```bash
-xu query --wiki research --core "BERT,transformer" \
-  --expansion "pre-training,encoder,attention" --top-k 5
-# → {"status": "success", "data": {"hits": [{"uid": "...", "score": 0.92}, ...]}, ...}
+xu query --wiki research --core "BERT,transformer" --expansion "pretraining,encoder,attention"
+# -> returns 12 snippet blocks across 5 UIDs
 
-xu read --wiki research --uid WXYZ5678
-# → {"status": "success", "data": {"uid": "...", "body": "## BERT\n..."}, ...}
+# Agent reads snippets, decides A001 and B002 need full body:
+xu expand --wiki research --uids "A001,B002"
+# -> returns full body + relations for both
 
-xu query-relation add --wiki research \
-  --from-uid WXYZ5678 --to-uid ABCD1234 \
-  --relation-name cites --comment "section 3.2"
-# → {"status": "success", "data": {"from": "...", "to": "...", "relation": "cites"}, ...}
+# Agent reads bodies, finds relation to C003:
+xu expand --wiki research --uids "C003"
+# -> has conclusion: answers user
 ```
 
 ## Common pitfalls
 
-- **Free-text to `--core`** — "BERT papers" is a free-text phrase, not a
-  core keyword. Convert to `--core "BERT,papers"` (commas) or ask the user
-  for the entities.
-- **`--neighbors` without intent** — adding `--neighbors` returns up to
-  50 edges per top hit. For a 5-hit result with full neighborhoods, this
-  is 250 nodes. Use only when the user actually wants the neighborhood.
-- **Auto-creating L2/L3 on hint** — the CLI's `list_hint` / `report_hint`
-  are starting points, not mandates. The post-query reflection in step 5
-  is the **agent's** job; the agent must always run the valuation and
-  only propose if value is real, with PRIMARY bias toward Report
-  LLM decides autonomously; always query for similar Report first
-  and extend existing if found.
-- **Forgetting the 50-edge limit** — when wiring relations, adding a
-  51st evicts the tail (hard rule 3 in `SKILL.md`). Don't re-add the
-  evicted one unless the user really needs it.
-
-## Cross-references
-
-- Cross-cutting rules (4-key JSON, paths, 50-edge LRU) → `SKILL.md §Hard rules`
-- The `ingest-*` CLIs (to add a hit's source if it doesn't exist) →
-  `SKILL.md §SOP map` (ingest SOP)
-- The `doctor-*` CLIs (to check query results are consistent) →
-  `SKILL.md §SOP map` (doctor SOP)
+- **Free-text to --core**: "BERT papers" is a phrase. Convert to `--core "BERT,papers"`.
+- **Forgetting expand**: Don't `xu read` each UID one by one. Use `xu expand` for batches.
+- **Not using the loop**: One `xu query` may not be enough. Generate new keywords, try again.
+- **Forgetting 50-edge limit**: Adding a 51st relation evicts the tail.
