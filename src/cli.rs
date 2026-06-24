@@ -359,6 +359,16 @@ pub fn dispatch(cli: Cli) -> i32 {
                 _core::response::emit(&r)
             }
         }
+        Commands::Create { name, path, alias } => {
+            let r = _core::commands::cmd_create(
+                name.as_deref().unwrap_or(""), &path, alias.as_deref(),
+            );
+            _core::response::emit(&r)
+        }
+        Commands::Doctor { wiki, .. } => {
+            let r = _core::doctor::cmd_doctor(&wiki);
+            _core::response::emit(&r)
+        }
         Commands::Selfcheck => {
             let r = response::success(
                 serde_json::json!({
