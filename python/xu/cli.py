@@ -34,6 +34,16 @@ def build_parser():
     sp.add_argument("--relations", default="")
     sp.set_defaults(func="ingest_commit")
 
+    sp = sub.add_parser("ingest-album", help="single-shot image album -> L1 gallery page")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--title", required=True)
+    sp.add_argument("--files", nargs='+', required=True)
+    sp.add_argument("--raw-path", default="")
+    sp.add_argument("--layout", default="table", choices=["table", "list"])
+    sp.add_argument("--captions", default="")
+    sp.add_argument("--author", default="agent")
+    sp.set_defaults(func="ingest_album")
+
     sp = sub.add_parser("query", help="search wiki")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--core", default="")
@@ -125,14 +135,33 @@ def dispatch(args):
         wp = _resolve_or_err(args.wiki)
         if isinstance(wp, dict):
             return wp
+        pending = getattr(args, 'pending', '') or ''
+        # If pending is a file path (from ingest-file), read and convert to text
+        pending_text = _read_pending(pending)
+        if pending_text is None:
+            return {"status": "error", "message": f"cannot read pending: {pending}", "hints": []}
         return json.loads(py_ingest_commit(
-            wp, getattr(args, 'pending', '') or '',
+            wp, pending_text,
             getattr(args, 'title', '') or '',
             getattr(args, 'content_type', 'article') or 'article',
             getattr(args, 'raw_path', '') or '',
             getattr(args, 'author', 'agent') or 'agent',
             getattr(args, 'relations', '') or '',
         ))
+    if f == "ingest_album":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return _handle_ingest_album(
+            wiki_path=wp,
+            title=args.title,
+            files=args.files,
+            raw_path=getattr(args, 'raw_path', '') or '',
+            layout=getattr(args, 'layout', 'table') or 'table',
+            captions_json=getattr(args, 'captions', '') or '',
+            author=getattr(args, 'author', 'agent') or 'agent',
+            py_ingest_commit=py_ingest_commit,
+        )
     if f == "query":
         wp = _resolve_or_err(args.wiki)
         if isinstance(wp, dict):
@@ -152,6 +181,28 @@ def dispatch(args):
     return {"status": "error", "message": f"unknown command: {f}", "hints": []}
 
 
+def _read_pending(pending: str):
+    """Convert pending file path (from ingest-file) to pending_text format.
+
+    If `pending` is a path to a JSON file written by ingest-file,
+    read content_markdown + source_hash and return a `<!-- xu-pending ... -->`
+    header + body.  If `pending` already starts with `<!-- xu-pending`,
+    return as-is.
+    """
+    if pending.startswith("<!-- xu-pending"):
+        return pending
+    pp = Path(pending)
+    if not pp.is_file():
+        return pending  # assume it's already content text
+    try:
+        data = json.loads(pp.read_text(encoding="utf-8"))
+        body = data.get("content_markdown", "")
+        source_hash = data.get("source_hash", "")
+        return f"<!-- xu-pending source_hash={source_hash} -->\n{body}"
+    except (json.JSONDecodeError, OSError):
+        return pending
+
+
 def _resolve_or_err(name: str):
     """Resolve wiki name/alias -> absolute path. Returns dict on error."""
     from xu.utils.config import registry_find
@@ -160,6 +211,75 @@ def _resolve_or_err(name: str):
         return {"status": "error", "message": f"wiki not found: {name}", "hints": []}
     _name, entry = found
     return str(entry["path"])
+
+
+def _handle_ingest_album(*, wiki_path, title, files, raw_path, layout, captions_json, author, py_ingest_commit):
+    """Build a single L1 gallery page from multiple image files."""
+    import hashlib, yaml as _yaml
+    from xu.parsers.image_meta import read_image_meta
+
+    # --- validate files ---
+    resolved = []
+    for p in files:
+        fp = Path(p).expanduser()
+        if not fp.is_absolute():
+            return {"status": "error", "message": f"absolute path required: {p}", "hints": []}
+        if not fp.is_file():
+            return {"status": "error", "message": f"file not found: {p}", "hints": []}
+        resolved.append(fp)
+
+    # --- captions ---
+    captions: dict = {}
+    if captions_json.strip():
+        try:
+            captions = json.loads(captions_json)
+            if not isinstance(captions, dict):
+                captions = {}
+        except json.JSONDecodeError:
+            return {"status": "error", "message": "captions must be valid JSON object", "hints": []}
+
+    # --- collect metadata per image ---
+    items = []
+    hashes = []
+    for fp in resolved:
+        meta = read_image_meta(str(fp))
+        entry = {
+            "filename": fp.name,
+            "size_bytes": fp.stat().st_size,
+            "width": meta.get("width"),
+            "height": meta.get("height"),
+            "datetime": meta.get("datetime"),
+            "make": meta.get("make"),
+            "model": meta.get("model"),
+        }
+        cap = captions.get(fp.name, "").strip()
+        if cap:
+            entry["caption"] = cap
+        entry = {k: v for k, v in entry.items() if v is not None}
+        items.append(entry)
+        hashes.append(hashlib.sha256(fp.read_bytes()).hexdigest())
+
+    # --- source_hash: aggregate ---
+    source_hash = hashlib.sha256("".join(hashes).encode()).hexdigest()
+
+    # --- build body ---
+    body = _yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    # --- pending text: must match parse_pending_header format ---
+    pending_text = f"<!-- xu-pending source_hash={source_hash} parser=album -->\n{body}"
+
+    # --- delegate to ingest-commit (pass text directly, not file path) ---
+    result = json.loads(py_ingest_commit(
+        wiki_path,
+        pending_text,  # pending — raw text with xu-pending header
+        title,         # title
+        "gallery",     # content_type
+        raw_path,      # raw_path
+        author,        # author
+        "",            # relations
+    ))
+
+    return result
 
 
 def _register_wiki(name, path, alias):
