@@ -55,17 +55,10 @@ xu selfcheck
 
 **Missing any extra → `MissingExtra` error at first use, no silent fall-back.**
 
-After install, deploy the skill bundle:
+Verify install:
 
 ```bash
-xu deploy skill --target <agent>   # hermes, trae, claude, cursor, ...
-xu selfcheck                       # verify install is complete
-```
-
-To deploy to multiple harnesses:
-
-```bash
-xu deploy skill --target hermes --target claude --target cursor
+xu selfcheck
 ```
 
 ## Uninstall
