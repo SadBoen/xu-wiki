@@ -90,6 +90,20 @@ def safe_slug(text: str, maxlen: int = 80) -> str:
     return (s or "untitled")[:maxlen]
 
 
+def safe_node_path(node_path: str) -> str:
+    """Sanitize a node-path: strip leading/trailing slashes, reject '..' traversal."""
+    if not node_path:
+        return ""
+    # Collapse backslashes to forward slashes
+    normalized = node_path.replace("\\", "/")
+    # Reject '..' segments that could escape the node tree
+    parts = [p for p in normalized.split("/") if p and p != "."]
+    for part in parts:
+        if part == "..":
+            raise ValueError(f"node-path traversal rejected: {node_path!r}")
+    return "/".join(parts)
+
+
 def append_jsonl(log_path: str | Path, record: dict, *, mkdir: bool = True) -> None:
     """Append one JSONL line for audit (CONST-ARCH-6)."""
     try:

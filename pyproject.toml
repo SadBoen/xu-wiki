@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.0"]
+build-backend = "maturin"
 
 [project]
 name = "xu-wiki"
@@ -21,19 +21,7 @@ all   = ["pypdf", "pdfplumber", "markitdown[all]", "jieba", "Pillow>=10.0"]
 [project.scripts]
 xu = "xu.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-"xu.skills" = [
-    "SKILL.md",
-    "references/create.md",
-    "references/ingest.md",
-    "references/query.md",
-    "references/doctor.md",
-    "references/config.md",
-    "references/error-catalog.md",
-]
-
-[tool.xu-wiki]
-marker = "xu-wiki-project"
+[tool.maturin]
+features = ["pyo3/auto-initialize"]
+module-name = "xu._core"
+python-source = "python"

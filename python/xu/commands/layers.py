@@ -7,6 +7,7 @@ Both are DB-only: body inlined in SQLite `nodes.body`, no .md file written (DESI
 """
 from __future__ import annotations
 
+import json
 import yaml
 
 from ..utils import frontmatter as fm
@@ -76,7 +77,7 @@ def _list_create(args) -> dict:
                 content_hash,
                 None,            # source_hash
                 1,               # active
-                None,            # attrs
+                json.dumps({"dimension": args.dimension}),  # attrs
                 ts,
                 ts,
                 body,            # inlined body
@@ -108,7 +109,7 @@ def _list_show(args) -> dict:
     conn = ctx.connect()
     try:
         row = conn.execute(
-            "SELECT uid, title, body FROM nodes WHERE uid=? AND layer='List'",
+            "SELECT uid, title, body, attrs FROM nodes WHERE uid=? AND layer='List'",
             (args.uid,),
         ).fetchone()
     finally:
@@ -116,6 +117,14 @@ def _list_show(args) -> dict:
 
     if not row:
         return error(f"List not found: {args.uid}", "ListNotFound")
+
+    dimension = ""
+    if row["attrs"]:
+        try:
+            attrs_data = json.loads(row["attrs"])
+            dimension = attrs_data.get("dimension", "")
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     members = []
     if row["body"]:
@@ -138,7 +147,7 @@ def _list_show(args) -> dict:
         conn2.close()
 
     return success(
-        {"uid": row["uid"], "title": row["title"],
+        {"uid": row["uid"], "title": row["title"], "dimension": dimension,
          "members": members, "member_count": len(members)},
         f"List {args.uid}: {len(members)} member(s)",
     )

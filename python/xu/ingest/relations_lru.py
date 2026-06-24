@@ -80,6 +80,7 @@ def add_relation(
             _renumber_rels(conn, from_uid)
 
         action = "refreshed" if existing is not None else "created"
+        conn.commit()
         return {"action": action, "evicted": evicted}
     finally:
         conn.close()
@@ -131,6 +132,7 @@ def touch_relation(ctx: WikiContext, from_uid: str, to_uid: str) -> bool:
                 (new_pos, from_uid, r["to_uid"], r["relation_name"]),
             )
 
+        conn.commit()
         return True
     finally:
         conn.close()

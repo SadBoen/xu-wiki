@@ -121,7 +121,7 @@ def cmd_ingest_album(args) -> dict:
 
     # LLM decides raw placement via --raw-path; fallback to safe_slug(title).
     # Always places under raws/<raw_path_arg>/ (never flat).
-    if args.raw_path:
+    if getattr(args, 'raw_path', None):
         raw_path_arg = args.raw_path
     else:
         raw_path_arg = safe_slug(args.title)

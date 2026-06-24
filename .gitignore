@@ -15,7 +15,7 @@ dist/
 # Design credentials are NEVER in version control.
 design-docs/CREDENTIALS.md
 # Rust build artifacts
-src/rust/target/
+target/
 
 # Legacy migration scripts
 scripts/

@@ -15,7 +15,7 @@ import tempfile
 import yaml
 from pathlib import Path
 
-from .. import db as db_module
+from ..utils import db as db_module
 from ..ingest.relations_lru import add_relation
 from ..ingest.splitter import extract_nouns, split_pages
 from ..parsers.registry import parse_file
