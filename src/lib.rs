@@ -223,7 +223,9 @@ fn parse_pending_header_py(text: &str) -> (std::collections::HashMap<String, Str
 
 // === Command pyfunctions (return JSON strings) ===
 
-#[pyfunction] fn py_create(name: &str, path: &str, alias: Option<&str>) -> String { commands::cmd_create(name, path, alias).to_string() }
+#[pyfunction]
+#[pyo3(signature = (name, path, alias=None))]
+fn py_create(name: &str, path: &str, alias: Option<&str>) -> String { commands::cmd_create(name, path, alias).to_string() }
 #[pyfunction] fn py_selfcheck() -> String { commands::cmd_selfcheck().to_string() }
 #[pyfunction] fn py_doctor(wiki: &str) -> String { commands::cmd_doctor(wiki).to_string() }
 #[pyfunction] fn py_uninstall_plan(preserve_config: bool, keep_pip: bool) -> String { commands::cmd_uninstall_plan(preserve_config, keep_pip).to_string() }

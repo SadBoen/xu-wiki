@@ -22,6 +22,6 @@ all   = ["pypdf", "pdfplumber", "markitdown[all]", "jieba", "Pillow>=10.0"]
 xu = "xu.cli:main"
 
 [tool.maturin]
-features = ["pyo3/auto-initialize"]
+features = ["pyo3/extension-module"]
 module-name = "xu._core"
 python-source = "python"
