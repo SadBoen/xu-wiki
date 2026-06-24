@@ -11,7 +11,6 @@ from pathlib import Path
 from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
 from ..utils.wiki import find_node_md
-from ..utils.idf import load_idf
 from ..ingest.relations_lru import list_relations, touch_relation
 from .scanner import scan
 from .slicing import make_slice, merge_slices
@@ -174,7 +173,7 @@ def run_query(
 
 
 def _score_block(blk, core, expansion, core_w, exp_w, density, idf_weight, text) -> float:
-    """score = (coverage + rarity) × density_bonus."""
+    """score = (coverage + rarity) 脳 density_bonus."""
     snippet = blk["text"]
     core_hits = sum(snippet.lower().count(k.lower()) for k in core)
     exp_hits = sum(snippet.lower().count(k.lower()) for k in expansion)

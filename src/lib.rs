@@ -1,7 +1,6 @@
 //! xu-wiki core — pyo3 bindings for the Python xu package.
 
 pub mod commands;
-pub mod doctor;
 pub mod error;
 pub mod frontmatter;
 pub mod paths;

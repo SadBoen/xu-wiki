@@ -7,10 +7,6 @@ edition = "2021"
 name = "_core"
 crate-type = ["cdylib", "rlib"]
 
-[[bin]]
-name = "xu"
-path = "src/cli.rs"
-
 [dependencies]
 pyo3 = { version = "0.22", features = ["auto-initialize"] }
 serde = { version = "1", features = ["derive"] }
@@ -19,7 +15,4 @@ serde_yaml = "0.9"
 anyhow = "1"
 thiserror = "1"
 sha2 = "0.10"
-clap = { version = "4", features = ["derive"] }
 regex = "1"
-dirs-next = "2"
-which = "6"

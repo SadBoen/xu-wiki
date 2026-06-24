@@ -1,4 +1,4 @@
-﻿"""doctor / delete-node / rebuild 鈥?operations & resilience (07-doctor.md).
+"""doctor / delete-node / rebuild 鈥?operations & resilience (07-doctor.md).
 
 doctor checks are READ-ONLY by default; --fix applies only mechanical,
 non-destructive repairs (PRIN-DOC). Never touches L1 source-of-truth content.
@@ -14,8 +14,7 @@ from ..ingest.splitter import extract_nouns
 from ..ingest.relations_lru import list_relations
 from ..utils import frontmatter as fm
 from ..utils.constants import IDF_CONSTANT, FM_EVIDENCE, FM_MEMBERS, FM_PATCHES, MAX_EDGES, REQUIRED_FM_FIELDS
-from ..utils.idf import load_idf, dump_idf
-from ..utils.paths import now_ts, sha256_text
+# IDF removed\nfrom ..utils.paths import now_ts, sha256_text
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
 
