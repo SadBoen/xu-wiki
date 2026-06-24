@@ -213,4 +213,4 @@ LOOP:
 | `node_derived` | L2 List + L3 Report |
 | `patches` | L1 修订叠加记录 |
 | `relations` | 节点间关系边（LRU，≤50） |
-| `idf` | 名词词频权重（查询打分） |
+| `idf` | 名词词频表（ingest 写入，预留未来使用） |
