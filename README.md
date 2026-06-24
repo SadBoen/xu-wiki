@@ -31,16 +31,19 @@ no scores. Every command returns a **4-key JSON envelope**: `{status, data, mess
 Prebuilt wheels. No Rust toolchain required.
 
 ```bash
-# 1. Install the wheel (core engine, compiled from Rust)
-pipx install https://github.com/SadBoen/xu-wiki/releases/latest/download/xu_wiki-0.1.0-cp311-linux-x86_64.whl
+# 1. Install core engine (auto-pick wheel for your Python version)
+PIPX_PYTHON=$(python3 -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')
+WHEEL="xu_wiki-0.1.0-${PIPX_PYTHON}-linux_x86_64.whl"
+pipx install "https://github.com/SadBoen/xu-wiki/releases/latest/download/${WHEEL}"
 
 # 2. Install Python extras (third-party parsers, not compiled)
 pipx inject xu-wiki "xu-wiki[all] @ git+https://github.com/SadBoen/xu-wiki.git"
 
-# 3. Deploy skill bundle + verify
-xu deploy skill --target auto
+# 3. Verify
 xu selfcheck
 ```
+
+> 或直接去 [GitHub Releases](https://github.com/SadBoen/xu-wiki/releases) 找对应 wheel 下载安装。
 
 **What each extra provides** (install all four — all required for full SOP coverage):
 
