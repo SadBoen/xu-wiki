@@ -7,7 +7,6 @@ Both are DB-only: body inlined in SQLite `nodes.body`, no .md file written (DESI
 """
 from __future__ import annotations
 
-import json
 import yaml
 
 from ..utils import frontmatter as fm
@@ -58,36 +57,23 @@ def _list_create(args) -> dict:
     ts = now_ts()
 
     body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    content_hash = None  # not used for L2
 
     conn = ctx.connect()
     try:
         conn.execute(
-            "INSERT INTO nodes(uid, layer, content_type, title, slug, "
-            "rel_md_path, raw_path, content_hash, source_hash, active, attrs, "
-            "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO node_derived(uid, layer, title, dimension, attrs, "  _=""
+            "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?)",
             (
                 uid,
                 "List",
-                "List",
                 args.title,
-                None,
-                None,           # rel_md_path: DB-only, no .md file
-                None,            # raw_path
-                content_hash,
-                None,            # source_hash
-                1,               # active
-                json.dumps({"dimension": args.dimension}),  # attrs
+                args.dimension,
+                None,            # attrs (reserved)
                 ts,
                 ts,
                 body,            # inlined body
             ),
         )
-        for pos, m in enumerate(member_items):
-            conn.execute(
-                "INSERT INTO list_members(list_uid, member_uid, position) VALUES(?,?,?)",
-                (uid, m["uid"], pos),
-            )
         conn.commit()
     finally:
         conn.close()
@@ -109,7 +95,7 @@ def _list_show(args) -> dict:
     conn = ctx.connect()
     try:
         row = conn.execute(
-            "SELECT uid, title, body, attrs FROM nodes WHERE uid=? AND layer='List'",
+            "SELECT uid, title, body, dimension FROM node_derived WHERE uid=? AND layer='List'",
             (args.uid,),
         ).fetchone()
     finally:
@@ -118,13 +104,7 @@ def _list_show(args) -> dict:
     if not row:
         return error(f"List not found: {args.uid}", "ListNotFound")
 
-    dimension = ""
-    if row["attrs"]:
-        try:
-            attrs_data = json.loads(row["attrs"])
-            dimension = attrs_data.get("dimension", "")
-        except (json.JSONDecodeError, TypeError):
-            pass
+    dimension = row["dimension"] or ""
 
     members = []
     if row["body"]:
@@ -132,19 +112,6 @@ def _list_show(args) -> dict:
             members = yaml.safe_load(row["body"]) or []
         except yaml.YAMLError:
             members = []
-
-    # Enrich with position from list_members table
-    conn2 = ctx.connect()
-    try:
-        member_rows = conn2.execute(
-            "SELECT member_uid, position FROM list_members WHERE list_uid=? ORDER BY position",
-            (args.uid,),
-        ).fetchall()
-        member_map = {r["member_uid"]: r["position"] for r in member_rows}
-        # Re-sort members by position
-        members = sorted(members, key=lambda m: member_map.get(m.get("uid"), 999))
-    finally:
-        conn2.close()
 
     return success(
         {"uid": row["uid"], "title": row["title"], "dimension": dimension,
@@ -194,34 +161,25 @@ def _report_create(args) -> dict:
     uid = gen_uid()
     ts = now_ts()
 
+    # Store references inline in body YAML (evidence table removed)
+    ref_yaml = yaml.dump(ref_meta, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
     conn = ctx.connect()
     try:
         conn.execute(
-            "INSERT INTO nodes(uid, layer, content_type, title, slug, "
-            "rel_md_path, raw_path, content_hash, source_hash, active, attrs, "
-            "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO node_derived(uid, layer, title, dimension, attrs, "
+            "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?)",
             (
                 uid,
                 "Report",
-                "Report",
                 args.title,
-                None,
-                None,           # rel_md_path: DB-only, no .md file
-                None,            # raw_path
-                None,            # content_hash
-                None,            # source_hash
-                1,               # active
-                None,            # attrs
+                None,           # dimension (not used for Report)
+                None,           # attrs (reserved)
                 ts,
                 ts,
-                args.body or "",  # inlined body
+                f"# Evidence\n\n{ref_yaml}\n\n# Body\n\n{args.body or ''}",
             ),
         )
-        for r in ref_meta:
-            conn.execute(
-                "INSERT INTO evidence(report_uid, ref_uid, note) VALUES(?,?,?)",
-                (uid, r["uid"], r.get("note", "")),
-            )
         conn.commit()
     finally:
         conn.close()
@@ -243,7 +201,7 @@ def _report_show(args) -> dict:
     conn = ctx.connect()
     try:
         row = conn.execute(
-            "SELECT uid, title, body FROM nodes WHERE uid=? AND layer='Report'",
+            "SELECT uid, title, body FROM node_derived WHERE uid=? AND layer='Report'",
             (args.uid,),
         ).fetchone()
     finally:
@@ -252,28 +210,26 @@ def _report_show(args) -> dict:
     if not row:
         return error(f"Report not found: {args.uid}", "ReportNotFound")
 
-    # Read evidence from evidence table
-    conn2 = ctx.connect()
-    try:
-        ref_rows = conn2.execute(
-            "SELECT ref_uid, note FROM evidence WHERE report_uid=?",
-            (args.uid,),
-        ).fetchall()
-        references = [{"uid": r["ref_uid"], "note": r["note"]} for r in ref_rows]
-    finally:
-        conn2.close()
+    # References are inline in body YAML (evidence table removed)
+    body = row["body"] or ""
+    references = []
+    if "# Evidence" in body:
+        try:
+            ev_start = body.index("# Evidence") + len("# Evidence")
+            ev_end = body.index("# Body") if "# Body" in body else len(body)
+            ev_yaml = body[ev_start:ev_end].strip()
+            refs = yaml.safe_load(ev_yaml) or []
+            references = [{"uid": r.get("uid", ""), "note": r.get("note", "")} for r in refs if isinstance(r, dict)]
+        except (ValueError, yaml.YAMLError):
+            pass
 
-    dangling = [r["uid"] for r in references if not find_node_md(ctx, r["uid"])]
     data = {
         "uid": row["uid"],
         "title": row["title"],
-        "body": row["body"] or "",
+        "body": body,
         "references": references,
         "evidence_count": len(references),
     }
-    if dangling:
-        return warning(data, f"Report shown; {len(dangling)} dangling evidence ref(s)",
-                       hints=[f"run doctor-report-evidence; dangling: {dangling}"])
     return success(data, f"Report {args.uid}: {len(references)} evidence link(s)")
 
 

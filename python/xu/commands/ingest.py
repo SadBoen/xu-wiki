@@ -1,8 +1,8 @@
-"""ingest — two-phase L1 Node_Page creation (05-ingest.md).
+﻿"""ingest 鈥?two-phase L1 Node_Page creation (05-ingest.md).
 
-Phase 1 (ingest-file): parse → write temporary file (system temp dir).
+Phase 1 (ingest-file): parse 鈫?write temporary file (system temp dir).
                         No node created.
-Phase 2 (ingest-commit): validate → atomic write Page(s) + raws copy + patches v1
+Phase 2 (ingest-commit): validate 鈫?atomic write Page(s) + raws copy + patches v1
                          + IDF + relations. The ONLY write entry (PRIN-ING-1).
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
     conn = ctx.connect()
     try:
         rows = conn.execute(
-            "SELECT uid, title, active, content_hash, source_hash FROM nodes WHERE layer='Page'"
+            "SELECT uid, title, active, content_hash, source_hash FROM node_page WHERE layer='Page'"
         ).fetchall()
         for row in rows:
             uid, title, active, content_hash, source_hash = row
@@ -98,7 +98,7 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
 
 
 def cmd_ingest_file(args) -> dict:
-    """Phase 1: dedup check → parse source → write temp file. No node created.
+    """Phase 1: dedup check 鈫?parse source 鈫?write temp file. No node created.
 
     Dedup is checked BEFORE calling the parser (especially expensive MinerU)
     to avoid wasting API calls on already-ingested sources (PRIN-ING-3).
@@ -128,7 +128,7 @@ def cmd_ingest_file(args) -> dict:
                 hints=["pip install xu-wiki[parse] to enable PDF/DOCX/PPTX parsing"],
             )
 
-    # Level-2 dedup: check BEFORE calling parser (especially MinerU — costs money).
+    # Level-2 dedup: check BEFORE calling parser (especially MinerU 鈥?costs money).
     # Level-2 is all-pages, not active-only, so re-ingesting a deactivated source
     # is also caught here (PRIN-ING-3). Frontmatter is source of truth (FS).
     source_hash = sha256_file(src)
@@ -174,7 +174,7 @@ def cmd_ingest_file(args) -> dict:
             "source_hash": source_hash,
             "chars": len(text),
         },
-        f"parsed via {res.parser} → pending temp file (Phase 1). No node created yet.",
+        f"parsed via {res.parser} 鈫?pending temp file (Phase 1). No node created yet.",
         hints=[
             "review pending content, then run ingest-commit with --pending and --title",
             "Agent decides title/raw_path/relations between phases (PRIN-ING-2)",
@@ -308,7 +308,7 @@ def cmd_ingest_commit(args) -> dict:
     source_index, content_index = _scan_fm_index(ctx)
 
     # Level-2 dedup: source file hash across ALL pages (CONST-ING-3,
-    # PRIN-ING-3). Note: Level-2 is "所有 Page" — NOT filtered by active —
+    # PRIN-ING-3). Note: Level-2 is "鎵€鏈?Page" 鈥?NOT filtered by active 鈥?
     # so re-ingesting the same source is caught even against a deactivated
     # page. (Level-1 below is active-only, per the design's contrast.)
     if source_hash:
@@ -384,14 +384,13 @@ def cmd_ingest_commit(args) -> dict:
 
             # Write L1 Page to SQLite (PRIN-ING-1)
             conn.execute(
-                "INSERT INTO nodes(uid, layer, content_type, title, slug, "
+                "INSERT INTO node_page(uid, title, content_type, slug, "
                 "rel_md_path, raw_path, content_hash, source_hash, active, attrs, "
-                "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "created_at, updated_at, body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     uid,
-                    "Page",
-                    args.content_type,
                     title,
+                    args.content_type,
                     slug,
                     None,           # rel_md_path: no .md file written
                     str(rel_raw) if rel_raw else None,
@@ -438,7 +437,7 @@ def cmd_ingest_commit(args) -> dict:
         for item in created:
             row = conn_verify.execute(
                 "SELECT uid, title, layer, content_type, active, created_at, "
-                "content_hash, slug FROM nodes WHERE uid=?",
+                "content_hash, slug FROM node_page WHERE uid=?",
                 (item["uid"],),
             ).fetchone()
             v_checks = []
@@ -471,7 +470,7 @@ def cmd_ingest_commit(args) -> dict:
         conn_rb = ctx.connect()
         try:
             for w in written:
-                conn_rb.execute("DELETE FROM nodes WHERE uid=?", (w["uid"],))
+                conn_rb.execute("DELETE FROM node_page WHERE uid=?", (w["uid"],))
                 conn_rb.execute("DELETE FROM patches WHERE page_uid=?", (w["uid"],))
             conn_rb.commit()
         finally:
@@ -508,7 +507,7 @@ def cmd_ingest_commit(args) -> dict:
                 if to_uid not in all_uids:
                     # Check if target exists in DB
                     exists = conn_rel.execute(
-                        "SELECT 1 FROM nodes WHERE uid=?", (to_uid,)
+                        "SELECT 1 FROM node_page WHERE uid=?", (to_uid,)
                     ).fetchone()
                     if not exists:
                         existing = find_node_md(ctx, to_uid)
@@ -527,7 +526,7 @@ def cmd_ingest_commit(args) -> dict:
         finally:
             conn_rel.close()
 
-    # Phase 2 success → delete pending temp file (PRIN-ING-7)
+    # Phase 2 success 鈫?delete pending temp file (PRIN-ING-7)
     if args.pending:
         try:
             Path(args.pending).expanduser().resolve().unlink()

@@ -1,7 +1,12 @@
-"""SQLite schema + access layer (PRIN-ARCH-16, CONST-ARCH-7).
+"""SQLite schema + access layer (CONST-ARCH-7).
 
-Schema reserves positions for all three layers (L1/L2/L3) plus the two
-derived tables (patches / idf) and the relation LRU linked list.
+5 tables:
+  node_page    — L1 immutable knowledge pages (ingested from raw files)
+  node_derived — L2 List + L3 Report (human/agent-curated)
+  patches      — L1 revision overlay (page never mutated, patches stack)
+  relations    — LRU edge list between any nodes (max 50 per from_uid)
+  idf          — noun frequency for TF-IDF query scoring
+
 WAL mode + foreign keys + busy timeout are mandatory (CONST-ARCH-7).
 """
 from __future__ import annotations
@@ -10,30 +15,39 @@ import sqlite3
 from pathlib import Path
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS nodes (
+CREATE TABLE IF NOT EXISTS node_page (
     uid           TEXT PRIMARY KEY,
-    layer         TEXT NOT NULL CHECK (layer IN ('Page','List','Report','Entity')),
-                                          -- Entity: L2 aggregation of entity attributes (DESIGN-ARCH-1)
-    content_type  TEXT NOT NULL,
     title         TEXT NOT NULL,
     slug          TEXT,
-    rel_md_path   TEXT,                 -- relative path to .md (NULL only for legacy DB-only L2/L3 rows)
+    rel_md_path   TEXT,                 -- relative path to .md file
     raw_path      TEXT,                 -- relative path under raws/
+    content_type  TEXT NOT NULL DEFAULT 'article',
     content_hash  TEXT,                 -- body SHA256 (Level 1 dedup)
     source_hash   TEXT,                 -- source file SHA256 (Level 2 dedup)
-    source_hash_compressed TEXT,        -- post-compression hash for images (PRIN-ING-12)
+    source_hash_compressed TEXT,        -- post-compression hash for images
     active        INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
-    attrs         TEXT,                 -- JSONB extension attributes
+    attrs         TEXT,                 -- JSON extension attributes
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL,
-    body          TEXT                  -- inlined page body (L1 storage)
+    body          TEXT                  -- inlined page body
 );
-CREATE INDEX IF NOT EXISTS idx_nodes_layer ON nodes(layer);
-CREATE INDEX IF NOT EXISTS idx_nodes_active ON nodes(active);
-CREATE INDEX IF NOT EXISTS idx_nodes_content_hash ON nodes(content_hash);
-CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash);
+CREATE INDEX IF NOT EXISTS idx_page_content_hash ON node_page(content_hash);
+CREATE INDEX IF NOT EXISTS idx_page_source_hash ON node_page(source_hash);
+CREATE INDEX IF NOT EXISTS idx_page_active ON node_page(active);
 
--- L1 revision table (PRIN-ARCH-3, CONST-ING-7)
+CREATE TABLE IF NOT EXISTS node_derived (
+    uid           TEXT PRIMARY KEY,
+    layer         TEXT NOT NULL CHECK (layer IN ('List','Report')),
+    title         TEXT NOT NULL,
+    dimension     TEXT,                 -- L2 comparison dimension
+    attrs         TEXT,                 -- JSON extension attributes
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    body          TEXT NOT NULL         -- inlined YAML body
+);
+CREATE INDEX IF NOT EXISTS idx_derived_layer ON node_derived(layer);
+
+-- L1 revision table
 CREATE TABLE IF NOT EXISTS patches (
     page_uid    TEXT NOT NULL,
     version     INTEGER NOT NULL,
@@ -42,10 +56,10 @@ CREATE TABLE IF NOT EXISTS patches (
     author      TEXT,
     created_at  INTEGER,
     PRIMARY KEY (page_uid, version),
-    FOREIGN KEY (page_uid) REFERENCES nodes(uid) ON DELETE CASCADE
+    FOREIGN KEY (page_uid) REFERENCES node_page(uid) ON DELETE CASCADE
 );
 
--- IDF noun frequency table (PRIN-ARCH-20, CONST-ING-6)
+-- IDF noun frequency table
 CREATE TABLE IF NOT EXISTS idf (
     noun        TEXT PRIMARY KEY,
     freq        INTEGER NOT NULL,
@@ -53,8 +67,7 @@ CREATE TABLE IF NOT EXISTS idf (
     updated_at  INTEGER
 );
 
--- Relation LRU linked list (PRIN-ARCH-8, CONST-ARCH-4).
--- position: smaller = closer to head (more recently touched). No category, no score.
+-- Relation LRU linked list
 CREATE TABLE IF NOT EXISTS relations (
     from_uid       TEXT NOT NULL,
     to_uid         TEXT NOT NULL,
@@ -62,39 +75,10 @@ CREATE TABLE IF NOT EXISTS relations (
     comment        TEXT,
     position       INTEGER NOT NULL,
     created_at     INTEGER,
-    PRIMARY KEY (from_uid, to_uid, relation_name),
-    FOREIGN KEY (from_uid) REFERENCES nodes(uid) ON DELETE CASCADE
+    PRIMARY KEY (from_uid, to_uid, relation_name)
 );
 CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_uid, position);
 CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_uid);
-
--- L3 evidence chain (BAN-ARCH-5, CONST-DOC-3)
-CREATE TABLE IF NOT EXISTS evidence (
-    report_uid  TEXT NOT NULL,
-    ref_uid     TEXT NOT NULL,
-    note        TEXT,
-    PRIMARY KEY (report_uid, ref_uid),
-    FOREIGN KEY (report_uid) REFERENCES nodes(uid) ON DELETE CASCADE,
-    FOREIGN KEY (ref_uid) REFERENCES nodes(uid) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_evidence_report ON evidence(report_uid);
-CREATE INDEX IF NOT EXISTS idx_evidence_ref ON evidence(ref_uid);
-
--- L2 list membership (PRIN-ARCH-4)
-CREATE TABLE IF NOT EXISTS list_members (
-    list_uid    TEXT NOT NULL,
-    member_uid  TEXT NOT NULL,
-    position    INTEGER NOT NULL,
-    PRIMARY KEY (list_uid, member_uid),
-    FOREIGN KEY (list_uid) REFERENCES nodes(uid) ON DELETE CASCADE,
-    FOREIGN KEY (member_uid) REFERENCES nodes(uid) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_list_members ON list_members(list_uid, position);
-
-CREATE TABLE IF NOT EXISTS meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-);
 """
 
 
@@ -117,15 +101,8 @@ def init_schema(db_path: str | Path) -> None:
 
 
 def idf_increment(conn, body: str, *, extract_nouns_fn, constant: float) -> None:
-    """Increment IDF frequencies from nouns extracted from body
-    (PRIN-ING-9, CONST-ING-6). Shared across ingest / album / any future
-    writer that adds text to a Page body.
-
-    `extract_nouns_fn` is injected to keep this module dependency-free
-    of the splitter module (utils.db is the lowest layer). `constant`
-    is the IDF constant (typically IDF_CONSTANT from utils.constants).
-    """
-    from .paths import now_ts  # local import: avoid circular at module load
+    """Increment IDF frequencies from nouns extracted from body."""
+    from .paths import now_ts
     nouns = extract_nouns_fn(body)
     if not nouns:
         return
@@ -141,23 +118,34 @@ def idf_increment(conn, body: str, *, extract_nouns_fn, constant: float) -> None
         )
 
 
-def write_node_body(conn: sqlite3.Connection, uid: str, body: str) -> None:
-    """Upsert the inlined body for a node (L1 write, PRIN-ARCH-16)."""
+def write_page_body(conn: sqlite3.Connection, uid: str, body: str) -> None:
+    """Upsert the inlined body for a page node."""
     from .paths import now_ts
     ts = now_ts()
     conn.execute(
-        "UPDATE nodes SET body=?, updated_at=? WHERE uid=?",
+        "UPDATE node_page SET body=?, updated_at=? WHERE uid=?",
         (body, ts, uid),
     )
     if conn.total_changes == 0:
         conn.execute(
-            "INSERT INTO nodes(uid, layer, content_type, title, body, created_at, updated_at) "
-            "VALUES (?, 'Page', 'text/markdown', ?, ?, ?, ?)",
+            "INSERT INTO node_page(uid, title, content_type, body, created_at, updated_at) "
+            "VALUES (?, ?, 'article', ?, ?, ?)",
             (uid, uid, body, ts, ts),
         )
 
 
-def read_node_body(conn: sqlite3.Connection, uid: str) -> str | None:
-    """Read the inlined body for a node (L1 read, PRIN-ARCH-16)."""
-    row = conn.execute("SELECT body FROM nodes WHERE uid=?", (uid,)).fetchone()
+def read_page_body(conn: sqlite3.Connection, uid: str) -> str | None:
+    """Read the inlined body for a page node."""
+    row = conn.execute("SELECT body FROM node_page WHERE uid=?", (uid,)).fetchone()
     return row["body"] if row else None
+
+
+def find_any_node(conn: sqlite3.Connection, uid: str) -> dict | None:
+    """Find a node by UID in either node_page or node_derived."""
+    row = conn.execute(
+        "SELECT uid, 'Page' as layer, title, active FROM node_page WHERE uid=? "
+        "UNION ALL "
+        "SELECT uid, layer, title, 1 as active FROM node_derived WHERE uid=?",
+        (uid, uid),
+    ).fetchone()
+    return dict(row) if row else None

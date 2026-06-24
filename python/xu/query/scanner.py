@@ -1,4 +1,4 @@
-"""SQLite-first keyword scanner (T6). Queries nodes.body column directly."""
+﻿"""SQLite-first keyword scanner (T6). Queries node_page.body column directly."""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 def scan(ctx: "WikiContext", keywords: list[str], timeout: float = 10.0) -> dict:
     """Return {keyword: [{uid, char_pos, match_text, snippet}]} for all hits.
 
-    Directly queries nodes.body from SQLite (authoritative L1 storage).
+    Directly queries node_page.body from SQLite (authoritative L1 storage).
     Each keyword is scanned in parallel via ThreadPoolExecutor.
     Python str.find() provides precise character offsets.
     Snippet = 50 chars of context around the match.
@@ -23,7 +23,7 @@ def scan(ctx: "WikiContext", keywords: list[str], timeout: float = 10.0) -> dict
     conn = ctx.connect()
     try:
         rows = conn.execute(
-            "SELECT uid, body FROM nodes WHERE layer='Page' AND body IS NOT NULL AND body != ''"
+            "SELECT uid, body FROM node_page WHERE body IS NOT NULL AND body != ''"
         ).fetchall()
     finally:
         conn.close()

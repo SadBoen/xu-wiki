@@ -1,4 +1,4 @@
-"""ingest-album — many images → one L1 Page (album scenario).
+﻿"""ingest-album 鈥?many images 鈫?one L1 Page (album scenario).
 
 This is a sub-flow of the ingest SOP, NOT a two-phase split
 (PRIN-ING-1 only governs the single-source pipeline). Each source
@@ -9,7 +9,7 @@ matching, same format as table/gallery content_type).
 
 EXIF data beyond resolution + GPS + DateTime is intentionally NOT
 extracted; the source files in raws/ remain the authoritative
-carrier of full EXIF (design-docs/05-ingest §5.7).
+carrier of full EXIF (design-docs/05-ingest 搂5.7).
 
 Vision/OCR per-photo is OPT-IN via --vision. When requested but the
 backend is not configured, the command returns a warning explaining
@@ -80,7 +80,7 @@ def _render_body(rows: list[dict[str, Any]]) -> str:
             "raw_rel_path": r["raw_rel_path"],
         }
         if w and h:
-            item["resolution"] = f"{w}×{h}"
+            item["resolution"] = f"{w}脳{h}"
         if r.get("gps"):
             item["gps"] = r["gps"]
         if r.get("captured"):
@@ -98,7 +98,7 @@ def _scan_fm_index(ctx):
 
 
 def cmd_ingest_album(args) -> dict:
-    """Album scenario: many images → one L1 Page with table or list body."""
+    """Album scenario: many images 鈫?one L1 Page with table or list body."""
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(
@@ -153,7 +153,7 @@ def cmd_ingest_album(args) -> dict:
         except (ValueError, json.JSONDecodeError) as e:
             return error(
                 f"--captions invalid: {e}", "BadCaptionsJSON",
-                data={"hint": "use a JSON object {\"001.jpeg\": \"船头整体\"}"},
+                data={"hint": "use a JSON object {\"001.jpeg\": \"鑸瑰ご鏁翠綋\"}"},
             )
 
     rows: list[dict[str, Any]] = []
@@ -219,13 +219,12 @@ def cmd_ingest_album(args) -> dict:
     conn = ctx.connect()
     try:
         conn.execute(
-            "INSERT INTO nodes("
-            "uid, layer, content_type, title, slug, rel_md_path, "
+            "INSERT INTO node_page("
+            "uid, content_type, title, slug, rel_md_path, "
             "content_hash, source_hash, active, attrs, created_at, updated_at, body"
-            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 uid,
-                "Page",
                 ALBUM_CONTENT_TYPE,
                 args.title,
                 slug,
@@ -288,6 +287,6 @@ def cmd_ingest_album(args) -> dict:
         )
     return success(
         data,
-        f"album committed: {len(rows)} photos → 1 Node_Page (L1, content_type={ALBUM_CONTENT_TYPE})",
+        f"album committed: {len(rows)} photos 鈫?1 Node_Page (L1, content_type={ALBUM_CONTENT_TYPE})",
         hints=hints,
     )

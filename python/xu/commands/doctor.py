@@ -1,4 +1,4 @@
-"""doctor / delete-node / rebuild — operations & resilience (07-doctor.md).
+﻿"""doctor / delete-node / rebuild 鈥?operations & resilience (07-doctor.md).
 
 doctor checks are READ-ONLY by default; --fix applies only mechanical,
 non-destructive repairs (PRIN-DOC). Never touches L1 source-of-truth content.
@@ -219,9 +219,9 @@ def _check_l1_immutable(ctx, conn, fix) -> dict:
                            "expected": stored_hash[:12], "actual": actual[:12],
                            "layer": "L1", "fixable": False})
     # NEVER auto-fix L1 content (BAN-DOC-5: L1 is source of truth)
-    # T7: Also catch DB-only nodes (rel_md_path=NULL) that have NULL body
+    # T7: Also catch DB-only node_page (rel_md_path=NULL) that have NULL body
     db_only_rows = conn.execute(
-        "SELECT uid, body, content_hash FROM nodes WHERE layer='Page' AND rel_md_path IS NULL"
+        "SELECT uid, body, content_hash FROM node_page WHERE rel_md_path IS NULL"
     ).fetchall()
     for row in db_only_rows:
         if not row["body"]:
@@ -240,7 +240,7 @@ def _check_l1_immutable(ctx, conn, fix) -> dict:
 def _check_sqlite_md_consistency(ctx, conn, fix) -> dict:
     """SQLite content_hash vs .md frontmatter content_hash consistency check (T7).
 
-    Compares the stored content_hash in the SQLite nodes table against the
+    Compares the stored content_hash in the SQLite node_page table against the
     content_hash stored in each .md file's frontmatter. Mismatches indicate
     that the DB and frontmatter are out of sync. This is non-fixable via --fix
     because resolving it requires determining which source is authoritative.
@@ -259,15 +259,15 @@ def _check_sqlite_md_consistency(ctx, conn, fix) -> dict:
 
     # Query SQLite for all content_hash values
     rows = conn.execute(
-        "SELECT uid, content_hash FROM nodes WHERE layer='Page'"
+        "SELECT uid, content_hash FROM node_page WHERE layer='Page'"
     ).fetchall()
 
     for row in rows:
         uid = row["uid"]
         db_hash = row["content_hash"] or ""
         if uid not in md_hashes:
-            # Node in DB but not in frontmatter — handled by doctor-files
-            # T7 fix: also catch DB-only nodes with NULL body
+            # Node in DB but not in frontmatter 鈥?handled by doctor-files
+            # T7 fix: also catch DB-only node_page with NULL body
             if not db_hash:
                 # DB-only entry with no hash and no .md is a data gap
                 pass  # handled elsewhere
@@ -288,9 +288,9 @@ def _check_sqlite_md_consistency(ctx, conn, fix) -> dict:
                 "path": str(md_path.relative_to(ctx.root)),
             })
 
-    # T7: check DB-only nodes (rel_md_path=NULL) have non-NULL body
+    # T7: check DB-only node_page (rel_md_path=NULL) have non-NULL body
     db_only = conn.execute(
-        "SELECT uid, body, content_hash FROM nodes WHERE layer='Page' AND rel_md_path IS NULL"
+        "SELECT uid, body, content_hash FROM node_page WHERE rel_md_path IS NULL"
     ).fetchall()
     for row in db_only:
         if not row["body"]:
@@ -310,7 +310,7 @@ def _check_report_evidence(ctx, fix) -> dict:
     """Every Report must have >=1 evidence ref, no dangling refs (CONST-DOC-3).
 
     --fix is mechanical: removes dangling / inactive refs from Report frontmatter.
-    It does NOT delete the Report itself (BAN-DOC-6: LLM推理成果不自动删).
+    It does NOT delete the Report itself (BAN-DOC-6: LLM鎺ㄧ悊鎴愭灉涓嶈嚜鍔ㄥ垹).
     A Report with zero evidence is reported but NOT auto-deleted.
     """
     issues = []
@@ -383,7 +383,7 @@ def _check_idf(ctx, fix) -> dict:
 
 
 def _check_entity_consistency(ctx, conn, fix) -> dict:
-    """Entity nodes are DB-only with no immutable constraints (DESIGN-ARCH-1).
+    """Entity node_page are DB-only with no immutable constraints (DESIGN-ARCH-1).
 
     Entity has no associated .md file and no content_hash, so there is
     nothing to check for consistency. This check always returns ok.
@@ -400,16 +400,16 @@ def cmd_delete_node(args) -> dict:
     conn = ctx.connect()
     try:
         # Check if node exists in DB
-        cur = conn.execute("SELECT uid FROM nodes WHERE uid = ?", (args.uid,))
+        cur = conn.execute("SELECT uid FROM node_page WHERE uid = ?", (args.uid,))
         if cur.fetchone() is None:
             return error(f"node not found: {args.uid}", "NodeNotFound")
 
         # Delete from SQLite
-        conn.execute("DELETE FROM nodes WHERE uid = ?", (args.uid,))
+        conn.execute("DELETE FROM node_page WHERE uid = ?", (args.uid,))
         conn.commit()
         return success(
             {"uid": args.uid},
-            f"deleted node {args.uid} from SQLite (UID is retired, never reused — BAN-ARCH-2)",
+            f"deleted node {args.uid} from SQLite (UID is retired, never reused 鈥?BAN-ARCH-2)",
         )
     finally:
         conn.close()

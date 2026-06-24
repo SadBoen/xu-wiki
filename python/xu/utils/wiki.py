@@ -87,7 +87,7 @@ def find_node_md(ctx: WikiContext, uid: str) -> tuple[dict, str] | None:
         conn = ctx.connect()
         try:
             row = conn.execute(
-                "SELECT rel_md_path FROM nodes WHERE uid=? AND active=1", (uid,)
+                "SELECT rel_md_path FROM node_page WHERE uid=? AND active=1", (uid,)
             ).fetchone()
             if row and row["rel_md_path"]:
                 md_path = ctx.root / row["rel_md_path"]
@@ -124,7 +124,7 @@ def find_by_source_hash(ctx: WikiContext, source_hash: str) -> dict | None:
     try:
         row = conn.execute(
             "SELECT uid, title, active, content_type, content_hash, source_hash, "
-            "layer, created_at FROM nodes WHERE source_hash=?",
+            "'Page' as layer, created_at FROM node_page WHERE source_hash=?",
             (source_hash,),
         ).fetchone()
         if row:
