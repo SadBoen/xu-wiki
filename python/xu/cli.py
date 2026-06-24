@@ -108,7 +108,10 @@ def dispatch(args):
         return {"status": "error", "message": "_core not built. Install wheel or run maturin develop.", "hints": []}
 
     if f == "create":
-        return json.loads(py_create(args.name or "", args.path, args.alias))
+        r = json.loads(py_create(args.name or "", args.path, args.alias))
+        if r["status"] == "success":
+            _register_wiki(args.name, args.path, args.alias)
+        return r
     if f == "selfcheck":
         return json.loads(py_selfcheck())
     if f == "doctor":
@@ -130,3 +133,17 @@ def dispatch(args):
         return json.loads(py_ingest_context(args.wiki, args.keywords))
 
     return {"status": "error", "message": f"unknown command: {f}", "hints": []}
+
+
+def _register_wiki(name, path, alias):
+    """Write wiki to global registry (~/.xu-wiki/config.yaml)."""
+    import time
+    from xu.utils.config import load_registry, save_registry
+    reg = load_registry()
+    reg.setdefault("wikis", {})
+    reg["wikis"][name] = {
+        "path": path,
+        "alias": alias,
+        "created_at": int(time.time()),
+    }
+    save_registry(reg)

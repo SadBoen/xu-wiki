@@ -19,9 +19,9 @@ Knowledge is organized in three layers plus a relation graph:
 
 | Layer | Name | Storage | Purpose |
 |---|---|---|---|
-| L1 | Node_Page | `.md` + SQLite index | Immutable fact slices (source of truth) |
-| L2 | Node_List | `.md` only | Comparison / aggregation over existing nodes |
-| L3 | Node_Report | `.md` only | Reasoning + conclusion with an evidence chain |
+| L1 | Node_Page | `node_page` table | Immutable fact slices (source of truth) |
+| L2 | Node_List | `node_derived` table | Comparison / aggregation over existing nodes |
+| L3 | Node_Report | `node_derived` table | Reasoning + conclusion with an evidence chain |
 
 Every node carries an ordered, capped (50) **LRU relation list** — no categories,
 no scores. Every command returns a **4-key JSON envelope**: `{status, data, message, hints}`.
@@ -63,17 +63,12 @@ xu selfcheck
 
 ## Uninstall
 
-**Default scope — never touches wiki data or `~/.xu-wiki/` config.**
-
-**Default removes**: pip/pipx package + skill bundle at target. Wiki data and `~/.xu-wiki/` are **never touched**.
-
-Multiple targets in one call:
-
 ```bash
-xu uninstall --target hermes --target claude --execute
+xu uninstall                  # dry-run (default)
+xu uninstall --execute        # actually remove
 ```
 
-The uninstall plan is always shown first (dry-run). Pass `--execute` to apply.
+Wiki data and `~/.xu-wiki/` config are **never touched**. Pass `--execute` to apply.
 
 ---
 
