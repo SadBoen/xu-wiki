@@ -418,8 +418,8 @@ def cmd_ingest_commit(args) -> dict:
                 (uid, 1, "create", content_hash, args.author or "agent", ts),
             )
 
-            # IDF (PRIN-ING-9, CONST-ING-6)
-            increment_idf(ctx, extract_nouns(page_body))
+            # IDF write removed — query no longer uses IDF for scoring
+            # increment_idf(ctx, extract_nouns(page_body))
 
             new_content_hashes.add(content_hash)
             written.append({"uid": uid, "raw": raw_written})
@@ -548,7 +548,7 @@ def cmd_ingest_commit(args) -> dict:
     if invalid_relations:
         return warning(data, f"created {len(created)} page(s); some relations invalid",
                        hints=["fix invalid_relations and retry via query-relation add"])
-    return success(data, f"committed {len(created)} Node_Page (L1) via {parser_used}", hints=hints)
+    return success(data, f"committed {len(created)} Node_Page (L1) via {parser_used}")
 
 
 def _verify_committed(ctx, md_path, uid) -> tuple[list[dict], list[str], list[str]]:
