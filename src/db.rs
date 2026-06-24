@@ -49,6 +49,7 @@ impl Db {
     }
 
     /// Query returning Vec<HashMap<String,String>>.
+    /// Handles INTEGER/REAL/TEXT/NULL via Python str() fallback.
     pub fn query_map(&self, sql: &str, params: Vec<String>) -> PyResult<Vec<HashMap<String, String>>> {
         Python::with_gil(|py| {
             let conn = self.py_conn.bind(py).clone();
@@ -57,11 +58,14 @@ impl Db {
             let mut rows = vec![];
             for row in cursor.iter()? {
                 if let Ok(r) = row {
-                    // sqlite3.Row -> dict via keys() mapping
                     let keys: Vec<String> = r.getattr("keys")?.call0()?.extract()?;
                     let mut map = HashMap::new();
                     for key in keys {
-                        let val: String = r.get_item(key.as_str())?.extract().unwrap_or_default();
+                        let obj = r.get_item(key.as_str())?;
+                        // Extract as String (works for TEXT), fall back to str() for INTEGER/REAL
+                        let val: String = obj.extract::<String>()
+                            .or_else(|_| obj.str().map(|s| s.to_string()))
+                            .unwrap_or_default();
                         map.insert(key, val);
                     }
                     rows.push(map);

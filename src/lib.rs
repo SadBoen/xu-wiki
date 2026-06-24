@@ -234,6 +234,11 @@ fn py_create(name: &str, path: &str, alias: Option<&str>) -> String { commands::
 #[pyfunction] fn py_query(wiki: &str, core: &str, expansion: &str, top_k: usize) -> String { commands::cmd_query(wiki, core, expansion, top_k).to_string() }
 #[pyfunction] fn py_expand(wiki: &str, uids: &str) -> String { commands::cmd_expand(wiki, uids).to_string() }
 #[pyfunction] fn py_ingest_context(wiki: &str, keywords: &str) -> String { commands::cmd_ingest_context(wiki, keywords).to_string() }
+#[pyfunction]
+#[pyo3(signature = (wiki, uid, title=None, body=None, relations_json="", author="agent"))]
+fn py_update(wiki: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> String { commands::cmd_update(wiki, uid, title, body, relations_json, author).to_string() }
+#[pyfunction] fn py_deactivate(wiki: &str, uid: &str) -> String { commands::cmd_deactivate(wiki, uid).to_string() }
+#[pyfunction] fn py_verify(wiki: &str, uid: &str) -> String { commands::cmd_verify(wiki, uid).to_string() }
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -261,5 +266,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_expand, m)?)?;
     m.add_function(wrap_pyfunction!(py_ingest_context, m)?)?;
+    m.add_function(wrap_pyfunction!(py_update, m)?)?;
+    m.add_function(wrap_pyfunction!(py_deactivate, m)?)?;
+    m.add_function(wrap_pyfunction!(py_verify, m)?)?;
     Ok(())
 }

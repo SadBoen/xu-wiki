@@ -300,3 +300,166 @@ pub fn cmd_ingest_context(wiki_path: &str, keywords: &str) -> Value {
     related.sort_by(|a,b| b["match_count"].as_u64().cmp(&a["match_count"].as_u64()));
     response::success(json!({"raws_tree":raws_tree,"related_nodes":related.iter().take(10).collect::<Vec<_>>()}), &format!("{} raw dirs, {} related", raws_tree.len(), related.len()))
 }
+
+// ======== UPDATE ========
+
+pub fn cmd_update(wiki_path: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> Value {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+
+    // --- read current page ---
+    let rows = match db.query_map("SELECT * FROM node_page WHERE uid=? AND active=1", vec![uid.into()]) {
+        Ok(r) => r,
+        Err(e) => return response::error(&e.to_string(), "DbError", None, &[]),
+    };
+    if rows.is_empty() {
+        return response::error(&format!("node not found: {uid}"), "NodeNotFound", None, &[]);
+    }
+    let row = &rows[0];
+    let old_body = row.get("body").cloned().unwrap_or_default();
+    let old_title = row.get("title").cloned().unwrap_or_default();
+    let old_content_type = row.get("content_type").cloned().unwrap_or_default();
+    // Get current max version from patches
+    let versions = db.query_map("SELECT MAX(version) as ver FROM patches WHERE page_uid=?", vec![uid.into()]).unwrap_or_default();
+    let old_version: i64 = versions.first()
+        .and_then(|r| r.get("ver"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+
+    // --- compute new values ---
+    let new_title = title.filter(|t| !t.is_empty()).unwrap_or(&old_title);
+    let new_body = body.filter(|b| !b.is_empty()).unwrap_or(&old_body);
+
+    // validate body format
+    if new_body != old_body {
+        if let Some(e) = validate_body_format(new_body, &old_content_type) {
+            return response::error(&e, "BodyFormatMismatch", None, &[]);
+        }
+    }
+
+    let new_hash = crate::paths::sha256_text(new_body);
+    let ts = now_ts();
+    let new_version = old_version + 1;
+    let mut changed: Vec<&str> = vec![];
+
+    // --- update node_page ---
+    if new_title != old_title || new_body != old_body {
+        if new_title != old_title { changed.push("title"); }
+        if new_body != old_body { changed.push("body"); }
+        let _ = db.exec(
+            "UPDATE node_page SET title=?, body=?, content_hash=?, updated_at=? WHERE uid=?",
+            vec![new_title.into(), new_body.into(), new_hash.clone(), ts.to_string(), uid.into()],
+        );
+        // --- insert patch ---
+        let _ = db.exec(
+            "INSERT INTO patches(page_uid,version,op,delta,author,created_at) VALUES(?,?,?,?,?,?)",
+            vec![uid.into(), new_version.to_string(), "revise".into(), new_hash, author.into(), ts.to_string()],
+        );
+    }
+
+    // --- update relations if provided ---
+    if !relations_json.is_empty() {
+        changed.push("relations");
+        // delete old
+        let _ = db.exec("DELETE FROM relations WHERE from_uid=?", vec![uid.into()]);
+        // insert new
+        if let Ok(rels) = serde_json::from_str::<Vec<Value>>(relations_json) {
+            for (pos, rel) in rels.iter().enumerate() {
+                let to = rel["to_uid"].as_str().unwrap_or("");
+                let rn = rel["relation_name"].as_str().unwrap_or("");
+                let cm = rel["comment"].as_str().unwrap_or("");
+                if !to.is_empty() && !rn.is_empty() {
+                    let _ = db.exec(
+                        "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
+                        vec![uid.into(), to.into(), rn.into(), cm.into(), pos.to_string(), ts.to_string()],
+                    );
+                }
+            }
+        }
+    }
+
+    let _ = db.commit();
+    if changed.is_empty() {
+        response::success(json!({"uid":uid,"changed":[]}), "nothing to update")
+    } else {
+        response::success(
+            json!({"uid":uid,"changed":changed,"version":new_version}),
+            &format!("updated {} field(s)", changed.len()),
+        )
+    }
+}
+
+// ======== DEACTIVATE (soft delete) ========
+
+pub fn cmd_deactivate(wiki_path: &str, uid: &str) -> Value {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+
+    // check exists + active
+    let rows = match db.query_map("SELECT active FROM node_page WHERE uid=?", vec![uid.into()]) {
+        Ok(r) => r,
+        Err(e) => return response::error(&e.to_string(), "DbError", None, &[]),
+    };
+    if rows.is_empty() {
+        return response::error(&format!("node not found: {uid}"), "NodeNotFound", None, &[]);
+    }
+    if rows[0].get("active").map(|a| a == "0").unwrap_or(false) {
+        return response::warning(json!({"uid":uid}), "node already deactivated");
+    }
+
+    let ts = now_ts();
+    let _ = db.exec("UPDATE node_page SET active=0, updated_at=? WHERE uid=?", vec![ts.to_string(), uid.into()]);
+    let _ = db.commit();
+    response::success(json!({"uid":uid,"active":false,"deactivated_at":ts}), "node deactivated")
+}
+
+// ======== VERIFY ========
+
+pub fn cmd_verify(wiki_path: &str, uid: &str) -> Value {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+
+    let rows = match db.query_map("SELECT * FROM node_page WHERE uid=?", vec![uid.into()]) {
+        Ok(r) => r,
+        Err(e) => return response::error(&e.to_string(), "DbError", None, &[]),
+    };
+    if rows.is_empty() {
+        return response::error(&format!("node not found: {uid}"), "NodeNotFound", None, &[]);
+    }
+    let row = &rows[0];
+    let body = row.get("body").cloned().unwrap_or_default();
+    let title = row.get("title").cloned().unwrap_or_default();
+    let content_hash = row.get("content_hash").cloned().unwrap_or_default();
+    let active = row.get("active").cloned().unwrap_or_default();
+
+    let computed_hash = crate::paths::sha256_text(&body);
+    let mut checks: Vec<Value> = vec![];
+
+    checks.push(json!({"check":"exists","ok":true,"detail":uid}));
+    checks.push(json!({"check":"active","ok":active=="1","detail":format!("active={active}")}));
+    checks.push(json!({"check":"title_non_empty","ok":!title.is_empty(),"detail":title}));
+    checks.push(json!({"check":"body_non_empty","ok":!body.is_empty(),"detail":format!("{} chars", body.len())}));
+    checks.push(json!({"check":"content_hash","ok":content_hash == computed_hash,"detail":format!("stored={:.12}.. computed={:.12}..", &content_hash[..12.min(content_hash.len())], &computed_hash[..12.min(computed_hash.len())])}));
+
+    // patch v1
+    let patches = db.query_map("SELECT version FROM patches WHERE page_uid=?", vec![uid.into()]).unwrap_or_default();
+    let has_v1 = patches.iter().any(|p| p.get("version").map(|v| v == "1").unwrap_or(false));
+    checks.push(json!({"check":"patch_v1_exists","ok":has_v1,"detail":format!("{} patch(es)", patches.len())}));
+
+    // relations validity
+    let rels = db.query_map("SELECT to_uid FROM relations WHERE from_uid=?", vec![uid.into()]).unwrap_or_default();
+    let mut broken_rels = vec![];
+    for rel in &rels {
+        if let Some(to_uid) = rel.get("to_uid") {
+            let target = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![to_uid.into()]).unwrap_or_default();
+            if target.is_empty() {
+                broken_rels.push(to_uid.clone());
+            }
+        }
+    }
+    checks.push(json!({"check":"relations_valid","ok":broken_rels.is_empty(),"detail":if broken_rels.is_empty() { format!("{} relation(s)", rels.len()) } else { format!("{} broken: {:?}", broken_rels.len(), broken_rels) }}));
+
+    let failures = checks.iter().filter(|c| !c["ok"].as_bool().unwrap_or(false)).count();
+    if failures == 0 {
+        response::success(json!({"uid":uid,"checks":checks,"failures":0}), "all checks passed")
+    } else {
+        response::warning(json!({"uid":uid,"checks":checks,"failures":failures}), &format!("{failures} check(s) failed"))
+    }
+}

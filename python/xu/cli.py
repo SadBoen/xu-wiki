@@ -24,6 +24,25 @@ def build_parser():
     sp.add_argument("--keywords", required=True)
     sp.set_defaults(func="ingest_context")
 
+    sp = sub.add_parser("update", help="update node body/title/relations")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True)
+    sp.add_argument("--title")
+    sp.add_argument("--body")
+    sp.add_argument("--relations", default="")
+    sp.add_argument("--author", default="agent")
+    sp.set_defaults(func="update")
+
+    sp = sub.add_parser("deactivate", help="soft-delete a node (set active=0)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True)
+    sp.set_defaults(func="deactivate")
+
+    sp = sub.add_parser("verify", help="integrity check on a node")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True)
+    sp.set_defaults(func="verify")
+
     sp = sub.add_parser("ingest-commit", help="Phase 2: commit to L1")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--pending")
@@ -113,6 +132,7 @@ def dispatch(args):
             py_create, py_selfcheck, py_doctor,
             py_uninstall_plan, py_uninstall_execute,
             py_ingest_commit, py_query, py_expand, py_ingest_context,
+            py_update, py_deactivate, py_verify,
         )
     except ImportError:
         return {"status": "error", "message": "_core not built. Install wheel or run maturin develop.", "hints": []}
@@ -177,6 +197,28 @@ def dispatch(args):
         if isinstance(wp, dict):
             return wp
         return json.loads(py_ingest_context(wp, args.keywords))
+    if f == "update":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_update(
+            wp,
+            args.uid,
+            getattr(args, 'title', None) or None,
+            getattr(args, 'body', None) or None,
+            getattr(args, 'relations', '') or '',
+            getattr(args, 'author', 'agent') or 'agent',
+        ))
+    if f == "deactivate":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_deactivate(wp, args.uid))
+    if f == "verify":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_verify(wp, args.uid))
 
     return {"status": "error", "message": f"unknown command: {f}", "hints": []}
 
