@@ -221,6 +221,18 @@ fn parse_pending_header_py(text: &str) -> (std::collections::HashMap<String, Str
     commands::parse_pending_header(text)
 }
 
+// === Command pyfunctions (return JSON strings) ===
+
+#[pyfunction] fn py_create(name: &str, path: &str, alias: Option<&str>) -> String { commands::cmd_create(name, path, alias).to_string() }
+#[pyfunction] fn py_selfcheck() -> String { commands::cmd_selfcheck().to_string() }
+#[pyfunction] fn py_doctor(wiki: &str) -> String { commands::cmd_doctor(wiki).to_string() }
+#[pyfunction] fn py_uninstall_plan(preserve_config: bool, keep_pip: bool) -> String { commands::cmd_uninstall_plan(preserve_config, keep_pip).to_string() }
+#[pyfunction] fn py_uninstall_execute(preserve_config: bool, keep_pip: bool) -> String { commands::cmd_uninstall_execute(preserve_config, keep_pip).to_string() }
+#[pyfunction] fn py_ingest_commit(wiki: &str, pending: &str, title: &str, content_type: &str, raw_path: &str, author: &str, relations: &str) -> String { commands::cmd_ingest_commit(wiki, pending, title, content_type, raw_path, author, relations).to_string() }
+#[pyfunction] fn py_query(wiki: &str, core: &str, expansion: &str, top_k: usize) -> String { commands::cmd_query(wiki, core, expansion, top_k).to_string() }
+#[pyfunction] fn py_expand(wiki: &str, uids: &str) -> String { commands::cmd_expand(wiki, uids).to_string() }
+#[pyfunction] fn py_ingest_context(wiki: &str, keywords: &str) -> String { commands::cmd_ingest_context(wiki, keywords).to_string() }
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gen_uid, m)?)?;
@@ -238,5 +250,14 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_body_format, m)?)?;
     m.add_function(wrap_pyfunction!(strip_frontmatter, m)?)?;
     m.add_function(wrap_pyfunction!(parse_pending_header_py, m)?)?;
+    m.add_function(wrap_pyfunction!(py_create, m)?)?;
+    m.add_function(wrap_pyfunction!(py_selfcheck, m)?)?;
+    m.add_function(wrap_pyfunction!(py_doctor, m)?)?;
+    m.add_function(wrap_pyfunction!(py_uninstall_plan, m)?)?;
+    m.add_function(wrap_pyfunction!(py_uninstall_execute, m)?)?;
+    m.add_function(wrap_pyfunction!(py_ingest_commit, m)?)?;
+    m.add_function(wrap_pyfunction!(py_query, m)?)?;
+    m.add_function(wrap_pyfunction!(py_expand, m)?)?;
+    m.add_function(wrap_pyfunction!(py_ingest_context, m)?)?;
     Ok(())
 }
