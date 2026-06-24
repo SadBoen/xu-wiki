@@ -1,4 +1,4 @@
-//! xu-wiki core — pyo3 bindings for the Python xu package.
+//! xu-wiki core 鈥?pyo3 bindings for the Python xu package.
 
 pub mod commands;
 pub mod db;
@@ -239,6 +239,9 @@ fn py_create(name: &str, path: &str, alias: Option<&str>) -> String { commands::
 fn py_update(wiki: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> String { commands::cmd_update(wiki, uid, title, body, relations_json, author).to_string() }
 #[pyfunction] fn py_deactivate(wiki: &str, uid: &str) -> String { commands::cmd_deactivate(wiki, uid).to_string() }
 #[pyfunction] fn py_verify(wiki: &str, uid: &str) -> String { commands::cmd_verify(wiki, uid).to_string() }
+#[pyfunction] fn py_list_create(wiki: &str, title: &str, members: &str, dimension: &str) -> String { commands::cmd_list_create(wiki, title, members, dimension).to_string() }
+#[pyfunction] fn py_list_extend(wiki: &str, uid: &str, members: &str) -> String { commands::cmd_list_extend(wiki, uid, members).to_string() }
+#[pyfunction] fn py_report_create(wiki: &str, title: &str, body: &str, evidence: &str, dimension: &str) -> String { commands::cmd_report_create(wiki, title, body, evidence, dimension).to_string() }
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -269,5 +272,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_update, m)?)?;
     m.add_function(wrap_pyfunction!(py_deactivate, m)?)?;
     m.add_function(wrap_pyfunction!(py_verify, m)?)?;
+    m.add_function(wrap_pyfunction!(py_list_create, m)?)?;
+    m.add_function(wrap_pyfunction!(py_list_extend, m)?)?;
+    m.add_function(wrap_pyfunction!(py_report_create, m)?)?;
     Ok(())
 }

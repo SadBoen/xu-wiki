@@ -242,23 +242,28 @@ pub fn cmd_query(wiki_path: &str, core: &str, expansion: &str, top_k: usize) -> 
     let ek: Vec<String> = expansion.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect();
     if ck.is_empty() && ek.is_empty() { return response::error("provide --core or --expansion", "NoKeywords", None, &[]); }
 
-    let rows = match db.query_map("SELECT uid,title,body FROM node_page WHERE active=1", vec![]) { Ok(r) => r, Err(e) => return response::error(&e.to_string(), "DbError", None, &[]) };
+    let page_rows = db.query_map("SELECT uid,title,body FROM node_page WHERE active=1", vec![]).unwrap_or_default();
+    let derived_rows = db.query_map("SELECT uid,title,body,layer FROM node_derived", vec![]).unwrap_or_default();
 
     let mut scored: Vec<(u64, Value)> = vec![];
-    for row in rows {
+    for row in page_rows.iter().chain(derived_rows.iter()) {
         let body = row.get("body").map(|s| s.to_lowercase()).unwrap_or_default();
-        if body.is_empty() { continue; }
-        let ch: usize = ck.iter().map(|k| body.matches(k).count()).sum();
-        let eh: usize = ek.iter().map(|k| body.matches(k).count()).sum();
+        let title_lower = row.get("title").map(|s| s.to_lowercase()).unwrap_or_default();
+        let search_text = format!("{title_lower} {body}");
+        if search_text.trim().is_empty() { continue; }
+        let ch: usize = ck.iter().map(|k| search_text.matches(k).count()).sum();
+        let eh: usize = ek.iter().map(|k| search_text.matches(k).count()).sum();
         let score = (ch * 3 + eh) as u64;
         if score == 0 { continue; }
-        let snippet: String = row.get("body").map(|b| b.chars().take(100).collect()).unwrap_or_default();
-        scored.push((score, json!({"uid":row.get("uid").unwrap_or(&String::new()),"title":row.get("title").unwrap_or(&String::new()),"layer":"Page","score":score,"snippet":snippet})));
+        let snippet: String = body.chars().take(100).collect();
+        let layer = row.get("layer").cloned().unwrap_or_else(|| "Page".into());
+        scored.push((score, json!({"uid":row.get("uid").unwrap_or(&String::new()),"title":row.get("title").unwrap_or(&String::new()),"layer":layer,"score":score,"snippet":snippet})));
     }
     scored.sort_by(|a,b| b.0.cmp(&a.0));
     let top: Vec<Value> = scored.into_iter().take(top_k.max(1).min(50)).map(|(_,v)| v).collect();
     response::success(json!({"related_nodes":top,"total_hits":top.len()}), &format!("{} snippet(s)", top.len()))
 }
+
 
 // ======== EXPAND ========
 
@@ -267,14 +272,20 @@ pub fn cmd_expand(wiki_path: &str, uids: &str) -> Value {
     let uid_list: Vec<&str> = uids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).take(20).collect();
     let mut result = serde_json::Map::new();
     for uid in uid_list {
-        let rows = match db.query_map("SELECT uid,title,body FROM node_page WHERE uid=?", vec![uid.into()]) { Ok(r) => r, Err(_) => continue };
+        // Try node_page first, then node_derived
+        let mut rows = db.query_map("SELECT uid,title,body FROM node_page WHERE uid=?", vec![uid.into()]).unwrap_or_default();
+        let mut layer = "Page".to_string();
+        if rows.is_empty() {
+            rows = db.query_map("SELECT uid,title,body,layer FROM node_derived WHERE uid=?", vec![uid.into()]).unwrap_or_default();
+            layer = rows.first().and_then(|r| r.get("layer").cloned()).unwrap_or_else(|| "Derived".into());
+        }
         let rels = db.query_map("SELECT to_uid,relation_name,position FROM relations WHERE from_uid=? ORDER BY position", vec![uid.into()]).unwrap_or_default();
         if let Some(row) = rows.first() {
             let u = row.get("uid").cloned().unwrap_or_default();
             let t = row.get("title").cloned().unwrap_or_default();
             let b = row.get("body").cloned().unwrap_or_default();
             let r: Vec<Value> = rels.iter().map(|r| json!({"to_uid":r.get("to_uid").cloned().unwrap_or_default(),"relation_name":r.get("relation_name").cloned().unwrap_or_default()})).collect();
-            result.insert(u.clone(), json!({"uid":u,"title":t,"layer":"Page","body":b,"relations":r}));
+            result.insert(u.clone(), json!({"uid":u,"title":t,"layer":layer,"body":b,"relations":r}));
         }
     }
     let count = result.len();
@@ -416,9 +427,11 @@ pub fn cmd_deactivate(wiki_path: &str, uid: &str) -> Value {
 pub fn cmd_verify(wiki_path: &str, uid: &str) -> Value {
     let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
 
-    let rows = match db.query_map("SELECT * FROM node_page WHERE uid=?", vec![uid.into()]) {
-        Ok(r) => r,
-        Err(e) => return response::error(&e.to_string(), "DbError", None, &[]),
+    // Search node_page first, then node_derived
+    let rows = db.query_map("SELECT * FROM node_page WHERE uid=?", vec![uid.into()]).unwrap_or_default();
+    let is_page = !rows.is_empty();
+    let rows = if is_page { rows } else {
+        db.query_map("SELECT * FROM node_derived WHERE uid=?", vec![uid.into()]).unwrap_or_default()
     };
     if rows.is_empty() {
         return response::error(&format!("node not found: {uid}"), "NodeNotFound", None, &[]);
@@ -429,27 +442,33 @@ pub fn cmd_verify(wiki_path: &str, uid: &str) -> Value {
     let content_hash = row.get("content_hash").cloned().unwrap_or_default();
     let active = row.get("active").cloned().unwrap_or_default();
 
-    let computed_hash = crate::paths::sha256_text(&body);
     let mut checks: Vec<Value> = vec![];
-
     checks.push(json!({"check":"exists","ok":true,"detail":uid}));
-    checks.push(json!({"check":"active","ok":active=="1","detail":format!("active={active}")}));
+
+    if is_page {
+        checks.push(json!({"check":"active","ok":active=="1","detail":format!("active={active}")}));
+    }
     checks.push(json!({"check":"title_non_empty","ok":!title.is_empty(),"detail":title}));
     checks.push(json!({"check":"body_non_empty","ok":!body.is_empty(),"detail":format!("{} chars", body.len())}));
-    checks.push(json!({"check":"content_hash","ok":content_hash == computed_hash,"detail":format!("stored={:.12}.. computed={:.12}..", &content_hash[..12.min(content_hash.len())], &computed_hash[..12.min(computed_hash.len())])}));
 
-    // patch v1
-    let patches = db.query_map("SELECT version FROM patches WHERE page_uid=?", vec![uid.into()]).unwrap_or_default();
-    let has_v1 = patches.iter().any(|p| p.get("version").map(|v| v == "1").unwrap_or(false));
-    checks.push(json!({"check":"patch_v1_exists","ok":has_v1,"detail":format!("{} patch(es)", patches.len())}));
+    if is_page {
+        let computed_hash = crate::paths::sha256_text(&body);
+        checks.push(json!({"check":"content_hash","ok":content_hash == computed_hash,"detail":format!("stored={:.12}.. computed={:.12}..", &content_hash[..12.min(content_hash.len())], &computed_hash[..12.min(computed_hash.len())])}));
 
-    // relations validity
+        // patch v1
+        let patches = db.query_map("SELECT version FROM patches WHERE page_uid=?", vec![uid.into()]).unwrap_or_default();
+        let has_v1 = patches.iter().any(|p| p.get("version").map(|v| v == "1").unwrap_or(false));
+        checks.push(json!({"check":"patch_v1_exists","ok":has_v1,"detail":format!("{} patch(es)", patches.len())}));
+    }
+
+    // relations validity (check both tables for targets)
     let rels = db.query_map("SELECT to_uid FROM relations WHERE from_uid=?", vec![uid.into()]).unwrap_or_default();
     let mut broken_rels = vec![];
     for rel in &rels {
         if let Some(to_uid) = rel.get("to_uid") {
-            let target = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![to_uid.into()]).unwrap_or_default();
-            if target.is_empty() {
+            let target_page = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![to_uid.clone()]).unwrap_or_default();
+            let target_derived = db.query_map("SELECT uid FROM node_derived WHERE uid=?", vec![to_uid.clone()]).unwrap_or_default();
+            if target_page.is_empty() && target_derived.is_empty() {
                 broken_rels.push(to_uid.clone());
             }
         }
@@ -462,4 +481,176 @@ pub fn cmd_verify(wiki_path: &str, uid: &str) -> Value {
     } else {
         response::warning(json!({"uid":uid,"checks":checks,"failures":failures}), &format!("{failures} check(s) failed"))
     }
+}
+
+// ======== LIST CREATE (L2 derived node) ========
+
+pub fn cmd_list_create(wiki_path: &str, title: &str, members_csv: &str, dimension: &str) -> Value {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+
+    let members: Vec<String> = members_csv.split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if members.is_empty() {
+        return response::error("provide --members uid1,uid2,...", "MissingMembers", None, &[]);
+    }
+
+    // Validate members exist in node_page
+    for m in &members {
+        let rows = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![m.clone()])
+            .unwrap_or_default();
+        if rows.is_empty() {
+            return response::error(&format!("member not found: {m}"), "MemberNotFound", None, &[]);
+        }
+    }
+
+    let uid = gen_uid();
+    let ts = now_ts();
+
+    // Build body: YAML list of {uid, title} for each member
+    let mut body_entries: Vec<Value> = vec![];
+    for m in &members {
+        let info = db.query_map("SELECT title FROM node_page WHERE uid=?", vec![m.clone()])
+            .unwrap_or_default();
+        let m_title = info.first().and_then(|r| r.get("title").cloned()).unwrap_or_default();
+        body_entries.push(json!({"uid":m,"title":m_title}));
+    }
+    let body = serde_yaml::to_string(&body_entries).unwrap_or_default();
+
+    // Insert derived node
+    let _ = db.exec(
+        "INSERT INTO node_derived(uid,layer,title,dimension,attrs,created_at,updated_at,body) VALUES(?,?,?,?,?,?,?,?)",
+        vec![uid.clone(), "List".into(), title.into(), dimension.into(), "".into(), ts.to_string(), ts.to_string(), body.clone()],
+    );
+
+    // Create relations: List -> member
+    for (pos, m) in members.iter().enumerate() {
+        let _ = db.exec(
+            "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
+            vec![uid.clone(), m.clone(), "contains".into(), "".into(), pos.to_string(), ts.to_string()],
+        );
+    }
+
+    let _ = db.commit();
+    response::success(
+        json!({"uid":uid,"layer":"List","title":title,"member_count":members.len()}),
+        &format!("created List with {} member(s)", members.len()),
+    )
+}
+
+// ======== LIST EXTEND ========
+
+pub fn cmd_list_extend(wiki_path: &str, uid: &str, members_csv: &str) -> Value {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+
+    // Verify it's a List
+    let rows = db.query_map("SELECT * FROM node_derived WHERE uid=? AND layer='List'", vec![uid.into()])
+        .unwrap_or_default();
+    if rows.is_empty() {
+        return response::error(&format!("List not found: {uid}"), "ListNotFound", None, &[]);
+    }
+
+    let new_members: Vec<String> = members_csv.split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if new_members.is_empty() {
+        return response::success(json!({"uid":uid,"added":0}), "nothing to add");
+    }
+
+    // Validate new members exist
+    for m in &new_members {
+        let r = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![m.clone()])
+            .unwrap_or_default();
+        if r.is_empty() {
+            return response::error(&format!("member not found: {m}"), "MemberNotFound", None, &[]);
+        }
+    }
+
+    // Read existing body, parse as YAML, append
+    let old_body = rows[0].get("body").cloned().unwrap_or_default();
+    let mut entries: Vec<Value> = serde_yaml::from_str(&old_body).unwrap_or_default();
+    let ts = now_ts();
+
+    // Get max position from existing relations
+    let max_pos = db.query_map("SELECT MAX(position) as mx FROM relations WHERE from_uid=? AND relation_name='contains'", vec![uid.into()])
+        .unwrap_or_default()
+        .first()
+        .and_then(|r| r.get("mx").and_then(|v| v.parse::<usize>().ok()))
+        .unwrap_or(0);
+
+    for (i, m) in new_members.iter().enumerate() {
+        let info = db.query_map("SELECT title FROM node_page WHERE uid=?", vec![m.clone()])
+            .unwrap_or_default();
+        let m_title = info.first().and_then(|r| r.get("title").cloned()).unwrap_or_default();
+        entries.push(json!({"uid":m,"title":m_title}));
+
+        let _ = db.exec(
+            "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
+            vec![uid.into(), m.clone(), "contains".into(), "".into(), (max_pos + 1 + i).to_string(), ts.to_string()],
+        );
+    }
+
+    let new_body = serde_yaml::to_string(&entries).unwrap_or_default();
+    let _ = db.exec(
+        "UPDATE node_derived SET body=?, updated_at=? WHERE uid=?",
+        vec![new_body, ts.to_string(), uid.into()],
+    );
+    let _ = db.commit();
+
+    response::success(
+        json!({"uid":uid,"added":new_members.len(),"total_members":entries.len()}),
+        &format!("added {} member(s), total {}", new_members.len(), entries.len()),
+    )
+}
+
+// ======== REPORT CREATE (L3 derived node) ========
+
+pub fn cmd_report_create(wiki_path: &str, title: &str, body: &str, evidence_csv: &str, dimension: &str) -> Value {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+
+    if body.trim().is_empty() {
+        return response::error("report requires --body", "EmptyBody", None, &[]);
+    }
+
+    let evidence: Vec<String> = evidence_csv.split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    // Validate evidence UIDs exist
+    for uid in &evidence {
+        let rows = db.query_map(
+            "SELECT uid FROM node_page WHERE uid=? AND active=1 UNION SELECT uid FROM node_derived WHERE uid=?",
+            vec![uid.clone(), uid.clone()],
+        ).unwrap_or_default();
+        if rows.is_empty() {
+            return response::error(&format!("evidence uid not found: {uid}"), "EvidenceNotFound", None, &[]);
+        }
+    }
+
+    let uid = gen_uid();
+    let ts = now_ts();
+
+    let _ = db.exec(
+        "INSERT INTO node_derived(uid,layer,title,dimension,attrs,created_at,updated_at,body) VALUES(?,?,?,?,?,?,?,?)",
+        vec![uid.clone(), "Report".into(), title.into(), dimension.into(), "".into(), ts.to_string(), ts.to_string(), body.into()],
+    );
+
+    // Create relations: Report -> evidence
+    for (pos, ev) in evidence.iter().enumerate() {
+        let _ = db.exec(
+            "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
+            vec![uid.clone(), ev.clone(), "cites".into(), "".into(), pos.to_string(), ts.to_string()],
+        );
+    }
+
+    let _ = db.commit();
+    response::success(
+        json!({"uid":uid,"layer":"Report","title":title,"evidence_count":evidence.len()}),
+        "report created",
+    )
 }

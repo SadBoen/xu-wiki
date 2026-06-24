@@ -43,6 +43,27 @@ def build_parser():
     sp.add_argument("--uid", required=True)
     sp.set_defaults(func="verify")
 
+    sp = sub.add_parser("list-create", help="create L2 List (aggregation)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--title", required=True)
+    sp.add_argument("--members", required=True)
+    sp.add_argument("--dimension", default="")
+    sp.set_defaults(func="list_create")
+
+    sp = sub.add_parser("list-extend", help="add members to a List")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uid", required=True)
+    sp.add_argument("--members", required=True)
+    sp.set_defaults(func="list_extend")
+
+    sp = sub.add_parser("report-create", help="create L3 Report (reasoning)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--title", required=True)
+    sp.add_argument("--body", required=True)
+    sp.add_argument("--evidence", default="")
+    sp.add_argument("--dimension", default="")
+    sp.set_defaults(func="report_create")
+
     sp = sub.add_parser("ingest-commit", help="Phase 2: commit to L1")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--pending")
@@ -133,6 +154,7 @@ def dispatch(args):
             py_uninstall_plan, py_uninstall_execute,
             py_ingest_commit, py_query, py_expand, py_ingest_context,
             py_update, py_deactivate, py_verify,
+            py_list_create, py_list_extend, py_report_create,
         )
     except ImportError:
         return {"status": "error", "message": "_core not built. Install wheel or run maturin develop.", "hints": []}
@@ -219,6 +241,25 @@ def dispatch(args):
         if isinstance(wp, dict):
             return wp
         return json.loads(py_verify(wp, args.uid))
+    if f == "list_create":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_list_create(wp, args.title, args.members, getattr(args, 'dimension', '') or ''))
+    if f == "list_extend":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_list_extend(wp, args.uid, args.members))
+    if f == "report_create":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_report_create(
+            wp, args.title, args.body,
+            getattr(args, 'evidence', '') or '',
+            getattr(args, 'dimension', '') or '',
+        ))
 
     return {"status": "error", "message": f"unknown command: {f}", "hints": []}
 
