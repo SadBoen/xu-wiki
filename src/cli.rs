@@ -1,4 +1,4 @@
-﻿//! CLI entry point using clap.
+//! CLI entry point using clap.
 //! Covers all commands from the original Python CLI.
 
 use clap::{Parser, Subcommand};
@@ -350,6 +350,15 @@ pub fn dispatch(cli: Cli) -> i32 {
                 response::emit(&r)
             }
         },
+        Commands::Uninstall { execute, dry_run, preserve_config, keep_pip, .. } => {
+            if execute {
+                let r = _core::commands::cmd_uninstall_execute(preserve_config, keep_pip);
+                _core::response::emit(&r)
+            } else {
+                let r = _core::commands::cmd_uninstall_plan(preserve_config, keep_pip);
+                _core::response::emit(&r)
+            }
+        }
         Commands::Selfcheck => {
             let r = response::success(
                 serde_json::json!({

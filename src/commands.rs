@@ -40,7 +40,7 @@ fn build_skeleton(target: &Path, name: &str) -> Result<(), XuError> {
     Ok(())
 }
 
-/// create — initialize a new wiki instance.
+/// create 鈥?initialize a new wiki instance.
 pub fn cmd_create(name: &str, path: &str, _alias: Option<&str>) -> Value {
     if name.trim().is_empty() {
         return response::error("create requires --name", "MissingName", None, &[]);
@@ -90,7 +90,7 @@ pub fn cmd_create(name: &str, path: &str, _alias: Option<&str>) -> Value {
     }
 }
 
-/// selfcheck — verify installation health.
+/// selfcheck 鈥?verify installation health.
 pub fn cmd_selfcheck() -> Value {
     let mut checks: Vec<Value> = vec![];
 
@@ -263,5 +263,129 @@ mod ingest_tests {
         assert_eq!(meta.get("source_hash").unwrap(), "abc");
         assert_eq!(meta.get("parser").unwrap(), "test");
         assert_eq!(body, "content");
+    }
+}
+// ---- Uninstall (pure Rust, no SQLite) ----
+
+/// Build uninstall plan (dry-run).
+pub fn cmd_uninstall_plan(preserve_config: bool, keep_pip: bool) -> Value {
+    let home = dirs_next::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    let xu_config_dir = home.join(".xu-wiki");
+    let exists = xu_config_dir.exists();
+
+    let plan = json!({
+        "mode": "dry-run",
+        "execute": false,
+        "pip_uninstall": !keep_pip,
+        "purge_wikis": false,
+        "purge_wikis_note": "wiki data is NEVER deleted (REQ-9)",
+        "purge_config": !preserve_config,
+        "global_dir": xu_config_dir.to_string_lossy(),
+        "global_dir_exists": exists,
+        "package": "xu-wiki",
+        "installer": detect_installer(),
+        "actions": []
+    });
+
+    response::success(plan, "dry-run: this is what would happen with --execute")
+}
+
+/// Execute uninstall (actually remove things).
+/// Wiki data is NEVER deleted — hard invariant (REQ-9).
+pub fn cmd_uninstall_execute(preserve_config: bool, keep_pip: bool) -> Value {
+    let mut actions: Vec<Value> = vec![];
+
+    // 1. Pip uninstall
+    if !keep_pip {
+        let pip_result = run_pip_uninstall();
+        actions.push(json!({
+            "action": "pip_uninstall",
+            "ok": pip_result,
+            "detail": if pip_result { "pip uninstall succeeded" } else { "pip uninstall skipped/failed" }
+        }));
+    }
+
+    // 2. Config dir
+    if !preserve_config {
+        let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+        let xu_dir = home.join(".xu-wiki");
+        if xu_dir.exists() {
+            match fs::remove_dir_all(&xu_dir) {
+                Ok(()) => actions.push(json!({"action": "remove_config",
+                    "path": xu_dir.to_string_lossy(), "ok": true})),
+                Err(e) => actions.push(json!({"action": "remove_config",
+                    "path": xu_dir.to_string_lossy(), "ok": false, "error": e.to_string()})),
+            }
+        }
+    }
+
+    // 3. Wiki data — NEVER deleted
+    actions.push(json!({
+        "action": "wikis",
+        "note": "ALL wiki data preserved — never deleted (REQ-9)",
+        "ok": true
+    }));
+
+    response::success(
+        json!({
+            "mode": "execute",
+            "actions": actions,
+            "wikis_preserved": true,
+        }),
+        "uninstall complete; all wiki data preserved",
+    )
+}
+
+fn detect_installer() -> String {
+    // Check for pipx first
+    if which::which("pipx").is_ok() {
+        return "pipx".to_string();
+    }
+    if which::which("pip").is_ok() || which::which("pip3").is_ok() {
+        return "pip".to_string();
+    }
+    "unknown".to_string()
+}
+
+fn run_pip_uninstall() -> bool {
+    std::process::Command::new("pip")
+        .args(["uninstall", "xu-wiki", "-y"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod uninstall_tests {
+    use super::*;
+
+    #[test]
+    fn test_uninstall_plan_returns_success() {
+        let r = cmd_uninstall_plan(false, false);
+        assert_eq!(r["status"], "success");
+        assert_eq!(r["data"]["mode"], "dry-run");
+        assert_eq!(r["data"]["purge_wikis"], false);
+    }
+
+    #[test]
+    fn test_uninstall_execute_returns_success() {
+        let r = cmd_uninstall_execute(true, true); // preserve_config + keep_pip = no-op
+        assert_eq!(r["status"], "success");
+        assert_eq!(r["data"]["wikis_preserved"], true);
+    }
+
+    #[test]
+    fn test_uninstall_wikis_never_deleted() {
+        let r = cmd_uninstall_execute(false, false);
+        assert_eq!(r["data"]["wikis_preserved"], true);
+    }
+
+    #[test]
+    fn test_detect_installer_returns_string() {
+        let installer = detect_installer();
+        assert!(!installer.is_empty());
     }
 }

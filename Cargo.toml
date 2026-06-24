@@ -21,3 +21,5 @@ thiserror = "1"
 sha2 = "0.10"
 clap = { version = "4", features = ["derive"] }
 regex = "1"
+dirs-next = "2"
+which = "6"
