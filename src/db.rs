@@ -1,5 +1,6 @@
-﻿use pyo3::prelude::*;
+use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
+use std::collections::HashMap;
 use std::path::Path;
 
 const SCHEMA: &str = r#"
@@ -22,8 +23,7 @@ impl Db {
         Python::with_gil(|py| {
             let sqlite3 = py.import_bound("sqlite3")?;
             let conn = sqlite3.call_method1("connect", (path.to_string_lossy().as_ref(),))?;
-            let pragmas = "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
-            conn.call_method1("executescript", (pragmas,))?;
+            conn.call_method1("executescript", ("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",))?;
             Ok(Db { py_conn: conn.into() })
         })
     }
@@ -37,22 +37,36 @@ impl Db {
         })
     }
 
-    pub fn query(&self, sql: &str, params: Vec<PyObject>) -> PyResult<Vec<PyObject>> {
-        Python::with_gil(|py| {
-            let conn = self.py_conn.bind(py).clone();
-            let py_params = PyTuple::new_bound(py, &params);
-            let cursor = conn.call_method1("execute", (sql, &py_params))?;
-            let rows: Vec<PyObject> = cursor.iter()?.filter_map(|r| r.ok().map(|x| x.into())).collect();
-            Ok(rows)
-        })
-    }
-
-    pub fn execute(&self, sql: &str, params: Vec<PyObject>) -> PyResult<()> {
+    /// Execute with String params.
+    pub fn exec(&self, sql: &str, params: Vec<String>) -> PyResult<()> {
         Python::with_gil(|py| {
             let conn = self.py_conn.bind(py).clone();
             let py_params = PyTuple::new_bound(py, &params);
             conn.call_method1("execute", (sql, &py_params))?;
             Ok(())
+        })
+    }
+
+    /// Query returning Vec<HashMap<String,String>>.
+    pub fn query_map(&self, sql: &str, params: Vec<String>) -> PyResult<Vec<HashMap<String, String>>> {
+        Python::with_gil(|py| {
+            let conn = self.py_conn.bind(py).clone();
+            let py_params = PyTuple::new_bound(py, &params);
+            let cursor = conn.call_method1("execute", (sql, &py_params))?;
+            let mut rows = vec![];
+            for row in cursor.iter()? {
+                if let Ok(r) = row {
+                    let rdict: &Bound<'_, PyDict> = r.downcast()?;
+                    let mut map = HashMap::new();
+                    for (k, v) in rdict.iter() {
+                        let key: String = k.extract()?;
+                        let val: String = v.extract().unwrap_or_default();
+                        map.insert(key, val);
+                    }
+                    rows.push(map);
+                }
+            }
+            Ok(rows)
         })
     }
 
