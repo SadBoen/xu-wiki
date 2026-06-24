@@ -40,7 +40,7 @@ fn build_skeleton(target: &Path, name: &str) -> Result<(), XuError> {
     Ok(())
 }
 
-/// create 鈥?initialize a new wiki instance.
+/// create 閳?initialize a new wiki instance.
 pub fn cmd_create(name: &str, path: &str, _alias: Option<&str>) -> Value {
     if name.trim().is_empty() {
         return response::error("create requires --name", "MissingName", None, &[]);
@@ -90,7 +90,7 @@ pub fn cmd_create(name: &str, path: &str, _alias: Option<&str>) -> Value {
     }
 }
 
-/// selfcheck 鈥?verify installation health.
+/// selfcheck 閳?verify installation health.
 pub fn cmd_selfcheck() -> Value {
     let mut checks: Vec<Value> = vec![];
 
@@ -292,7 +292,7 @@ pub fn cmd_uninstall_plan(preserve_config: bool, keep_pip: bool) -> Value {
 }
 
 /// Execute uninstall (actually remove things).
-/// Wiki data is NEVER deleted — hard invariant (REQ-9).
+/// Wiki data is NEVER deleted 鈥?hard invariant (REQ-9).
 pub fn cmd_uninstall_execute(preserve_config: bool, keep_pip: bool) -> Value {
     let mut actions: Vec<Value> = vec![];
 
@@ -320,10 +320,10 @@ pub fn cmd_uninstall_execute(preserve_config: bool, keep_pip: bool) -> Value {
         }
     }
 
-    // 3. Wiki data — NEVER deleted
+    // 3. Wiki data 鈥?NEVER deleted
     actions.push(json!({
         "action": "wikis",
-        "note": "ALL wiki data preserved — never deleted (REQ-9)",
+        "note": "ALL wiki data preserved 鈥?never deleted (REQ-9)",
         "ok": true
     }));
 
@@ -387,5 +387,134 @@ mod uninstall_tests {
     fn test_detect_installer_returns_string() {
         let installer = detect_installer();
         assert!(!installer.is_empty());
+    }
+}
+// ---- Query engine (pure Rust) ----
+
+use std::collections::{HashMap, HashSet};
+
+/// Score a block: (coverage + rarity) * density_bonus.
+pub fn score_block(
+    snippet: &str,
+    hit_keywords: &HashSet<String>,
+    core_keywords: &[String],
+    expansion_keywords: &[String],
+    core_weight: f64,
+    expansion_weight: f64,
+    idf_weights: &HashMap<String, f64>,
+    density_bonus: f64,
+) -> f64 {
+    let lower = snippet.to_lowercase();
+
+    let core_hits: usize = core_keywords
+        .iter()
+        .map(|k| lower.matches(&k.to_lowercase()).count())
+        .sum();
+    let exp_hits: usize = expansion_keywords
+        .iter()
+        .map(|k| lower.matches(&k.to_lowercase()).count())
+        .sum();
+
+    let coverage = core_weight * core_hits as f64 + expansion_weight * exp_hits as f64;
+    let rarity: f64 = hit_keywords
+        .iter()
+        .map(|k| idf_weights.get(k).copied().unwrap_or(0.0))
+        .sum();
+    let distinct = hit_keywords.len();
+    let bonus = if distinct > 1 { density_bonus } else { 1.0 };
+
+    (coverage + rarity) * bonus
+}
+
+/// Fast Pass: determine if we can return early.
+/// Returns (triggered, body_uids_to_return).
+pub fn fast_pass(
+    scored: &[(String, f64)], // (uid, score)
+    top_k: usize,
+    fp_k: f64,
+    fp_low_hit: usize,
+) -> (bool, Vec<String>) {
+    if scored.is_empty() {
+        return (false, vec![]);
+    }
+
+    // Low hit count: always fast pass
+    if scored.len() <= fp_low_hit {
+        let uids: Vec<String> = scored.iter().take(3).map(|(u, _)| u.clone()).collect();
+        return (true, uids);
+    }
+
+    // Dynamic: top score significantly above mean
+    let scores: Vec<f64> = scored.iter().take(top_k).map(|(_, s)| *s).collect();
+    let mean = scores.iter().sum::<f64>() / scores.len() as f64;
+
+    if scores[0] > mean * fp_k {
+        let uids: Vec<String> = scored.iter().take(3).map(|(u, _)| u.clone()).collect();
+        return (true, uids);
+    }
+
+    (false, vec![])
+}
+
+/// Convert (line, col) to character offset in text.
+pub fn line_col_to_offset(text: &str, line: usize, col: usize) -> Option<usize> {
+    let mut cur_line = 1;
+    let mut offset = 0;
+    for ln in text.split_inclusive('\n') {
+        if cur_line == line {
+            return Some(offset + col);
+        }
+        offset += ln.len();
+        cur_line += 1;
+    }
+    None
+}
+
+#[cfg(test)]
+mod query_tests {
+    use super::*;
+
+    #[test]
+    fn test_score_block_basic() {
+        let hits: HashSet<String> = ["ml".into(), "ai".into()].into();
+        let core = vec!["ml".to_string()];
+        let exp = vec!["ai".to_string()];
+        let mut idf = HashMap::new();
+        idf.insert("ml".into(), 0.5);
+        idf.insert("ai".into(), 0.3);
+
+        let score = score_block(
+            "machine learning and ai",
+            &hits, &core, &exp,
+            2000.0, 500.0, &idf, 1.5,
+        );
+        assert!(score > 0.0);
+    }
+
+    #[test]
+    fn test_fast_pass_low_hit_triggers() {
+        let scored = vec![("U1".into(), 100.0)];
+        let (triggered, uids) = fast_pass(&scored, 10, 3.0, 3);
+        assert!(triggered);
+        assert_eq!(uids.len(), 1);
+    }
+
+    #[test]
+    fn test_fast_pass_high_mean_no_trigger() {
+        let scored: Vec<(String, f64)> = (0..10).map(|i| (format!("U{i}"), 100.0 - i as f64)).collect();
+        let (triggered, _) = fast_pass(&scored, 10, 3.0, 1);
+        assert!(!triggered);
+    }
+
+    #[test]
+    fn test_line_col_to_offset() {
+        let text = "line1\nline2\nline3";
+        let off = line_col_to_offset(text, 2, 0);
+        assert_eq!(off, Some(6)); // "line1\n" = 6 chars
+    }
+
+    #[test]
+    fn test_line_col_to_offset_not_found() {
+        assert_eq!(line_col_to_offset("short", 99, 0), None);
     }
 }
