@@ -1,4 +1,4 @@
-"""Global + wiki-internal config and the system registry.
+﻿"""Global + wiki-internal config and the system registry.
 
 Global config: ~/.xu-wiki/config.yaml  (wikis registry + api keys segment)
 Wiki config:   <wiki>/.xu/config.yaml
@@ -10,8 +10,22 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+import secrets
 
-from .paths import atomic_write_text
+def _atomic_write(path: Path, content: str):
+    """Atomic write via temp file + rename."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError:
+        try: tmp.unlink()
+        except OSError: pass
+        raise
 
 def _global_dir() -> Path:
     """Global config dir. Honors XU_HOME (useful for isolation/testing)."""
@@ -50,7 +64,7 @@ def save_global_config(cfg: dict) -> None:
 
     (3.4 fix): the README has long told users to `chmod 600` their
     config.yaml after writing the MinerU key, but the CLI never
-    enforced it — every subsequent `xu config set-mineru-key` would
+    enforced it 鈥?every subsequent `xu config set-mineru-key` would
     silently reset the file to umask-default permissions (644 on most
     systems), exposing the API key to other local users. We now
     auto-chmod 600 if the saved config contains a non-empty
@@ -59,13 +73,13 @@ def save_global_config(cfg: dict) -> None:
     header = ""
     if not GLOBAL_CONFIG.exists():
         header = (
-            "# xu-wiki 全局配置文件\n"
+            "# xu-wiki 鍏ㄥ眬閰嶇疆鏂囦欢\n"
             "# ========================\n"
-            "# mineru.api_key: MinerU 云端解析服务的 API 密钥（用于 PDF 在线解析，markitdown 不可用时触发）\n"
-            "# wikis: wiki 注册表（xu create / register 自动写入，不要手动编辑）\n"
+            "# mineru.api_key: MinerU 浜戠瑙ｆ瀽鏈嶅姟鐨?API 瀵嗛挜锛堢敤浜?PDF 鍦ㄧ嚎瑙ｆ瀽锛宮arkitdown 涓嶅彲鐢ㄦ椂瑙﹀彂锛塡n"
+            "# wikis: wiki 娉ㄥ唽琛紙xu create / register 鑷姩鍐欏叆锛屼笉瑕佹墜鍔ㄧ紪杈戯級\n"
             "#\n"
         )
-    atomic_write_text(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    _atomic_write(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
     if _contains_secret(cfg):
         try:
             os.chmod(GLOBAL_CONFIG, 0o600)
@@ -91,7 +105,7 @@ def _contains_secret(cfg: dict) -> bool:
 
 
 def load_registry() -> dict:
-    """Registry: {wikis: {name: {path, alias, created_at}}} — stored in GLOBAL_CONFIG."""
+    """Registry: {wikis: {name: {path, alias, created_at}}} 鈥?stored in GLOBAL_CONFIG."""
     if GLOBAL_CONFIG.exists():
         with open(GLOBAL_CONFIG, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
@@ -108,13 +122,13 @@ def save_registry(reg: dict) -> None:
     header = ""
     if not GLOBAL_CONFIG.exists():
         header = (
-            "# xu-wiki 全局配置文件\n"
+            "# xu-wiki 鍏ㄥ眬閰嶇疆鏂囦欢\n"
             "# ========================\n"
-            "# mineru.api_key: MinerU 云端解析服务的 API 密钥（用于 PDF 在线解析，markitdown 不可用时触发）\n"
-            "# wikis: wiki 注册表（xu create / register 自动写入，不要手动编辑）\n"
+            "# mineru.api_key: MinerU 浜戠瑙ｆ瀽鏈嶅姟鐨?API 瀵嗛挜锛堢敤浜?PDF 鍦ㄧ嚎瑙ｆ瀽锛宮arkitdown 涓嶅彲鐢ㄦ椂瑙﹀彂锛塡n"
+            "# wikis: wiki 娉ㄥ唽琛紙xu create / register 鑷姩鍐欏叆锛屼笉瑕佹墜鍔ㄧ紪杈戯級\n"
             "#\n"
         )
-    atomic_write_text(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    _atomic_write(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
     if _contains_secret(cfg):
         try:
             os.chmod(GLOBAL_CONFIG, 0o600)
@@ -143,7 +157,7 @@ def load_wiki_config(wiki_root: str | Path) -> dict:
 
 def save_wiki_config(wiki_root: str | Path, cfg: dict) -> None:
     cfg_path = Path(wiki_root) / ".xu" / "config.yaml"
-    atomic_write_text(cfg_path, yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    _atomic_write(cfg_path, yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
 
 
 def cfg_get(cfg: dict, dotted: str, default: Any = None) -> Any:
