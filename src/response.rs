@@ -45,6 +45,10 @@ pub fn warning(data: Value, message: &str) -> Value {
     make_response(Status::Warning, data, message, &[])
 }
 
+pub fn warning_with_hints(data: Value, message: &str, hints: &[String]) -> Value {
+    make_response(Status::Warning, data, message, hints)
+}
+
 pub fn error(message: &str, error_class: &str, data: Option<Value>, hints: &[String]) -> Value {
     let mut payload = data.unwrap_or_else(|| json!({}));
     if let Value::Object(ref mut map) = payload {

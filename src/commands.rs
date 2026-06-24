@@ -67,11 +67,76 @@ pub fn cmd_uninstall_plan(preserve_config: bool, keep_pip: bool) -> Value {
 }
 
 pub fn cmd_uninstall_execute(preserve_config: bool, keep_pip: bool) -> Value {
-    let mut a = vec![];
-    if !keep_pip { let ok = std::process::Command::new("pip").args(["uninstall","xu-wiki","-y"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().map(|s|s.success()).unwrap_or(false); a.push(json!({"action":"pip_uninstall","ok":ok})); }
-    if !preserve_config { if let Ok(home) = std::env::var("HOME") { let d = PathBuf::from(home).join(".xu-wiki"); if d.exists() { a.push(json!({"action":"remove_config","ok":fs::remove_dir_all(&d).is_ok()})); } } }
-    a.push(json!({"action":"wikis","note":"ALL wiki data preserved","ok":true}));
-    response::success(json!({"mode":"execute","actions":a,"wikis_preserved":true}), "uninstall complete")
+    let mut actions: Vec<Value> = vec![];
+    let mut failed: Vec<String> = vec![];
+    let mut hints: Vec<String> = vec![];
+
+    // --- package removal: try pipx first, fall back to pip ---
+    if !keep_pip {
+        let pipx_ok = std::process::Command::new("pipx")
+            .args(["uninstall", "xu-wiki"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        let pip_ok = if pipx_ok {
+            true  // pipx succeeded, skip pip
+        } else {
+            std::process::Command::new("pip")
+                .args(["uninstall", "xu-wiki", "-y"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+
+        let uninstalled = pipx_ok || pip_ok;
+        let method = if pipx_ok { "pipx" } else if pip_ok { "pip" } else { "none" };
+        actions.push(json!({"action":"pip_uninstall","ok":uninstalled,"method":method}));
+
+        if !uninstalled {
+            failed.push("pip_uninstall".into());
+            hints.push("Auto-removal of xu-wiki package failed. Try manually: pipx uninstall xu-wiki  OR  pip uninstall xu-wiki -y".into());
+        }
+    }
+
+    // --- config removal ---
+    if !preserve_config {
+        let config_dir = if let Ok(xh) = std::env::var("XU_HOME") {
+            PathBuf::from(xh)
+        } else if let Ok(home) = std::env::var("HOME") {
+            PathBuf::from(home).join(".xu-wiki")
+        } else {
+            PathBuf::new()
+        };
+
+        if !config_dir.as_os_str().is_empty() && config_dir.exists() {
+            let removed = fs::remove_dir_all(&config_dir).is_ok();
+            actions.push(json!({"action":"remove_config","ok":removed,"path":config_dir.to_string_lossy()}));
+            if !removed {
+                failed.push("remove_config".into());
+                hints.push(format!("Could not remove config directory: {}. You may remove it manually.", config_dir.display()));
+            }
+        }
+    }
+
+    // --- wikis always preserved ---
+    actions.push(json!({"action":"wikis","note":"ALL wiki data preserved","ok":true}));
+
+    // --- response grading ---
+    let failed_count = failed.len();
+    if failed_count == 0 {
+        response::success(json!({"mode":"execute","actions":actions,"wikis_preserved":true}), "uninstall complete")
+    } else {
+        response::warning_with_hints(
+            json!({"mode":"execute","actions":actions,"failed_components":failed,"wikis_preserved":true}),
+            &format!("uninstall completed with {failed_count} issue(s)"),
+            &hints,
+        )
+    }
 }
 
 // ======== INGEST HELPERS ========
