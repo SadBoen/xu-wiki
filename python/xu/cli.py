@@ -93,6 +93,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--uid", required=True, help="uid of the node to verify")
     sp.set_defaults(func="ingest_verify")
 
+    sp = sub.add_parser("ingest-context",
+                        help="Phase 1→2 bridge: raws_tree + related_nodes for Agent decision")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--keywords", required=True, help="comma-separated keywords from ingested content")
+    sp.set_defaults(func="ingest_context")
+
     sp = sub.add_parser("query", help="three-layer retrieval (L1 locate + L2/L3 hints)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--core", default="", help="comma-separated core keywords")
@@ -282,6 +288,9 @@ def _dispatch(args) -> dict:
     if func == "ingest_verify":
         from .commands.ingest import cmd_ingest_verify
         return cmd_ingest_verify(args)
+    if func == "ingest_context":
+        from .commands.ingest import cmd_ingest_context
+        return cmd_ingest_context(args)
     if func == "query":
         from .commands.query import cmd_query
         return cmd_query(args)

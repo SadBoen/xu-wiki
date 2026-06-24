@@ -1,8 +1,8 @@
-"""ingest 閳?two-phase L1 Node_Page creation (05-ingest.md).
+"""ingest 闁?two-phase L1 Node_Page creation (05-ingest.md).
 
-Phase 1 (ingest-file): parse 閳?write temporary file (system temp dir).
+Phase 1 (ingest-file): parse 闁?write temporary file (system temp dir).
                         No node created.
-Phase 2 (ingest-commit): validate 閳?atomic write Page(s) + raws copy + patches v1
+Phase 2 (ingest-commit): validate 闁?atomic write Page(s) + raws copy + patches v1
                          + IDF + relations. The ONLY write entry (PRIN-ING-1).
 """
 from __future__ import annotations
@@ -98,7 +98,7 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
 
 
 def cmd_ingest_file(args) -> dict:
-    """Phase 1: dedup check 閳?parse source 閳?write temp file. No node created.
+    """Phase 1: dedup check 闁?parse source 闁?write temp file. No node created.
 
     Dedup is checked BEFORE calling the parser (especially expensive MinerU)
     to avoid wasting API calls on already-ingested sources (PRIN-ING-3).
@@ -128,7 +128,7 @@ def cmd_ingest_file(args) -> dict:
                 hints=["pip install xu-wiki[parse] to enable PDF/DOCX/PPTX parsing"],
             )
 
-    # Level-2 dedup: check BEFORE calling parser (especially MinerU 閳?costs money).
+    # Level-2 dedup: check BEFORE calling parser (especially MinerU 闁?costs money).
     # Level-2 is all-pages, not active-only, so re-ingesting a deactivated source
     # is also caught here (PRIN-ING-3). Frontmatter is source of truth (FS).
     source_hash = sha256_file(src)
@@ -174,7 +174,7 @@ def cmd_ingest_file(args) -> dict:
             "source_hash": source_hash,
             "chars": len(text),
         },
-        f"parsed via {res.parser} 閳?pending temp file (Phase 1). No node created yet.",
+        f"parsed via {res.parser} 闁?pending temp file (Phase 1). No node created yet.",
         hints=[
             "review pending content, then run ingest-commit with --pending and --title",
             "Agent decides title/raw_path/relations between phases (PRIN-ING-2)",
@@ -317,7 +317,7 @@ def cmd_ingest_commit(args) -> dict:
     source_index, content_index = _scan_fm_index(ctx)
 
     # Level-2 dedup: source file hash across ALL pages (CONST-ING-3,
-    # PRIN-ING-3). Note: Level-2 is "閹碘偓閺?Page" 閳?NOT filtered by active 閳?
+    # PRIN-ING-3). Note: Level-2 is "闁圭鍋撻柡?Page" 闁?NOT filtered by active 闁?
     # so re-ingesting the same source is caught even against a deactivated
     # page. (Level-1 below is active-only, per the design's contrast.)
     if source_hash:
@@ -535,7 +535,7 @@ def cmd_ingest_commit(args) -> dict:
         finally:
             conn_rel.close()
 
-    # Phase 2 success 閳?delete pending temp file (PRIN-ING-7)
+    # Phase 2 success 闁?delete pending temp file (PRIN-ING-7)
     if args.pending:
         try:
             Path(args.pending).expanduser().resolve().unlink()
@@ -614,3 +614,95 @@ def cmd_ingest_verify(args) -> dict:
     if failed:
         detail += f"; FAILED: {failed}"
     return make_response(status, msgs, detail)
+
+# ---- ingest-context (Phase 1→2 bridge query) ----
+
+def cmd_ingest_context(args) -> dict:
+    """Return raws_tree + related_nodes for Agent decision-making."""
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    keywords = [k.strip() for k in (args.keywords or "").split(",") if k.strip()]
+    if not keywords:
+        return error("provide --keywords", "MissingKeywords")
+
+    # 1. Build raws tree from existing raw_path values
+    raws_tree = _build_raws_tree(ctx)
+
+    # 2. Find related nodes by keyword match
+    related = _find_related(ctx, keywords)
+
+    return success(
+        {"raws_tree": raws_tree, "related_nodes": related},
+        f"context: {len(raws_tree)} raw dir(s), {len(related)} related node(s)"
+    )
+
+
+def _build_raws_tree(ctx: WikiContext) -> list[str]:
+    """Extract parent directories from node_page.raw_path."""
+    conn = ctx.connect()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT raw_path FROM node_page WHERE raw_path IS NOT NULL AND raw_path != ''"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    dirs = set()
+    for row in rows:
+        rp = row["raw_path"]
+        # Split path, collect all prefixes
+        parts = rp.replace("\\", "/").split("/")
+        for i in range(1, len(parts)):
+            prefix = "/".join(parts[:i])
+            if prefix:
+                dirs.add(prefix)
+
+    return sorted(dirs)
+
+
+def _find_related(ctx: WikiContext, keywords: list[str]) -> list[dict]:
+    """Find nodes whose body matches at least one keyword. Returns top 10 by match_count."""
+    conn = ctx.connect()
+    try:
+        rows = conn.execute(
+            "SELECT uid, title, body FROM node_page WHERE active=1 AND body IS NOT NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    scored = []
+    for row in rows:
+        body = (row["body"] or "").lower()
+        count = sum(1 for kw in keywords if kw.lower() in body)
+        if count > 0:
+            scored.append({
+                "uid": row["uid"],
+                "title": row["title"],
+                "layer": "Page",
+                "match_count": count,
+            })
+
+    # Also check node_derived
+    conn2 = ctx.connect()
+    try:
+        rows = conn2.execute(
+            "SELECT uid, title, layer, body FROM node_derived WHERE body IS NOT NULL"
+        ).fetchall()
+    finally:
+        conn2.close()
+
+    for row in rows:
+        body = (row["body"] or "").lower()
+        count = sum(1 for kw in keywords if kw.lower() in body)
+        if count > 0:
+            scored.append({
+                "uid": row["uid"],
+                "title": row["title"],
+                "layer": row["layer"],
+                "match_count": count,
+            })
+
+    scored.sort(key=lambda x: x["match_count"], reverse=True)
+    return scored[:10]

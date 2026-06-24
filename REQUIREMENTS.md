@@ -64,6 +64,27 @@ UID 包含时间戳分量，不同时间点生成的 UID 天然不碰撞。节�
 
 两个阶段之间，调用者读取临时文件内容做语义判断（标题、分区、关系）。
 
+### 中间查询（ingest-context）
+
+Phase 1 解析成功后，Agent 调此命令获取决策依据：
+
+```bash
+xu ingest-context --wiki W --keywords "船舶,设计,规范"
+```
+
+**内部逻辑（纯确定性）**：
+```
+1. raws_tree = SELECT DISTINCT raw_path FROM node_page → 提取父目录层级
+2. related_nodes = 逐 node_page/derived.body 扫 keywords → match_count → top 10
+```
+
+**返回值**：
+```json
+{"raws_tree": ["船舶/","证书/"], "related_nodes": [{"uid":"A001","title":"船舶设计规范","layer":"Page","match_count":3}]}
+```
+
+Agent 据此决定 `--raw-path` 和 `--relations`。
+
 ## 11. CLI 不调 LLM
 
 CLI 全程确定性，不调用任何大模型。语义判断、关键词分级、同义词扩展——这些都是调用者的工作。
