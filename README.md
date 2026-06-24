@@ -26,12 +26,20 @@ Knowledge is organized in three layers plus a relation graph:
 Every node carries an ordered, capped (50) **LRU relation list** — no categories,
 no scores. Every command returns a **4-key JSON envelope**: `{status, data, message, hints}`.
 
-## Install (Linux / macOS)
+## Install (Linux x86_64)
 
-One command. Works on both Linux and macOS, PEP 668-safe:
+Prebuilt wheels. No Rust toolchain required.
 
 ```bash
-pipx install "xu-wiki[pdf,parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+# 1. Install the wheel (core engine, compiled from Rust)
+pipx install https://github.com/SadBoen/xu-wiki/releases/latest/download/xu_wiki-0.1.0-cp311-linux-x86_64.whl
+
+# 2. Install Python extras (third-party parsers, not compiled)
+pipx inject xu-wiki "xu-wiki[all] @ git+https://github.com/SadBoen/xu-wiki.git"
+
+# 3. Deploy skill bundle + verify
+xu deploy skill --target auto
+xu selfcheck
 ```
 
 **What each extra provides** (install all four — all required for full SOP coverage):
@@ -71,3 +79,19 @@ xu uninstall --target hermes --target claude --execute
 ```
 
 The uninstall plan is always shown first (dry-run). Pass `--execute` to apply.
+
+---
+
+## For Developers
+
+Requires Rust toolchain (`rustup`) + Python 3.10+.
+
+```bash
+git clone https://github.com/SadBoen/xu-wiki.git
+cd xu-wiki
+pip install maturin
+maturin develop          # editable install into current venv
+cargo test --lib         # run Rust unit tests
+```
+
+Release: push a tag `vX.Y.Z` → CI builds wheels → auto-attached to GitHub Releases.
