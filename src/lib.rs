@@ -202,6 +202,24 @@ fn scan_bodies(
     Ok(result_dict.into())
 }
 
+/// Validate body format (Rust -> Python bridge).
+#[pyfunction]
+fn validate_body_format(body: &str, content_type: &str) -> Option<String> {
+    commands::validate_body_format(body, content_type)
+}
+
+/// Strip YAML frontmatter from text (Rust -> Python bridge).
+#[pyfunction]
+fn strip_frontmatter(text: &str) -> String {
+    commands::strip_frontmatter(text)
+}
+
+/// Parse pending header from Phase 1 temp file (Rust -> Python bridge).
+#[pyfunction]
+fn parse_pending_header_py(text: &str) -> (std::collections::HashMap<String, String>, String) {
+    commands::parse_pending_header(text)
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gen_uid, m)?)?;
@@ -216,5 +234,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extract_nouns_fallback, m)?)?;
     m.add_function(wrap_pyfunction!(make_slice, m)?)?;
     m.add_function(wrap_pyfunction!(scan_bodies, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_body_format, m)?)?;
+    m.add_function(wrap_pyfunction!(strip_frontmatter, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_pending_header_py, m)?)?;
     Ok(())
 }

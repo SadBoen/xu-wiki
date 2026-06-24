@@ -184,6 +184,14 @@ def cmd_ingest_file(args) -> dict:
 
 
 def _parse_pending_header(text: str) -> tuple[dict, str]:
+    # Try Rust implementation first
+    try:
+        from xu._core import parse_pending_header_py
+        meta, body = parse_pending_header_py(text)
+        return meta, body
+    except ImportError:
+        pass
+    # Python fallback
     meta = {}
     body = text
     if text.startswith("<!-- xu-pending"):
@@ -199,18 +207,19 @@ def _parse_pending_header(text: str) -> tuple[dict, str]:
 
 
 def _validate_body_format(body: str, content_type: str) -> str | None:
-    """Check body matches content_type format.
-
-    Returns None if valid, or an error message string if invalid.
-    """
+    # Try Rust implementation first
+    try:
+        from xu._core import validate_body_format as _validate_rust
+        return _validate_rust(body, content_type)
+    except ImportError:
+        pass
+    # Python fallback
     if content_type == "article":
         return None
     if content_type not in ("table", "gallery"):
         return f"unknown content_type: {content_type}"
-
     if not body.strip():
-        return None  # empty body is allowed (can be filled later via revise)
-
+        return None
     try:
         parsed = yaml.safe_load(body)
     except yaml.YAMLError:
