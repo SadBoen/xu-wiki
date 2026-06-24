@@ -115,24 +115,51 @@ def dispatch(args):
     if f == "selfcheck":
         return json.loads(py_selfcheck())
     if f == "doctor":
-        return json.loads(py_doctor(args.wiki))
+        wp = _resolve_or_err(args.wiki)
+        return wp if isinstance(wp, dict) else json.loads(py_doctor(wp))
     if f == "uninstall":
         if args.execute:
             return json.loads(py_uninstall_execute(args.preserve_config, args.keep_pip))
         return json.loads(py_uninstall_plan(args.preserve_config, args.keep_pip))
     if f == "ingest_commit":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
         return json.loads(py_ingest_commit(
-            args.wiki, args.pending or "", args.title or "",
-            args.content_type, args.raw_path, args.author, args.relations,
+            wp, getattr(args, 'pending', '') or '',
+            getattr(args, 'title', '') or '',
+            getattr(args, 'content_type', 'article') or 'article',
+            getattr(args, 'raw_path', '') or '',
+            getattr(args, 'author', 'agent') or 'agent',
+            getattr(args, 'relations', '') or '',
         ))
     if f == "query":
-        return json.loads(py_query(args.wiki, args.core, args.expansion, args.top_k))
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_query(wp, args.core, args.expansion, args.top_k))
     if f == "expand":
-        return json.loads(py_expand(args.wiki, args.uids))
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_expand(wp, args.uids))
     if f == "ingest_context":
-        return json.loads(py_ingest_context(args.wiki, args.keywords))
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_ingest_context(wp, args.keywords))
 
     return {"status": "error", "message": f"unknown command: {f}", "hints": []}
+
+
+def _resolve_or_err(name: str):
+    """Resolve wiki name/alias -> absolute path. Returns dict on error."""
+    from xu.utils.config import registry_find
+    found = registry_find(name)
+    if found is None:
+        return {"status": "error", "message": f"wiki not found: {name}", "hints": []}
+    _name, entry = found
+    return str(entry["path"])
 
 
 def _register_wiki(name, path, alias):
