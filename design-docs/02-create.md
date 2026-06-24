@@ -4,6 +4,10 @@
 > **范围**：仅覆盖 create 命令本身。
 > **风格**：每条原则标 [PRIN-N] / [BAN-N] / [CONST-N] / [DESIGN-N]。
 
+> **当前实现 (v0.1.0)**：`xu create --name X --path /abs/path`
+>  建 `raws/` + `.xu/` 目录，初始化 5 张 SQLite 表。**不再创建 `nodes/page/`、`nodes/list/`、`nodes/report/` 目录**，
+>  所有节点数据存 SQLite。返回 `{name, path, version, layout, tables}`。
+
 ---
 
 ## 一、一句话定位

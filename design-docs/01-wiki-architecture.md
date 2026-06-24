@@ -4,6 +4,15 @@
 > **范围**：Node_Page / Node_List / Node_Report 三层节点、关系管理、检索工作流、物理存储、Schema 约束。
 > **风格**：每条原则标 [PRIN-N] / [BAN-N] / [CONST-N] / [DESIGN-N]。
 
+> **当前实现 (v0.1.0)**：5 张 SQLite 表，无 .md 文件存储。
+> - `node_page` — L1 不可变知识页（body 列存全文），raw 源文件存 `raws/` 目录
+> - `node_derived` — L2 List（YAML 成员列表）+ L3 Report（证据链 + 正文内嵌 body）
+> - `patches` — L1 修订记录（create / revise / correct）
+> - `relations` — 节点间 LRU 关系边（每节点最多 50 条）
+> - `idf` — 名词词频权重（TF-IDF 查询打分用）
+>
+> 砍掉的表：`list_members`（成员 UID 在 body YAML 里）、`evidence`（证据链 inline body）、`meta`（未使用）。
+
 ---
 
 ## 一、一句话定位

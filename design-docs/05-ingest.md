@@ -4,6 +4,19 @@
 > **范围**：所有 `ingest*` 命令及 ingest-commit。
 > **风格**：每条原则标 [PRIN-N] / [BAN-N] / [CONST-N] / [DESIGN-N]。
 
+> **当前实现 (v0.1.0)** — 两阶段流程：
+>
+> **Phase 1 (`ingest-file`)**：PDF/DOCX/PPTX/MD → MinerU (云端) → markitdown (本地)
+> → 写入临时文件。两个都失败则中断（无 TextParser 兜底，避免低质量内容入库）。
+>
+> **Phase 2 (`ingest-commit`)**：
+>   1. ❗ **去重检查在最前面** — 先扫 `node_page.source_hash`，命中直接返回 `warning`，不浪费计算
+>   2. `split_pages` 按 300 行切分
+>   3. 逐页：Level-1 `content_hash` 去重 → INSERT `node_page` + INSERT `patches` v1 + 更新 `idf`
+>   4. 源文件复制到 `raws/<raw_path>/`
+>
+> **已移除**：`--node-path` 参数（全部 SQLite 存储）、TextParser 回退链。
+
 ---
 
 ## 一、一句话定位
