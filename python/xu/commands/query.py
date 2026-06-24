@@ -1,7 +1,7 @@
 """query / read / nodes commands.
 
-query: keyword scan → slice → merge → score → return snippets.
-  Zero LLM calls. Scoring = core_hits×3 + expansion_hits×1.
+query: keyword scan 鈫?slice 鈫?merge 鈫?score 鈫?return snippets.
+  Zero LLM calls. Scoring = core_hits脳3 + expansion_hits脳1.
 read: single-node full body from SQLite.
 nodes: DB metadata query (read-only).
 """
@@ -22,7 +22,7 @@ def _split_kw(s: str) -> list[str]:
 
 
 def _score_snippet(snippet: str, core: list[str], expansion: list[str]) -> int:
-    """Simple hit-count scoring: core×3 + expansion×1."""
+    """Simple hit-count scoring: core脳3 + expansion脳1."""
     lower = snippet.lower()
     core_hits = sum(lower.count(k.lower()) for k in core)
     exp_hits = sum(lower.count(k.lower()) for k in expansion)
@@ -50,7 +50,7 @@ def cmd_query(args) -> dict:
     # Scan node_page.body for keyword hits
     raw_hits = scan(ctx, all_kw)
 
-    # Load uid → {title, layer, body} cache
+    # Load uid 鈫?{title, layer, body} cache
     uid_cache = _load_uid_cache(ctx)
 
     # Group hits by uid, score, collect snippets
@@ -282,3 +282,67 @@ def cmd_nodes(args) -> dict:
 
     return success({"nodes": results, "count": len(results)},
                    f"{len(results)} node(s)")
+
+# ---- expand (pull body + relations by UID) ----
+
+def cmd_expand(args) -> dict:
+    """Pull full body + relations for given UIDs."""
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    uids = _split_kw(args.uids)
+    if not uids:
+        return error("provide --uids", "MissingUids")
+
+    qcfg = ctx.config.get("query", {})
+    body_max = cfg_get(qcfg, "body_max", 20)
+    uids = uids[:body_max]
+
+    result = {}
+    for uid in uids:
+        node = _pull_node(ctx, uid)
+        if node:
+            result[uid] = node
+
+    return success(
+        {"nodes": result, "count": len(result)},
+        f"expanded {len(result)} node(s)"
+    )
+
+
+def _pull_node(ctx: WikiContext, uid: str) -> dict | None:
+    """Pull a single node's body + relations from SQLite."""
+    conn = ctx.connect()
+    try:
+        # Try node_page
+        row = conn.execute(
+            "SELECT uid, title, content_type, body FROM node_page WHERE uid=?",
+            (uid,)
+        ).fetchone()
+        if row:
+            rels = list_relations(ctx, uid)
+            return {
+                "uid": row["uid"],
+                "title": row["title"],
+                "layer": "Page",
+                "body": row["body"] or "",
+                "relations": rels,
+            }
+        # Try node_derived
+        row = conn.execute(
+            "SELECT uid, title, layer, body FROM node_derived WHERE uid=?",
+            (uid,)
+        ).fetchone()
+        if row:
+            rels = list_relations(ctx, uid)
+            return {
+                "uid": row["uid"],
+                "title": row["title"],
+                "layer": row["layer"],
+                "body": row["body"] or "",
+                "relations": rels,
+            }
+    finally:
+        conn.close()
+    return None

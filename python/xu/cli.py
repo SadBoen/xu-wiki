@@ -102,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--include-inactive", action="store_true")
     sp.set_defaults(func="query")
 
+    sp = sub.add_parser("expand", help="pull full body + relations for UIDs")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uids", required=True, help="comma-separated UIDs")
+    sp.set_defaults(func="expand")
+
     sp = sub.add_parser("read", help="read a single node full body (L1 applies patches)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--uid", required=True)
@@ -280,6 +285,9 @@ def _dispatch(args) -> dict:
     if func == "query":
         from .commands.query import cmd_query
         return cmd_query(args)
+    if func == "expand":
+        from .commands.query import cmd_expand
+        return cmd_expand(args)
     if func == "read":
         from .commands.query import cmd_read
         return cmd_read(args)
