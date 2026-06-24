@@ -23,6 +23,7 @@ impl Db {
         Python::with_gil(|py| {
             let sqlite3 = py.import_bound("sqlite3")?;
             let conn = sqlite3.call_method1("connect", (path.to_string_lossy().as_ref(),))?;
+            conn.setattr("row_factory", sqlite3.getattr("Row")?)?;
             conn.call_method1("executescript", ("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",))?;
             Ok(Db { py_conn: conn.into() })
         })
@@ -56,11 +57,11 @@ impl Db {
             let mut rows = vec![];
             for row in cursor.iter()? {
                 if let Ok(r) = row {
-                    let rdict: &Bound<'_, PyDict> = r.downcast()?;
+                    // sqlite3.Row -> dict via keys() mapping
+                    let keys: Vec<String> = r.getattr("keys")?.call0()?.extract()?;
                     let mut map = HashMap::new();
-                    for (k, v) in rdict.iter() {
-                        let key: String = k.extract()?;
-                        let val: String = v.extract().unwrap_or_default();
+                    for key in keys {
+                        let val: String = r.get_item(key.as_str())?.extract().unwrap_or_default();
                         map.insert(key, val);
                     }
                     rows.push(map);
