@@ -1,9 +1,9 @@
-"""xu CLI entrypoint — argparse dispatcher.
+﻿"""xu CLI entrypoint 鈥?argparse dispatcher.
 
 Every command prints a 4-key JSON response (CONST-ARCH-1) and logs to audit.
 
-Install:  handled by pip — `pip install "xu-wiki[parse,nlp,vision]"`.
-Uninstall: handled by THIS CLI — `xu uninstall`. Default dry-run.
+Install:  handled by pip 鈥?`pip install "xu-wiki[parse,nlp,vision]"`.
+Uninstall: handled by THIS CLI 鈥?`xu uninstall`. Default dry-run.
           The agent invokes it (never the user) via /xu-wiki config.
 Skills: NOT handled by this CLI. The agent uses its own skill manager and
 copies the source markdown files (location: `xu skills path`).
@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func="ingest_commit")
 
     sp = sub.add_parser("ingest-album",
-                        help="Album: N images → 1 L1 Page (single-shot, no two-phase; PRIN-ING-13)")
+                        help="Album: N images 鈫?1 L1 Page (single-shot, no two-phase; PRIN-ING-13)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--title", required=True, help="album theme (becomes the L1 title)")
     sp.add_argument("--files", required=True,
@@ -209,7 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
     g_dry = sp.add_mutually_exclusive_group()
     g_dry.add_argument("--dry-run", dest="dry_run", action="store_true",
                        default=None,
-                       help="explicit dry-run (default; provided for clarity — "
+                       help="explicit dry-run (default; provided for clarity 鈥?"
                             "explicit > implicit for script users)")
     g_dry.add_argument("--execute", dest="execute", action="store_true",
                        default=None,
@@ -228,7 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
                          "can be specified multiple times; default: all deployed targets")
     sp.set_defaults(func="uninstall")
 
-    # ---- M8: post-install health check (坑 6 fix) ----
+    # ---- M8: post-install health check (鍧?6 fix) ----
     sub.add_parser("selfcheck",
                    help="verify xu-wiki install (CLI / Python / skills / ~/.xu-wiki/ / extras); "
                         "agent-callable, returns 4-key JSON").set_defaults(func="selfcheck")
@@ -370,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
     except _ArgParseError as e:
-        # Map argparse error → 4-key JSON; do not pollute stdout with usage banner.
+        # Map argparse error 鈫?4-key JSON; do not pollute stdout with usage banner.
         response = error(
             e.message,
             "ArgParseError",
@@ -403,8 +403,8 @@ def main(argv: list[str] | None = None) -> int:
             data={"traceback": traceback.format_exc().splitlines()[-5:]},
         )
     # PRIN-LOG-1 process-layer audit: ALL CLI commands emit exactly one line.
-    # - commands with a resolvable --wiki → <wiki>/.xu/audit.jsonl
-    # - commands without wiki OR unresolvable wiki → GLOBAL_AUDIT_LOG
+    # - commands with a resolvable --wiki 鈫?<wiki>/.xu/audit.jsonl
+    # - commands without wiki OR unresolvable wiki 鈫?GLOBAL_AUDIT_LOG
     try:
         from .utils.config import GLOBAL_AUDIT_LOG
         from .utils.paths import append_jsonl
@@ -416,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if wiki_ref:
             # Preserve the wiki reference in the log even when it doesn't
-            # resolve — an unresolvable wiki is itself a diagnostic signal
+            # resolve 鈥?an unresolvable wiki is itself a diagnostic signal
             # (typo'd name, missing registry entry, wrong CWD).
             wiki_for_log = wiki_ref
             ctx = resolve_wiki(wiki_ref)

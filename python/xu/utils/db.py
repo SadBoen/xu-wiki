@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS node_page (
     uid           TEXT PRIMARY KEY,
     title         TEXT NOT NULL,
     slug          TEXT,
-    rel_md_path   TEXT,                 -- relative path to .md file
     raw_path      TEXT,                 -- relative path under raws/
     content_type  TEXT NOT NULL DEFAULT 'article',
     content_hash  TEXT,                 -- body SHA256 (Level 1 dedup)

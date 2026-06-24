@@ -242,13 +242,13 @@ _CHAINS: dict[str, list] = {
     ".webp": [VisionParser()],
     ".bmp":  [VisionParser()],
     ".tiff": [VisionParser()],
-    ".html": [MarkitdownParser(), TextParser()],
-    ".htm":  [MarkitdownParser(), TextParser()],
+    ".html": [MarkitdownParser()],
+    ".htm":  [MarkitdownParser()],
 }
 
 
 def _chain_for(path: Path) -> list:
-    return _CHAINS.get(path.suffix.lower(), [TextParser()])
+    return _CHAINS.get(path.suffix.lower(), [])
 
 
 def parse_file(path: str | Path, **kw) -> ParseResult:

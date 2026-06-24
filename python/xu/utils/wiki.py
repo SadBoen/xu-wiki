@@ -117,7 +117,7 @@ def find_node_md(ctx: WikiContext, uid: str) -> tuple[dict, str] | None:
 def find_by_source_hash(ctx: WikiContext, source_hash: str) -> dict | None:
     """Find a node by its source_hash. Checks SQLite first, then FS fallback.
 
-    Used for Level-2 dedup — SQLite is authoritative for current L1 pages.
+    Used for Level-2 dedup 閳?SQLite is authoritative for current L1 pages.
     """
     # SQLite first
     conn = ctx.connect()

@@ -1,4 +1,4 @@
-//! CLI entry point using clap.
+﻿//! CLI entry point using clap.
 //! Covers all commands from the original Python CLI.
 
 use clap::{Parser, Subcommand};
@@ -64,7 +64,6 @@ pub enum Commands {
         #[arg(long, default_value = "")]
         source: String,
         #[arg(long, default_value = "")]
-        raw_path: String,
         #[arg(long, default_value = "agent")]
         author: String,
     },
@@ -78,7 +77,6 @@ pub enum Commands {
         #[arg(long)]
         files: String,
         #[arg(long, default_value = "")]
-        raw_path: String,
         #[arg(long, default_value = "table")]
         layout: String,
         #[arg(long, default_value = "false")]
