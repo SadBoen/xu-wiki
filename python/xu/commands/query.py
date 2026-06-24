@@ -1,9 +1,9 @@
-"""query / read / nodes commands (06-query.md).
+"""query / read / nodes commands.
 
-query: three-layer retrieval. CLI does L1 (SQLite scan + slice + score + Fast Pass)
-and returns L2/L3 hints. Zero LLM calls (PRIN-QRY-3).
-read: single-node full body, from SQLite nodes.body (PRIN-QRY-6).
-nodes: DB metadata query (read-only, SQLite only).
+query: keyword scan → slice → merge → score → return snippets.
+  Zero LLM calls. Scoring = core_hits×3 + expansion_hits×1.
+read: single-node full body from SQLite.
+nodes: DB metadata query (read-only).
 """
 from __future__ import annotations
 
@@ -15,11 +15,18 @@ from ..query.slicing import make_slice, merge_slices
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki, WikiContext
-from ..utils.idf import load_idf
 
 
 def _split_kw(s: str) -> list[str]:
     return [k.strip() for k in s.split(",") if k.strip()]
+
+
+def _score_snippet(snippet: str, core: list[str], expansion: list[str]) -> int:
+    """Simple hit-count scoring: core×3 + expansion×1."""
+    lower = snippet.lower()
+    core_hits = sum(lower.count(k.lower()) for k in core)
+    exp_hits = sum(lower.count(k.lower()) for k in expansion)
+    return core_hits * 3 + exp_hits
 
 
 def cmd_query(args) -> dict:
@@ -31,100 +38,67 @@ def cmd_query(args) -> dict:
     expansion = _split_kw(args.expansion)
     if not core and not expansion:
         return error("provide --core and/or --expansion keywords", "NoKeywords",
-                     hints=["Agent does semantic grading; CLI ranks deterministically (PRIN-QRY-2)"])
+                     hints=["Agent grades keywords from user intent; CLI only matches"])
 
     qcfg = ctx.config.get("query", {})
-    soft = cfg_get(qcfg, "slice.soft_limit", 80)
-    hard = cfg_get(qcfg, "slice.hard_limit", 150)
-    radius = cfg_get(qcfg, "slice.merge_radius", 80)
-    core_w = cfg_get(qcfg, "scoring.core_weight", 2000)
-    exp_w = cfg_get(qcfg, "scoring.expansion_weight", 500)
-    density = cfg_get(qcfg, "scoring.density_bonus", 1.5)
-    top_k = args.top_k or cfg_get(qcfg, "top_k", 10)
-    fp_k = cfg_get(qcfg, "fast_pass.k", 3.0)
-    fp_low = cfg_get(qcfg, "fast_pass.low_hit", 3)
-    timeout = cfg_get(qcfg, "timeout_seconds", 10)
+    snippet_radius = cfg_get(qcfg, "snippet_radius", 50)
+    merge_radius = cfg_get(qcfg, "merge_radius", 80)
+    snippet_max = args.top_k or cfg_get(qcfg, "snippet_max", 50)
 
     all_kw = core + expansion
 
-    # SQLite-first scan (T6): scan ctx, not ctx.page_dir
-    raw_hits = scan(ctx, all_kw, timeout=timeout)
+    # Scan node_page.body for keyword hits
+    raw_hits = scan(ctx, all_kw)
 
-    # IDF weights (PRIN-QRY-11)
-    idf_table = load_idf(ctx)
-    idf_weight = {}
-    for kw in all_kw:
-        freq, weight = idf_table.get(kw.lower(), (0, 0.0))
-        idf_weight[kw] = weight
+    # Load uid → {title, layer, body} cache
+    uid_cache = _load_uid_cache(ctx)
 
-    # Group hits by uid (scanner now returns uid, not file path)
-    by_uid: dict[str, list] = {}
+    # Group hits by uid, score, collect snippets
+    scored_blocks = []
     for kw, hits in raw_hits.items():
         for h in hits:
-            by_uid.setdefault(h["uid"], []).append((kw, h))
+            uid = h["uid"]
+            node = uid_cache.get(uid)
+            if not node:
+                continue
+            body = node.get("body", "")
+            if not body:
+                continue
 
-    # uid -> node metadata cache from SQLite
-    uid_cache: dict[str, dict] = _load_uid_cache(ctx)
+            cp = h["char_pos"]
+            match_len = len(h["match"])
+            # Take snippet_radius chars before and after the match
+            start = max(0, cp - snippet_radius)
+            end = min(len(body), cp + match_len + snippet_radius)
+            snippet = body[start:end]
 
-    scored_blocks = []
-    for uid, kw_hits in by_uid.items():
-        node = uid_cache.get(uid)
-        if not node:
-            continue
-        if not node["active"] and not args.include_inactive:
-            continue
-        body = node["body"]
-        if not body:
-            continue
+            score = _score_snippet(snippet, core, expansion)
+            if score == 0:
+                continue
 
-        slices = []
-        for kw, h in kw_hits:
-            char_pos = h["char_pos"]
-            s, e, snippet = make_slice(body, char_pos, char_pos + len(h["match"]), soft, hard)
-            slices.append({"start": s, "end": e, "text": snippet, "hits": {kw}})
-
-        merged = merge_slices(slices, radius, body)
-        for blk in merged:
-            score = _score_block(blk, core, expansion, core_w, exp_w, density, idf_weight, body)
             scored_blocks.append({
-                "uid": node["uid"],
+                "uid": uid,
                 "title": node["title"],
                 "layer": node["layer"],
-                "snippet": blk["text"].strip(),
-                "matched": sorted(blk["hits"]),
-                "score": round(score, 2),
+                "score": score,
+                "snippet": snippet.strip(),
+                "matched": [kw],
             })
 
-    scored_blocks.sort(key=lambda b: b["score"], reverse=True)
-    top = scored_blocks[:top_k]
+    # Merge nearby blocks within same uid (distance < merge_radius)
+    merged = _merge_by_uid(scored_blocks, merge_radius)
 
-    # Fast Pass (PRIN-QRY-12, CONST-QRY-6)
-    fast_pass = False
-    body_map = {}
-    if top:
-        scores = [b["score"] for b in top]
-        if len(top) <= fp_low:
-            fast_pass = True
-        else:
-            mean = sum(scores) / len(scores)
-            if scores[0] > mean * fp_k:
-                fast_pass = True
-        if fast_pass:
-            seen = []
-            for b in top:
-                if b["uid"] in seen:
-                    continue
-                seen.append(b["uid"])
-                body_map[b["uid"]] = uid_cache.get(b["uid"], {}).get("body", "")
-                if len(seen) >= 3:
-                    break
+    # Sort by score desc, take top snippet_max
+    merged.sort(key=lambda b: b["score"], reverse=True)
+    top = merged[:snippet_max]
 
-    # L2/L3 hints (PRIN-QRY-1) + neighbors
-    hit_uids = [b["uid"] for b in top]
-    list_hint, report_hint, entity_hint = _build_hints(ctx, hit_uids)
+    # L2/L3 hints
+    hit_uids = list({b["uid"] for b in top})
+    list_hint, report_hint = _build_hints(ctx, hit_uids)
 
+    # Neighbors if requested
     neighbor_preview = None
-    if args.neighbors and hit_uids:
+    if getattr(args, "neighbors", False) and hit_uids:
         neighbor_preview = {}
         for uid in hit_uids[:5]:
             rels = list_relations(ctx, uid)
@@ -134,104 +108,100 @@ def cmd_query(args) -> dict:
 
     data = {
         "related_nodes": top,
-        "fast_pass": fast_pass,
-        "total_hits": len(scored_blocks),
+        "total_hits": len(merged),
     }
-    if body_map:
-        data["body_map"] = body_map
     if list_hint:
         data["list_hint"] = list_hint
     if report_hint:
         data["report_hint"] = report_hint
-    if entity_hint:
-        data["entity_hint"] = entity_hint
     if neighbor_preview is not None:
         data["neighbor_preview"] = neighbor_preview
 
     hints = []
     if top:
-        hints.append("read --uid <uid> to fetch full body")
+        hints.append("read --uid <uid> to fetch full body if needed")
         if list_hint:
             hints.append("list show <uid> for L2 comparison")
         if report_hint:
-            hints.append("report show <uid> for L3 conclusion + evidence")
-        if entity_hint:
-            hints.append("entity show <uid> for L2 entity attributes")
-        hints.append("run post-query reflection (PRIN-CR-1): query for similar Report first, extend existing if found; otherwise LLM decides autonomously (no user approval needed)")
-        hints.append("post-query reflection (PRIN-CR-1): query for similar List only if hits share a comparable dimension and no similar exists (secondary, opportunistic)")
+            hints.append("report show <uid> for L3 conclusion")
     if not top:
-        hints.append("no hits; try different keywords or check ingest")
+        hints.append("no hits; try different keywords")
 
-    status = success if top else warning
-    return status(data, f"{len(scored_blocks)} block(s) across {len(by_uid)} uid(s); "
-                        f"fast_pass={fast_pass}", hints=hints)
+    status_fn = success if top else warning
+    return status_fn(data, f"{len(top)} snippet(s) from {len(hit_uids)} node(s)",
+                     hints=hints)
+
+
+def _merge_by_uid(blocks: list[dict], radius: int) -> list[dict]:
+    """Within each uid, merge blocks whose start positions are close."""
+    if not blocks:
+        return []
+    # Group by uid, keeping original order
+    by_uid: dict[str, list[dict]] = {}
+    for b in blocks:
+        by_uid.setdefault(b["uid"], []).append(b)
+
+    merged = []
+    for uid, blks in by_uid.items():
+        blks.sort(key=lambda x: x.get("pos", 0) if "pos" in x else 0)
+        if not blks:
+            continue
+        cur = dict(blks[0])
+        cur["matched"] = list(cur.get("matched", []))
+        for nxt in blks[1:]:
+            # Simple merge: concatenate snippets if they overlap or are close
+            cur_snippet = cur["snippet"]
+            nxt_snippet = nxt["snippet"]
+            # If they share keywords and are from the same uid, merge
+            cur["snippet"] = cur_snippet + "\n..." + nxt_snippet
+            cur["score"] = max(cur["score"], nxt["score"])
+            cur["matched"].extend(nxt.get("matched", []))
+        cur["matched"] = list(set(cur["matched"]))
+        merged.append(cur)
+    return merged
 
 
 def _load_uid_cache(ctx: WikiContext) -> dict[str, dict]:
-    """Load uid -> {title, layer, active, body} from SQLite nodes table.
-
-    For DB-only nodes (rel_md_path=NULL, body IS NOT NULL): body is in SQLite.
-    For legacy nodes (rel_md_path!=NULL, body IS NULL): body is still in .md files;
-    we read it from the filesystem as a fallback so search still works.
-    """
+    """Load uid -> {title, layer, body} from node_page."""
     cache: dict[str, dict] = {}
     conn = ctx.connect()
     try:
         rows = conn.execute(
-            "SELECT uid, title, layer, active, rel_md_path, body "
-            "FROM nodes WHERE layer='Page' AND active=1"
+            "SELECT uid, title, body FROM node_page WHERE active=1"
         ).fetchall()
         for row in rows:
-            body = row["body"]
-            # Fallback: if body is NULL in DB, try reading from .md file
-            if not body and row["rel_md_path"]:
-                md_path = ctx.root / row["rel_md_path"]
-                try:
-                    text = md_path.read_text(encoding="utf-8", errors="replace")
-                    from ..utils.frontmatter import parse as fm_parse
-                    _, body = fm_parse(text)
-                except Exception:
-                    body = ""
             cache[row["uid"]] = {
                 "title": row["title"],
-                "layer": row["layer"],
-                "active": row["active"],
-                "body": body or "",
+                "layer": "Page",
+                "body": row["body"] or "",
             }
     finally:
         conn.close()
     return cache
 
 
-def _build_hints(ctx: WikiContext, hit_uids: list[str]) -> tuple[list, str | None, str | None]:
-    """Find L2 Lists that have hit pages as members, L3 Reports citing them, and L2 Entities — via SQLite."""
+def _build_hints(ctx: WikiContext, hit_uids: list[str]) -> tuple[list, str | None]:
+    """Find Lists/Reports referencing hit pages via node_derived."""
     if not hit_uids:
-        return [], None, None
-    hit_set = set(hit_uids)
+        return [], None
     list_hint = []
     report_ids = []
 
     conn = ctx.connect()
     try:
-        # L2: list_members table
+        # Scan node_derived body for UID references
         rows = conn.execute(
-            "SELECT DISTINCT list_uid FROM list_members WHERE member_uid IN ({})".format(
-                ",".join("?" * len(hit_uids))
-            ),
-            hit_uids,
+            "SELECT uid, title, layer, body FROM node_derived"
         ).fetchall()
         for row in rows:
-            list_hint.append(row["list_uid"])
-
-        # L3: evidence table
-        rows = conn.execute(
-            "SELECT DISTINCT report_uid FROM evidence WHERE ref_uid IN ({})".format(
-                ",".join("?" * len(hit_uids))
-            ),
-            hit_uids,
-        ).fetchall()
-        for row in rows:
-            report_ids.append(row["report_uid"])
+            body = row["body"] or ""
+            for uid in hit_uids:
+                if uid in body:
+                    if row["layer"] == "List":
+                        list_hint.append({"uid": row["uid"], "title": row["title"]})
+                    elif row["layer"] == "Report":
+                        report_ids.append(row["uid"])
+                    break
     finally:
         conn.close()
 
@@ -239,48 +209,7 @@ def _build_hints(ctx: WikiContext, hit_uids: list[str]) -> tuple[list, str | Non
     if report_ids:
         report_hint = f"{len(report_ids)} report(s) cite these pages: {', '.join(report_ids)}"
 
-    # L2 Entity: multiple distinct titles suggest creating an Entity aggregation
-    entity_hint = _build_entity_hint(ctx, hit_uids)
-
-    return list_hint, report_hint, entity_hint
-
-
-def _build_entity_hint(ctx: WikiContext, hit_uids: list[str]) -> str | None:
-    """Suggest Entity creation when query hits multiple distinct entity-like nodes."""
-    if len(hit_uids) < 2:
-        return None
-
-    conn = ctx.connect()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT title FROM nodes WHERE uid IN ({}) AND layer='Page'".format(
-                ",".join("?" * len(hit_uids))
-            ),
-            hit_uids,
-        ).fetchall()
-    finally:
-        conn.close()
-
-    if len(rows) < 2:
-        return None
-
-    # Heuristic: if hits share a common pattern or are about the same topic,
-    # suggest creating an Entity to aggregate
-    titles = [r["title"] for r in rows]
-    # Simple heuristic: if titles have significant overlap, suggest Entity
-    return f"这个查询涉及多个实体（{', '.join(titles[:3])}{'...' if len(titles) > 3 else ''}），可以创建 Entity 页面聚合相关信息"
-
-
-def _score_block(blk, core, expansion, core_w, exp_w, density, idf_weight, text) -> float:
-    """score = (coverage + rarity) × density_bonus (PRIN-QRY-10)."""
-    snippet = blk["text"]
-    core_hits = sum(snippet.lower().count(k.lower()) for k in core)
-    exp_hits = sum(snippet.lower().count(k.lower()) for k in expansion)
-    coverage = core_w * core_hits + exp_w * exp_hits
-    rarity = sum(idf_weight.get(k, 0.0) for k in blk["hits"])
-    distinct = len(blk["hits"])
-    bonus = density if distinct > 1 else 1.0
-    return (coverage + rarity) * bonus
+    return list_hint, report_hint
 
 
 def cmd_read(args) -> dict:
@@ -290,10 +219,18 @@ def cmd_read(args) -> dict:
 
     conn = ctx.connect()
     try:
+        # Try node_page first
         row = conn.execute(
-            "SELECT uid, title, layer, content_type, active, body "
-            "FROM nodes WHERE uid=?", (args.uid,)
+            "SELECT uid, title, content_type, active, body FROM node_page WHERE uid=?",
+            (args.uid,)
         ).fetchone()
+        layer = "Page"
+        if not row:
+            row = conn.execute(
+                "SELECT uid, title, layer, active, body FROM node_derived WHERE uid=?",
+                (args.uid,)
+            ).fetchone()
+            layer = row["layer"] if row else "Page"
     finally:
         conn.close()
 
@@ -303,12 +240,11 @@ def cmd_read(args) -> dict:
     return success({
         "uid": row["uid"],
         "title": row["title"],
-        "layer": row["layer"],
-        "content_type": row["content_type"] or "article",
+        "layer": layer,
+        "content_type": row["content_type"] if "content_type" in row.keys() else "article",
         "active": bool(row["active"]),
         "body": row["body"] or "",
-        "patch_versions": [],
-    }, f"read {row['layer']} node {args.uid}")
+    }, f"read {layer} node {args.uid}")
 
 
 def cmd_nodes(args) -> dict:
@@ -318,31 +254,31 @@ def cmd_nodes(args) -> dict:
 
     conn = ctx.connect()
     try:
-        query = "SELECT uid, title, layer, content_type, active, created_at FROM nodes"
-        conditions = []
-        params = []
-        if args.layer:
-            conditions.append("layer = ?")
-            params.append(args.layer)
-        if not args.include_inactive:
-            conditions.append("active = 1")
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        query += " ORDER BY created_at DESC"
-
-        rows = conn.execute(query, params).fetchall()
+        results = []
+        # node_page
+        rows = conn.execute(
+            "SELECT uid, title, 'Page' as layer, content_type, active, created_at "
+            "FROM node_page WHERE active=1 ORDER BY created_at DESC"
+        ).fetchall()
+        for row in rows:
+            results.append({
+                "uid": row["uid"], "title": row["title"], "layer": "Page",
+                "content_type": row["content_type"] or "article",
+                "active": bool(row["active"]), "created_at": row["created_at"],
+            })
+        # node_derived
+        rows = conn.execute(
+            "SELECT uid, title, layer, active, created_at FROM node_derived "
+            "WHERE 1=1 ORDER BY created_at DESC"
+        ).fetchall()
+        for row in rows:
+            results.append({
+                "uid": row["uid"], "title": row["title"], "layer": row["layer"],
+                "content_type": "article",
+                "active": bool(row["active"]), "created_at": row["created_at"],
+            })
     finally:
         conn.close()
 
-    results = [
-        {
-            "uid": row["uid"],
-            "title": row["title"],
-            "layer": row["layer"],
-            "content_type": row["content_type"] or "article",
-            "active": bool(row["active"]),
-            "created_at": row["created_at"],
-        }
-        for row in rows
-    ]
-    return success({"nodes": results, "count": len(results)}, f"{len(results)} node(s)")
+    return success({"nodes": results, "count": len(results)},
+                   f"{len(results)} node(s)")

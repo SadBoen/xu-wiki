@@ -130,6 +130,52 @@ SQLite 层强约束关键字段。Agent 提交字段缺失或类型错误 → �
 
 ---
 
+## 查询框架（LLM 驱动循环）
+
+### 配置项（`<wiki>/.xu/config.yaml`）
+
+```yaml
+query:
+  snippet_max: 50       # 返回 snippet 合并块数量上限
+  body_max: 20          # expand 一次返回 body 数量上限
+  snippet_radius: 50    # 命中点前后各取多少字
+  merge_radius: 80      # 同 UID 内小于此距离的块合并
+```
+
+### CLI 命令
+
+| 命令 | 用途 |
+|------|------|
+| `xu query --wiki W --core "A,B" --expansion "C,D"` | 扫全库，返回 snippet 合并块 |
+| `xu expand --wiki W --uids "X,Y"` | 按 UID 拉 body + relations |
+
+### query 内部流程（纯确定性）
+
+```
+1. 扫 node_page.body，找 core + expansion 命中点
+2. 每个命中点取前后 snippet_radius 字 → snippet
+3. 同 UID 内距离 < merge_radius 的块合并
+4. 评分：score = 核心命中数×3 + 扩展命中数×1
+5. 降序排列 → 取 top snippet_max → 返回
+   [{uid, title, layer, score, snippet}]
+```
+
+### 完整循环（LLM 驱动，最高 5 次）
+
+```
+LOOP:
+  LLM 生成 related words → xu query → 读 snippets 判断
+    ├─ 有结论 → 答复用户 ✅
+    ├─ 不够，知道要拉哪些 UID → xu expand → 读 body+relations
+    │   ├─ 有结论 → 答复 ✅
+    │   └─ 不够 → 按 relation 图搜拉新 UID / 或扩展关键词回到 LOOP
+    └─ 不够，也不知道要拉谁 → 扩展关键词回到 LOOP
+
+超过 5 次 → 问用户是否扩大搜索
+```
+
+---
+
 ## 三层架构
 
 | 层 | 名称 | 职责 | 存储 |
