@@ -39,26 +39,24 @@ pub fn gen_uid() -> String {
             UID_ALPHABET[q] as char,
             UID_ALPHABET[r] as char
         );
-        // 6 random chars (not crypto — just unique)
-        let random_part: String = (0..6)
-            .map(|_| {
-                let idx = (now_sec.wrapping_mul(counter).wrapping_add(
-                    UID_COUNTER.load(Ordering::Relaxed) as u64,
-                ) % 36) as usize;
-                UID_ALPHABET[idx % 36] as char
-            })
+        let random_part: String = getrandom(6)
+            .iter()
+            .map(|&b| UID_ALPHABET[(b % 36) as usize] as char)
             .collect();
         format!("{}{}", counter_part, random_part)
     } else {
-        // Overflow fallback: pure random 8-char
-        let mut s = String::with_capacity(8);
-        let seed = now_sec ^ counter;
-        for i in 0..8 {
-            let idx = ((seed >> (i * 4)) % 36) as usize;
-            s.push(UID_ALPHABET[idx % 36] as char);
-        }
-        s
+        getrandom(8)
+            .iter()
+            .map(|&b| UID_ALPHABET[(b % 36) as usize] as char)
+            .collect()
     }
+}
+
+fn getrandom(len: usize) -> Vec<u8> {
+    use rand::RngCore;
+    let mut bytes = vec![0u8; len];
+    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    bytes
 }
 
 pub fn is_valid_uid(uid: &str) -> bool {

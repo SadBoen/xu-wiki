@@ -28,7 +28,19 @@ pub fn strip_frontmatter(text: &str) -> String {
 
 pub fn parse_pending_header(text: &str) -> (HashMap<String, String>, String) {
     let mut m = HashMap::new();
-    if text.starts_with("<!-- xu-pending") { if let Some(e) = text.find("-->") { for t in text[15..e].trim().split_whitespace() { if let Some(eq) = t.find('=') { m.insert(t[..eq].into(), t[eq+1..].into()); } } return (m, text[e+3..].trim_start_matches('\n').to_string()); } }
+    let prefix = "<!-- xu-pending";
+    if let Some(start) = text.find(prefix) {
+        let after_prefix = start + prefix.len();
+        if let Some(tag_end) = text[after_prefix..].find("-->") {
+            let attrs_end = after_prefix + tag_end;
+            for t in text[after_prefix..attrs_end].trim().split_whitespace() {
+                if let Some(eq) = t.find('=') {
+                    m.insert(t[..eq].into(), t[eq+1..].into());
+                }
+            }
+            return (m, text[attrs_end + 3..].trim_start_matches('\n').to_string());
+        }
+    }
     (m, text.to_string())
 }
 

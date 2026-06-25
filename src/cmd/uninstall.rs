@@ -10,8 +10,10 @@ pub fn cmd_uninstall_execute(preserve_config: bool, keep_pip: bool) -> Value {
     let mut actions: Vec<Value> = vec![];
     let mut failed: Vec<String> = vec![];
     let mut hints: Vec<String> = vec![];
+    let mut pip_uninstall_attempted = false;
 
     if !keep_pip {
+        pip_uninstall_attempted = true;
         let pipx_ok = std::process::Command::new("pipx")
             .args(["uninstall", "xu-wiki"])
             .stdout(std::process::Stdio::null())
@@ -66,6 +68,12 @@ pub fn cmd_uninstall_execute(preserve_config: bool, keep_pip: bool) -> Value {
     let failed_count = failed.len();
     if failed_count == 0 {
         response::success(response::json!({"mode":"execute","actions":actions,"wikis_preserved":true}), "uninstall complete")
+    } else if pip_uninstall_attempted && failed.contains(&"pip_uninstall".into()) {
+        response::error_with_hints(
+            response::json!({"mode":"execute","actions":actions,"failed_components":failed,"wikis_preserved":true}),
+            &format!("uninstall failed: xu-wiki package still installed"),
+            &hints,
+        )
     } else {
         response::warning_with_hints(
             response::json!({"mode":"execute","actions":actions,"failed_components":failed,"wikis_preserved":true}),

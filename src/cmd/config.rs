@@ -284,22 +284,31 @@ pub fn cmd_register(name: &str, path: &str, alias: Option<&str>) -> Value {
         if !NAME_REGEX.is_match(a) {
             return response::error(&format!("invalid alias: {a:?}"), "InvalidName", None, &[]);
         }
+        let mut conflict = false;
         for (n, e) in &reg.wikis {
             if n == a || e.alias.as_deref() == Some(a) {
-                alias_msg = Some(format!("alias {a:?} conflicts; registered without alias"));
-                None
-            } else {
-                Some(a.to_string())
+                conflict = true;
+                break;
             }
+        }
+        if conflict {
+            alias_msg = Some(format!("alias {a:?} conflicts; registered without alias"));
+            None
+        } else {
+            Some(a.to_string())
         }
     } else {
         None
     };
 
+    let created_at = reg.wikis.get(name)
+        .map(|e| e.created_at)
+        .unwrap_or_else(|| now_ts());
+
     let entry = RegistryEntry {
         path: path.to_string(),
         alias: bound_alias,
-        created_at: now_ts(),
+        created_at,
     };
     reg.wikis.insert(name.to_string(), entry);
 

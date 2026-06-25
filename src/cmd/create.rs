@@ -82,13 +82,13 @@ fn build_skeleton(target: &Path, name: &str) -> Result<(), String> {
 
 fn atomic_write(path: PathBuf, content: String) -> Result<(), String> {
     let tmp = path.with_extension(
-        format!("tmp.{}.{}", pid(), uuid_v4())
+        format!("tmp.{}.{}", pid(), nanos_id())
     );
     fs::write(&tmp, content.as_bytes()).map_err(|e| e.to_string())?;
     fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-fn uuid_v4() -> String {
+fn nanos_id() -> String {
     use std::time::SystemTime;
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

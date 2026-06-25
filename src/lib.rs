@@ -251,12 +251,16 @@ fn py_update(wiki: &str, uid: &str, title: Option<&str>, body: Option<&str>, rel
 #[pyfunction] fn py_alias_set(wiki: &str, alias: &str) -> String { commands::cmd_alias_set(wiki, alias).to_string() }
 #[pyfunction] fn py_alias_unset(wiki: &str) -> String { commands::cmd_alias_unset(wiki).to_string() }
 #[pyfunction] fn py_alias_show(wiki: &str) -> String { commands::cmd_alias_show(wiki).to_string() }
-#[pyfunction] fn py_register(name: &str, path: &str, alias: Option<&str>) -> String { commands::cmd_register(name, path, alias).to_string() }
+#[pyfunction]
+#[pyo3(signature = (name, path, alias=None))]
+fn py_register(name: &str, path: &str, alias: Option<&str>) -> String { commands::cmd_register(name, path, alias).to_string() }
 #[pyfunction] fn py_unregister(name: &str) -> String { commands::cmd_unregister(name).to_string() }
 #[pyfunction] fn py_config_show() -> String { commands::cmd_config_show().to_string() }
 #[pyfunction] fn py_config_path() -> String { commands::cmd_config_path().to_string() }
 #[pyfunction] fn py_config_set_mineru_key() -> String { commands::cmd_config_set_mineru_key().to_string() }
-#[pyfunction] fn py_nodes(wiki: &str, layer: Option<&str>, active_only: bool, limit: usize) -> String { commands::cmd_nodes(wiki, layer, active_only, limit).to_string() }
+#[pyfunction]
+#[pyo3(signature = (wiki, layer=None, active_only=false, limit=100))]
+fn py_nodes(wiki: &str, layer: Option<&str>, active_only: bool, limit: usize) -> String { commands::cmd_nodes(wiki, layer, active_only, limit).to_string() }
 #[pyfunction] fn py_query_relation(wiki: &str, from_uid: &str) -> String { commands::cmd_query_relation(wiki, from_uid).to_string() }
 #[pyfunction] fn py_list_show(wiki: &str, uid: &str) -> String { commands::cmd_list_show(wiki, uid).to_string() }
 #[pyfunction] fn py_report_show(wiki: &str, uid: &str) -> String { commands::cmd_report_show(wiki, uid).to_string() }

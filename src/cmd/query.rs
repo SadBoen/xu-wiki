@@ -4,6 +4,7 @@ use crate::db::Db;
 use crate::paths::{gen_uid, now_ts, sha256_text, safe_slug};
 use crate::response;
 use serde_json::{json, Value};
+use serde_yaml::Value as YamlValue;
 
 fn open_db(wiki_path: &str) -> Result<Db, String> {
     let p = PathBuf::from(wiki_path).join(".xu").join("wiki.db");
@@ -78,17 +79,41 @@ pub fn cmd_query(wiki_path: &str, core: &str, expansion: &str, top_k: usize) -> 
 
     let mut scored: Vec<(u64, Value)> = vec![];
     for row in page_rows.iter().chain(derived_rows.iter()) {
-        let body = row.get("body").map(|s| s.to_lowercase()).unwrap_or_default();
-        let title_lower = row.get("title").map(|s| s.to_lowercase()).unwrap_or_default();
-        let search_text = format!("{title_lower} {body}");
+        let body_orig = row.get("body").cloned().unwrap_or_default();
+        let body_lower = body_orig.to_lowercase();
+        let title_orig = row.get("title").cloned().unwrap_or_default();
+        let title_lower = title_orig.to_lowercase();
+        let search_text = format!("{title_lower} {body_lower}");
         if search_text.trim().is_empty() { continue; }
         let ch: usize = ck.iter().map(|k| search_text.matches(k).count()).sum();
         let eh: usize = ek.iter().map(|k| search_text.matches(k).count()).sum();
         let score = (ch * 3 + eh) as u64;
         if score == 0 { continue; }
-        let snippet: String = body.chars().take(100).collect();
+
+        let snippet = {
+            let all_keywords: Vec<&str> = ck.iter().chain(ek.iter()).collect();
+            let mut best_pos: Option<usize> = None;
+            for kw in &all_keywords {
+                if let Some(pos) = search_text.find(kw) {
+                    if best_pos.map(|p| pos < p).unwrap_or(true) {
+                        best_pos = Some(pos);
+                    }
+                }
+            }
+            if let Some(pos) = best_pos {
+                let title_len = title_lower.len();
+                let start_in_body = if pos > title_len { pos - title_len - 1 } else { pos };
+                let body_start = pos.saturating_sub(50 + title_len + 1 + 50).min(start_in_body);
+                let body_end = (body_start + 100).min(body_orig.len());
+                let snippet_raw = &body_orig[body_start..body_end];
+                if body_start > 0 { format!("...{}", snippet_raw.trim_start()) } else { snippet_raw.trim_start().to_string() }
+            } else {
+                body_orig.chars().take(100).collect::<String>()
+            }
+        };
+
         let layer = row.get("layer").cloned().unwrap_or_else(|| "Page".into());
-        scored.push((score, json!({"uid":row.get("uid").unwrap_or(&String::new()),"title":row.get("title").unwrap_or(&String::new()),"layer":layer,"score":score,"snippet":snippet})));
+        scored.push((score, json!({"uid":row.get("uid").unwrap_or(&String::new()),"title":title_orig,"layer":layer,"score":score,"snippet":snippet})));
     }
     scored.sort_by(|a,b| b.0.cmp(&a.0));
     let top: Vec<Value> = scored.into_iter().take(top_k.max(1).min(50)).map(|(_,v)| v).collect();
@@ -113,6 +138,11 @@ pub fn cmd_expand(wiki_path: &str, uids: &str) -> Value {
             layer = rows.first().and_then(|r| r.get("layer").cloned()).unwrap_or_else(|| "Derived".into());
         }
         let rels = db.query_map("SELECT to_uid,relation_name,position FROM relations WHERE from_uid=? ORDER BY position", vec![uid.into()]).unwrap_or_default();
+            for r in &rels {
+                if let Some(to_uid) = r.get("to_uid") {
+                    let _ = db.exec("UPDATE relations SET position=0 WHERE from_uid=? AND to_uid=?", vec![uid.to_string(), to_uid.clone()]);
+                }
+            }
         if let Some(row) = rows.first() {
             let u = row.get("uid").cloned().unwrap_or_default();
             let t = row.get("title").cloned().unwrap_or_default();
@@ -185,6 +215,19 @@ pub fn cmd_update(wiki_path: &str, uid: &str, title: Option<&str>, body: Option<
                         "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
                         vec![uid.into(), to.into(), rn.into(), cm.into(), pos.to_string(), ts.to_string()],
                     );
+                }
+            }
+        }
+    }
+
+    let _ = db.commit();
+    if changed.is_empty() {
+        response::success(json!({"uid":uid,"changed":[]}), "nothing to update")
+    } else {
+        response::success(
+            json!({"uid":uid,"changed":changed,"version":new_version}),
+            &format!("updated {} field(s)", changed.len()),
+        )
     }
 }
 
@@ -209,6 +252,21 @@ pub fn cmd_wikis() -> Value {
 
 // ======== DELETE NODE ========
 
+fn list_body_contains_uid(body: &str, uid: &str) -> bool {
+    if let Ok(YamlValue::Sequence(seq)) = serde_yaml::from_str::<YamlValue>(body) {
+        for item in seq {
+            if let YamlValue::Mapping(map) = item {
+                if let Some(YamlValue::String(v)) = map.get(&YamlValue::String("uid".into())) {
+                    if v == uid {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
     let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
 
@@ -230,7 +288,7 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
     let mut list_referrers: Vec<Value> = vec![];
     for r in &list_refs {
         let body = r.get("body").unwrap_or(&String::new());
-        if body.contains(uid) {
+        if list_body_contains_uid(body, uid) {
             list_referrers.push(json!({
                 "uid": r.get("uid").unwrap_or(&String::new()),
                 "title": r.get("title").unwrap_or(&String::new()),
@@ -307,6 +365,8 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
 
     // Delete outgoing relations first
     let _ = db.exec("DELETE FROM relations WHERE from_uid=?", vec![uid.into()]);
+    // Delete incoming relations (dangling edges to this node)
+    let _ = db.exec("DELETE FROM relations WHERE to_uid=?", vec![uid.into()]);
 
     // Delete from appropriate table
     if is_page {
@@ -322,19 +382,6 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
         json!({"uid": uid, "deleted_from": if is_page { "node_page" } else { "node_derived" }}),
         &format!("deleted node {uid}"),
     )
-}
-        }
-    }
-
-    let _ = db.commit();
-    if changed.is_empty() {
-        response::success(json!({"uid":uid,"changed":[]}), "nothing to update")
-    } else {
-        response::success(
-            json!({"uid":uid,"changed":changed,"version":new_version}),
-            &format!("updated {} field(s)", changed.len()),
-        )
-    }
 }
 
 pub fn cmd_deactivate(wiki_path: &str, uid: &str) -> Value {

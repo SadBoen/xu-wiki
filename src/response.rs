@@ -57,6 +57,10 @@ pub fn error(message: &str, error_class: &str, data: Option<Value>, hints: &[Str
     make_response(Status::Error, payload, message, hints)
 }
 
+pub fn error_with_hints(data: Value, message: &str, hints: &[String]) -> Value {
+    make_response(Status::Error, data, message, hints)
+}
+
 /// Print response as JSON to stdout, return exit code.
 pub fn emit(response: &Value) -> i32 {
     let status = response["status"].as_str().unwrap_or("error");
