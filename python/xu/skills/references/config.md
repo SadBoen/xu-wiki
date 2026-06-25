@@ -3,12 +3,12 @@
 ## Wiki registry
 
 ```bash
-xu wikis                        # list all registered
-xu alias set --wiki <w> --alias <a>    # add/change alias
-xu alias unset --wiki <w>              # remove alias
-xu alias show --wiki <w>               # show current alias
-xu register --name <n> --path <abs>    # register existing dir
-xu unregister --name <n>               # deregister (no files touched)
+xu wikis                              # list all registered wikis
+xu alias-set   --wiki <w> --alias <a> # add/change alias
+xu alias-unset --wiki <w>             # remove alias
+xu alias-show  --wiki <w>             # show current alias
+xu register    --name <n> --path <abs> [--alias <a>]  # register existing dir
+xu unregister  --name <n>             # deregister (no files touched)
 ```
 
 ## Global config

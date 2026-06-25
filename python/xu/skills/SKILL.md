@@ -30,11 +30,11 @@ the SOP map below.
 
 | Slash command | Intent | CLI | File |
 |---|---|---|---|
-| `/xu-wiki create` | new empty wiki | `xu create` | create.md |
-| `/xu-wiki ingest` | add L1 pages from files | `xu ingest-file` -> `xu ingest-context` -> `xu ingest-commit` | ingest.md |
+| `/xu-wiki create` | new wiki | `xu create` | create.md |
+| `/xu-wiki ingest` | add L1 page | `xu ingest-commit` (single phase) | ingest.md |
 | `/xu-wiki query` | search + read | `xu query` -> (if needed) `xu expand` | query.md |
 | `/xu-wiki doctor` | health checks | `xu doctor` | doctor.md |
-| `/xu-wiki config` | registry, uninstall | `xu uninstall`, `xu alias`, `xu wikis` | config.md |
+| `/xu-wiki config` | registry, uninstall | `xu alias-set`, `xu register`, `xu wikis`, `xu uninstall` | config.md |
 
 ## Hard rules
 
@@ -47,7 +47,7 @@ the SOP map below.
 7. 50 relation edges max per node (LRU).
 8. Report needs >=1 evidence ref. Empty = rejected.
 9. Wiki data NEVER deleted by uninstall.
-10. Parser chain: MinerU -> markitdown. Both fail = reject.
+10. `ingest-commit` does dedup + split in one step. No two-phase ingest.
 
 ## Architecture
 

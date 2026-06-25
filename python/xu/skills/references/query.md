@@ -11,23 +11,29 @@ This file is **self-contained**. Cross-cutting rules live in `SKILL.md`.
 
 ```bash
 # Main search — returns top-50 snippet blocks
-xu query  --wiki <w> --core <kw,kw> --expansion <kw,kw> [--top-k N] [--neighbors]
+xu query --wiki <w> --core <kw,kw> --expansion <kw,kw> [--top-k N]
 
 # Pull full body + relations for specific UIDs (max 20)
 xu expand --wiki <w> --uids <uid,uid,...>
 
-# Read single node
-xu read   --wiki <w> --uid <uid>
+# DB metadata
+xu nodes --wiki <w> [--layer Page|Derived|List|Report|Entity] [--active-only] [--limit N]
 
 # Follow/wire relations
-xu query-relation list --wiki <w> --from-uid <uid>
-xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> --relation-name <r>
+xu query-relation --wiki <w> --from-uid <uid>
 
 # L2 / L3
-xu list   show   --wiki <w> --uid <uid>
-xu list   create --wiki <w> --title <t> --members <uid,uid,...> --dimension <d>
-xu report show   --wiki <w> --uid <uid>
-xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...>
+xu list-create  --wiki <w> --title <t> --members <uid,uid,...> [--dimension <d>]
+xu list-extend  --wiki <w> --uid <uid> --members <uid,uid,...>
+xu list-show    --wiki <w> --uid <uid>
+xu report-create --wiki <w> --title <t> --body <md> --evidence <uid,uid,...> [--dimension <d>]
+xu report-show  --wiki <w> --uid <uid>
+xu entity-create --wiki <w> --title <t> [--body <md>] [--source-page <uid>] [--attrs '<json>']
+
+# Update / deactivate
+xu update     --wiki <w> --uid <uid> [--title <t>] [--body <md>] [--relations '<json>'] [--author <a>]
+xu deactivate --wiki <w> --uid <uid>
+xu verify     --wiki <w> --uid <uid>
 ```
 
 ## How query works (internal)
@@ -108,6 +114,6 @@ xu expand --wiki research --uids "C003"
 ## Common pitfalls
 
 - **Free-text to --core**: "BERT papers" is a phrase. Convert to `--core "BERT,papers"`.
-- **Forgetting expand**: Don't `xu read` each UID one by one. Use `xu expand` for batches.
+- **Forgetting expand**: Use `xu expand` for batches, not one UID at a time.
 - **Not using the loop**: One `xu query` may not be enough. Generate new keywords, try again.
 - **Forgetting 50-edge limit**: Adding a 51st relation evicts the tail.

@@ -1,5 +1,6 @@
-//! xu-wiki core 鈥?pyo3 bindings for the Python xu package.
+//! xu-wiki core – pyo3 bindings for the Python xu package.
 
+pub mod cmd;
 pub mod commands;
 pub mod db;
 pub mod error;
@@ -112,7 +113,6 @@ fn parse_frontmatter(py: Python<'_>, text: &str) -> PyResult<(PyObject, String)>
 #[pyfunction]
 fn render_frontmatter(_py: Python<'_>, fm: Bound<'_, PyDict>, body: &str) -> PyResult<String> {
     let fm_value = py_to_value(&fm.into_any())?;
-    // Convert serde_json Map back to serde_yaml Mapping
     let mut yaml_map = serde_yaml::Mapping::new();
     if let Value::Object(m) = fm_value {
         for (k, v) in m {
@@ -248,6 +248,20 @@ fn py_update(wiki: &str, uid: &str, title: Option<&str>, body: Option<&str>, rel
 #[pyfunction] fn py_list_extend(wiki: &str, uid: &str, members: &str) -> String { commands::cmd_list_extend(wiki, uid, members).to_string() }
 #[pyfunction] fn py_report_create(wiki: &str, title: &str, body: &str, evidence: &str, dimension: &str) -> String { commands::cmd_report_create(wiki, title, body, evidence, dimension).to_string() }
 #[pyfunction] fn py_entity_create(wiki: &str, title: &str, body: &str, source_page_uid: &str, attrs_json: &str, dimension: &str) -> String { commands::cmd_entity_create(wiki, title, body, source_page_uid, attrs_json, dimension).to_string() }
+#[pyfunction] fn py_alias_set(wiki: &str, alias: &str) -> String { commands::cmd_alias_set(wiki, alias).to_string() }
+#[pyfunction] fn py_alias_unset(wiki: &str) -> String { commands::cmd_alias_unset(wiki).to_string() }
+#[pyfunction] fn py_alias_show(wiki: &str) -> String { commands::cmd_alias_show(wiki).to_string() }
+#[pyfunction] fn py_register(name: &str, path: &str, alias: Option<&str>) -> String { commands::cmd_register(name, path, alias).to_string() }
+#[pyfunction] fn py_unregister(name: &str) -> String { commands::cmd_unregister(name).to_string() }
+#[pyfunction] fn py_config_show() -> String { commands::cmd_config_show().to_string() }
+#[pyfunction] fn py_config_path() -> String { commands::cmd_config_path().to_string() }
+#[pyfunction] fn py_config_set_mineru_key() -> String { commands::cmd_config_set_mineru_key().to_string() }
+#[pyfunction] fn py_nodes(wiki: &str, layer: Option<&str>, active_only: bool, limit: usize) -> String { commands::cmd_nodes(wiki, layer, active_only, limit).to_string() }
+#[pyfunction] fn py_query_relation(wiki: &str, from_uid: &str) -> String { commands::cmd_query_relation(wiki, from_uid).to_string() }
+#[pyfunction] fn py_list_show(wiki: &str, uid: &str) -> String { commands::cmd_list_show(wiki, uid).to_string() }
+#[pyfunction] fn py_report_show(wiki: &str, uid: &str) -> String { commands::cmd_report_show(wiki, uid).to_string() }
+#[pyfunction] fn py_wikis() -> String { commands::cmd_wikis().to_string() }
+#[pyfunction] fn py_delete_node(wiki: &str, uid: &str) -> String { commands::cmd_delete_node(wiki, uid).to_string() }
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -283,5 +297,19 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_list_extend, m)?)?;
     m.add_function(wrap_pyfunction!(py_report_create, m)?)?;
     m.add_function(wrap_pyfunction!(py_entity_create, m)?)?;
+    m.add_function(wrap_pyfunction!(py_alias_set, m)?)?;
+    m.add_function(wrap_pyfunction!(py_alias_unset, m)?)?;
+    m.add_function(wrap_pyfunction!(py_alias_show, m)?)?;
+    m.add_function(wrap_pyfunction!(py_register, m)?)?;
+    m.add_function(wrap_pyfunction!(py_unregister, m)?)?;
+    m.add_function(wrap_pyfunction!(py_config_show, m)?)?;
+    m.add_function(wrap_pyfunction!(py_config_path, m)?)?;
+    m.add_function(wrap_pyfunction!(py_config_set_mineru_key, m)?)?;
+    m.add_function(wrap_pyfunction!(py_nodes, m)?)?;
+    m.add_function(wrap_pyfunction!(py_query_relation, m)?)?;
+    m.add_function(wrap_pyfunction!(py_list_show, m)?)?;
+    m.add_function(wrap_pyfunction!(py_report_show, m)?)?;
+    m.add_function(wrap_pyfunction!(py_wikis, m)?)?;
+    m.add_function(wrap_pyfunction!(py_delete_node, m)?)?;
     Ok(())
 }

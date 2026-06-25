@@ -14,13 +14,7 @@ xu doctor --wiki <w>
 ## Destructive operations
 
 ```bash
-xu delete-node --wiki <w> --uid <uid> [--force]
+xu delete-node --wiki <w> --uid <uid>
 ```
 
-Check references before deleting. If node is referenced by a List or Report -> refuse unless `--force`.
-
-```bash
-xu rebuild --wiki <w> --granularity keep-l1|keep-l1-l2|full
-```
-
-Rebuild derived layers (L2/L3). L1 never touched.
+Reference-safe. Deletes outgoing relations first, then the node itself. If the node is referenced by a List or Report, or is a relation target, the command refuses and returns all referrers.
