@@ -244,7 +244,7 @@ fn py_create(name: &str, path: &str, alias: Option<&str>) -> String { commands::
 #[pyfunction] fn py_uninstall_execute(preserve_config: bool, keep_pip: bool) -> String { commands::cmd_uninstall_execute(preserve_config, keep_pip).to_string() }
 #[pyfunction] fn py_ingest_commit(wiki: &str, pending: &str, title: &str, content_type: &str, raw_path: &str, author: &str, relations: &str) -> String { unwrap_or_err(commands::cmd_ingest_commit(wiki, pending, title, content_type, raw_path, author, relations)) }
 #[pyfunction] fn py_query(wiki: &str, core: &str, expansion: &str, top_k: usize) -> String { commands::cmd_query(wiki, core, expansion, top_k).to_string() }
-#[pyfunction] fn py_expand(wiki: &str, uids: &str) -> String { commands::cmd_expand(wiki, uids).to_string() }
+#[pyfunction] fn py_expand(wiki: &str, uids: &str) -> String { unwrap_or_err(commands::cmd_expand(wiki, uids)) }
 #[pyfunction] fn py_ingest_context(wiki: &str, keywords: &str) -> String { unwrap_or_err(commands::cmd_ingest_context(wiki, keywords)) }
 #[pyfunction]
 #[pyo3(signature = (wiki, uid, title=None, body=None, relations_json="", author="agent"))]

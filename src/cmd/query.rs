@@ -131,8 +131,8 @@ pub fn cmd_query(wiki_path: &str, core: &str, expansion: &str, top_k: usize) -> 
     )
 }
 
-pub fn cmd_expand(wiki_path: &str, uids: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_expand(wiki_path: &str, uids: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
     let uid_list: Vec<&str> = uids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).take(20).collect();
     let mut result = serde_json::Map::new();
     for uid in uid_list {
@@ -143,11 +143,13 @@ pub fn cmd_expand(wiki_path: &str, uids: &str) -> Value {
             layer = rows.first().and_then(|r| r.get("layer").cloned()).unwrap_or_else(|| "Derived".into());
         }
         let rels = db.query_map("SELECT to_uid,relation_name,position FROM relations WHERE from_uid=? ORDER BY position", vec![uid.into()]).unwrap_or_default();
-            for r in &rels {
-                if let Some(to_uid) = r.get("to_uid") {
-                    let _ = db.exec("UPDATE relations SET position=0 WHERE from_uid=? AND to_uid=?", vec![uid.to_string(), to_uid.clone()]);
+        for r in &rels {
+            if let Some(to_uid) = r.get("to_uid") {
+                if let Err(e) = db.exec("UPDATE relations SET position=0 WHERE from_uid=? AND to_uid=?", vec![uid.to_string(), to_uid.clone()]) {
+                    return Err(format!("db error updating LRU position: {}", e));
                 }
             }
+        }
         if let Some(row) = rows.first() {
             let u = row.get("uid").cloned().unwrap_or_default();
             let t = row.get("title").cloned().unwrap_or_default();
@@ -157,7 +159,7 @@ pub fn cmd_expand(wiki_path: &str, uids: &str) -> Value {
         }
     }
     let count = result.len();
-    response::success(json!({"nodes":serde_json::Value::Object(result),"count":count}), &format!("expanded {} node(s)", count))
+    ok(response::success(json!({"nodes":serde_json::Value::Object(result),"count":count}), &format!("expanded {} node(s)", count)))
 }
 
 pub fn cmd_update(wiki_path: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> Result<Value, String> {
