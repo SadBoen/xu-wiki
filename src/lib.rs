@@ -41,6 +41,13 @@ fn dict_to_py(py: Python<'_>, map: &HashMap<String, i32>) -> PyResult<PyObject> 
     Ok(dict.into())
 }
 
+fn unwrap_or_err(r: Result<serde_json::Value, String>) -> String {
+    match r {
+        Ok(v) => serde_json::to_string(&v).unwrap_or_default(),
+        Err(msg) => response::error(&msg, "DbError", None, &[]).to_string(),
+    }
+}
+
 /// Convert serde_yaml::Mapping to serde_json::Value
 fn yaml_map_to_json(map: &serde_yaml::Mapping) -> Value {
     let mut json_map = serde_json::Map::new();
@@ -235,19 +242,19 @@ fn py_create(name: &str, path: &str, alias: Option<&str>) -> String { commands::
 #[pyfunction] fn py_doctor(wiki: &str) -> String { commands::cmd_doctor(wiki).to_string() }
 #[pyfunction] fn py_uninstall_plan(preserve_config: bool, keep_pip: bool) -> String { commands::cmd_uninstall_plan(preserve_config, keep_pip).to_string() }
 #[pyfunction] fn py_uninstall_execute(preserve_config: bool, keep_pip: bool) -> String { commands::cmd_uninstall_execute(preserve_config, keep_pip).to_string() }
-#[pyfunction] fn py_ingest_commit(wiki: &str, pending: &str, title: &str, content_type: &str, raw_path: &str, author: &str, relations: &str) -> String { commands::cmd_ingest_commit(wiki, pending, title, content_type, raw_path, author, relations).to_string() }
+#[pyfunction] fn py_ingest_commit(wiki: &str, pending: &str, title: &str, content_type: &str, raw_path: &str, author: &str, relations: &str) -> String { unwrap_or_err(commands::cmd_ingest_commit(wiki, pending, title, content_type, raw_path, author, relations)) }
 #[pyfunction] fn py_query(wiki: &str, core: &str, expansion: &str, top_k: usize) -> String { commands::cmd_query(wiki, core, expansion, top_k).to_string() }
 #[pyfunction] fn py_expand(wiki: &str, uids: &str) -> String { commands::cmd_expand(wiki, uids).to_string() }
-#[pyfunction] fn py_ingest_context(wiki: &str, keywords: &str) -> String { commands::cmd_ingest_context(wiki, keywords).to_string() }
+#[pyfunction] fn py_ingest_context(wiki: &str, keywords: &str) -> String { unwrap_or_err(commands::cmd_ingest_context(wiki, keywords)) }
 #[pyfunction]
 #[pyo3(signature = (wiki, uid, title=None, body=None, relations_json="", author="agent"))]
-fn py_update(wiki: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> String { commands::cmd_update(wiki, uid, title, body, relations_json, author).to_string() }
-#[pyfunction] fn py_deactivate(wiki: &str, uid: &str) -> String { commands::cmd_deactivate(wiki, uid).to_string() }
+fn py_update(wiki: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> String { unwrap_or_err(commands::cmd_update(wiki, uid, title, body, relations_json, author)) }
+#[pyfunction] fn py_deactivate(wiki: &str, uid: &str) -> String { unwrap_or_err(commands::cmd_deactivate(wiki, uid)) }
 #[pyfunction] fn py_verify(wiki: &str, uid: &str) -> String { commands::cmd_verify(wiki, uid).to_string() }
-#[pyfunction] fn py_list_create(wiki: &str, title: &str, members: &str, dimension: &str) -> String { commands::cmd_list_create(wiki, title, members, dimension).to_string() }
-#[pyfunction] fn py_list_extend(wiki: &str, uid: &str, members: &str) -> String { commands::cmd_list_extend(wiki, uid, members).to_string() }
-#[pyfunction] fn py_report_create(wiki: &str, title: &str, body: &str, evidence: &str, dimension: &str) -> String { commands::cmd_report_create(wiki, title, body, evidence, dimension).to_string() }
-#[pyfunction] fn py_entity_create(wiki: &str, title: &str, body: &str, source_page_uid: &str, attrs_json: &str, dimension: &str) -> String { commands::cmd_entity_create(wiki, title, body, source_page_uid, attrs_json, dimension).to_string() }
+#[pyfunction] fn py_list_create(wiki: &str, title: &str, members: &str, dimension: &str) -> String { unwrap_or_err(commands::cmd_list_create(wiki, title, members, dimension)) }
+#[pyfunction] fn py_list_extend(wiki: &str, uid: &str, members: &str) -> String { unwrap_or_err(commands::cmd_list_extend(wiki, uid, members)) }
+#[pyfunction] fn py_report_create(wiki: &str, title: &str, body: &str, evidence: &str, dimension: &str) -> String { unwrap_or_err(commands::cmd_report_create(wiki, title, body, evidence, dimension)) }
+#[pyfunction] fn py_entity_create(wiki: &str, title: &str, body: &str, source_page_uid: &str, attrs_json: &str, dimension: &str) -> String { unwrap_or_err(commands::cmd_entity_create(wiki, title, body, source_page_uid, attrs_json, dimension)) }
 #[pyfunction] fn py_alias_set(wiki: &str, alias: &str) -> String { commands::cmd_alias_set(wiki, alias).to_string() }
 #[pyfunction] fn py_alias_unset(wiki: &str) -> String { commands::cmd_alias_unset(wiki).to_string() }
 #[pyfunction] fn py_alias_show(wiki: &str) -> String { commands::cmd_alias_show(wiki).to_string() }
@@ -265,7 +272,7 @@ fn py_nodes(wiki: &str, layer: Option<&str>, active_only: bool, limit: usize) ->
 #[pyfunction] fn py_list_show(wiki: &str, uid: &str) -> String { commands::cmd_list_show(wiki, uid).to_string() }
 #[pyfunction] fn py_report_show(wiki: &str, uid: &str) -> String { commands::cmd_report_show(wiki, uid).to_string() }
 #[pyfunction] fn py_wikis() -> String { commands::cmd_wikis().to_string() }
-#[pyfunction] fn py_delete_node(wiki: &str, uid: &str) -> String { commands::cmd_delete_node(wiki, uid).to_string() }
+#[pyfunction] fn py_delete_node(wiki: &str, uid: &str) -> String { unwrap_or_err(commands::cmd_delete_node(wiki, uid)) }
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {

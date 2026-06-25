@@ -38,31 +38,35 @@ impl Db {
         })
     }
 
-    /// Execute with String params.
-    pub fn exec(&self, sql: &str, params: Vec<String>) -> PyResult<()> {
+    /// Execute with String params. Returns Err on SQL failure.
+    pub fn exec(&self, sql: &str, params: Vec<String>) -> Result<(), String> {
         Python::with_gil(|py| {
             let conn = self.py_conn.bind(py).clone();
             let py_params = PyTuple::new_bound(py, &params);
-            conn.call_method1("execute", (sql, &py_params))?;
-            Ok(())
+            conn.call_method1("execute", (sql, &py_params))
+                .map_err(|e| e.to_string())
         })
     }
 
     /// Query returning Vec<HashMap<String,String>>.
     /// Handles INTEGER/REAL/TEXT/NULL via Python str() fallback.
-    pub fn query_map(&self, sql: &str, params: Vec<String>) -> PyResult<Vec<HashMap<String, String>>> {
+    pub fn query_map(&self, sql: &str, params: Vec<String>) -> Result<Vec<HashMap<String, String>>, String> {
         Python::with_gil(|py| {
             let conn = self.py_conn.bind(py).clone();
             let py_params = PyTuple::new_bound(py, &params);
-            let cursor = conn.call_method1("execute", (sql, &py_params))?;
+            let cursor = conn.call_method1("execute", (sql, &py_params))
+                .map_err(|e| e.to_string())?;
             let mut rows = vec![];
-            for row in cursor.iter()? {
+            for row in cursor.iter() {
                 if let Ok(r) = row {
-                    let keys: Vec<String> = r.getattr("keys")?.call0()?.extract()?;
+                    let keys: Vec<String> = r.getattr("keys")
+                        .and_then(|k| k.call0())
+                        .and_then(|k| k.extract())
+                        .map_err(|e| e.to_string())?;
                     let mut map = HashMap::new();
                     for key in keys {
-                        let obj = r.get_item(key.as_str())?;
-                        // Extract as String (works for TEXT), fall back to str() for INTEGER/REAL
+                        let obj = r.get_item(key.as_str())
+                            .map_err(|e| e.to_string())?;
                         let val: String = obj.extract::<String>()
                             .or_else(|_| obj.str().map(|s| s.to_string()))
                             .unwrap_or_default();
@@ -72,14 +76,13 @@ impl Db {
                 }
             }
             Ok(rows)
-        })
+        }).map_err(|e| e.to_string())
     }
 
-    pub fn commit(&self) -> PyResult<()> {
+    pub fn commit(&self) -> Result<(), String> {
         Python::with_gil(|py| {
             let conn = self.py_conn.bind(py).clone();
-            conn.call_method0("commit")?;
-            Ok(())
+            conn.call_method0("commit").map_err(|e| e.to_string())
         })
     }
 }

@@ -6,6 +6,11 @@ use crate::response;
 use serde_json::{json, Value};
 use serde_yaml::Value as YamlValue;
 
+fn ok(v: Value) -> Result<Value, String> { Ok(v) }
+fn err(msg: &str, cls: &str) -> Result<Value, String> { Err(format!("[{}] {}", cls, msg)) }
+fn ok_val(v: Value) -> Value { v }
+fn err_val(msg: &str, cls: &str) -> Value { response::error(msg, cls, None, &[]) }
+
 fn open_db(wiki_path: &str) -> Result<Db, String> {
     let p = PathBuf::from(wiki_path).join(".xu").join("wiki.db");
     if !p.exists() { return Err("wiki not found".into()); }
@@ -155,15 +160,15 @@ pub fn cmd_expand(wiki_path: &str, uids: &str) -> Value {
     response::success(json!({"nodes":serde_json::Value::Object(result),"count":count}), &format!("expanded {} node(s)", count))
 }
 
-pub fn cmd_update(wiki_path: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_update(wiki_path: &str, uid: &str, title: Option<&str>, body: Option<&str>, relations_json: &str, author: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
 
     let rows = match db.query_map("SELECT * FROM node_page WHERE uid=? AND active=1", vec![uid.into()]) {
         Ok(r) => r,
-        Err(e) => return response::error(&e.to_string(), "DbError", None, &[]),
+        Err(e) => return err(&e.to_string(), "DbError"),
     };
     if rows.is_empty() {
-        return response::error(&format!("node not found: {uid}"), "NodeNotFound", None, &[]);
+        return err(&format!("node not found: {uid}"), "NodeNotFound");
     }
     let row = &rows[0];
     let old_body = row.get("body").cloned().unwrap_or_default();
@@ -180,7 +185,7 @@ pub fn cmd_update(wiki_path: &str, uid: &str, title: Option<&str>, body: Option<
 
     if new_body != old_body {
         if let Some(e) = crate::cmd::ingest::validate_body_format(new_body, &old_content_type) {
-            return response::error(&e, "BodyFormatMismatch", None, &[]);
+            return err(&e, "BodyFormatMismatch");
         }
     }
 
@@ -192,42 +197,44 @@ pub fn cmd_update(wiki_path: &str, uid: &str, title: Option<&str>, body: Option<
     if new_title != old_title || new_body != old_body {
         if new_title != old_title { changed.push("title"); }
         if new_body != old_body { changed.push("body"); }
-        let _ = db.exec(
+        if let Err(e) = db.exec(
             "UPDATE node_page SET title=?, body=?, content_hash=?, updated_at=? WHERE uid=?",
             vec![new_title.into(), new_body.into(), new_hash.clone(), ts.to_string(), uid.into()],
-        );
-        let _ = db.exec(
+        ) { return Err(format!("db error: {}", e)); }
+        if let Err(e) = db.exec(
             "INSERT INTO patches(page_uid,version,op,delta,author,created_at) VALUES(?,?,?,?,?,?)",
             vec![uid.into(), new_version.to_string(), "revise".into(), new_hash, author.into(), ts.to_string()],
-        );
+        ) { return Err(format!("db error: {}", e)); }
     }
 
     if !relations_json.is_empty() {
         changed.push("relations");
-        let _ = db.exec("DELETE FROM relations WHERE from_uid=?", vec![uid.into()]);
+        if let Err(e) = db.exec("DELETE FROM relations WHERE from_uid=?", vec![uid.into()]) {
+            return Err(format!("db error: {}", e));
+        }
         if let Ok(rels) = serde_json::from_str::<Vec<Value>>(relations_json) {
             for (pos, rel) in rels.iter().enumerate() {
                 let to = rel["to_uid"].as_str().unwrap_or("");
                 let rn = rel["relation_name"].as_str().unwrap_or("");
                 let cm = rel["comment"].as_str().unwrap_or("");
                 if !to.is_empty() && !rn.is_empty() {
-                    let _ = db.exec(
+                    if let Err(e) = db.exec(
                         "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
                         vec![uid.into(), to.into(), rn.into(), cm.into(), pos.to_string(), ts.to_string()],
-                    );
+                    ) { return Err(format!("db error: {}", e)); }
                 }
             }
         }
     }
 
-    let _ = db.commit();
+    if let Err(e) = db.commit() { return Err(format!("db commit: {}", e)); }
     if changed.is_empty() {
-        response::success(json!({"uid":uid,"changed":[]}), "nothing to update")
+        ok(response::success(json!({"uid":uid,"changed":[]}), "nothing to update"))
     } else {
-        response::success(
+        ok(response::success(
             json!({"uid":uid,"changed":changed,"version":new_version}),
             &format!("updated {} field(s)", changed.len()),
-        )
+        ))
     }
 }
 
@@ -267,20 +274,18 @@ fn list_body_contains_uid(body: &str, uid: &str) -> bool {
     false
 }
 
-pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
 
-    // Check if node exists and which table
     let from_page = db.query_map("SELECT uid FROM node_page WHERE uid=?", vec![uid.into()]).unwrap_or_default();
     let from_derived = db.query_map("SELECT uid FROM node_derived WHERE uid=?", vec![uid.into()]).unwrap_or_default();
 
     if from_page.is_empty() && from_derived.is_empty() {
-        return response::error(&format!("node not found: {uid}"), "NodeNotFound", None, &[]);
+        return err(&format!("node not found: {uid}"), "NodeNotFound");
     }
 
     let is_page = !from_page.is_empty();
 
-    // Check List references (members containing this uid)
     let list_refs = db.query_map(
         "SELECT uid,title,body FROM node_derived WHERE layer='List'",
         vec![],
@@ -297,7 +302,6 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
         }
     }
 
-    // Check Report references (evidence containing this uid)
     let report_refs = db.query_map(
         "SELECT uid,title FROM node_derived WHERE layer='Report'",
         vec![],
@@ -317,7 +321,6 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
         }
     }
 
-    // Check relation references (this uid is a relation target)
     let incoming_rels = db.query_map(
         "SELECT from_uid,relation_name FROM relations WHERE to_uid=?",
         vec![uid.into()],
@@ -349,7 +352,7 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
 
     let total_refs = list_referrers.len() + report_referrers.len() + rel_referrers.len();
     if total_refs > 0 {
-        return response::error(
+        return ok(response::error(
             &format!("cannot delete {uid}: {} reference(s) exist", total_refs),
             "HasReferences",
             Some(json!({
@@ -360,48 +363,57 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Value {
                 "total_refs": total_refs,
             })),
             &["remove references first (deactivate List/Report, or delete relation edges)".into()],
-        );
+        ));
     }
 
-    // Delete outgoing relations first
-    let _ = db.exec("DELETE FROM relations WHERE from_uid=?", vec![uid.into()]);
-    // Delete incoming relations (dangling edges to this node)
-    let _ = db.exec("DELETE FROM relations WHERE to_uid=?", vec![uid.into()]);
+    if let Err(e) = db.exec("DELETE FROM relations WHERE from_uid=?", vec![uid.into()]) {
+        return Err(format!("db error: {}", e));
+    }
+    if let Err(e) = db.exec("DELETE FROM relations WHERE to_uid=?", vec![uid.into()]) {
+        return Err(format!("db error: {}", e));
+    }
 
-    // Delete from appropriate table
     if is_page {
-        let _ = db.exec("DELETE FROM patches WHERE page_uid=?", vec![uid.into()]);
-        let _ = db.exec("DELETE FROM node_page WHERE uid=?", vec![uid.into()]);
+        if let Err(e) = db.exec("DELETE FROM patches WHERE page_uid=?", vec![uid.into()]) {
+            return Err(format!("db error: {}", e));
+        }
+        if let Err(e) = db.exec("DELETE FROM node_page WHERE uid=?", vec![uid.into()]) {
+            return Err(format!("db error: {}", e));
+        }
     } else {
-        let _ = db.exec("DELETE FROM node_derived WHERE uid=?", vec![uid.into()]);
+        if let Err(e) = db.exec("DELETE FROM node_derived WHERE uid=?", vec![uid.into()]) {
+            return Err(format!("db error: {}", e));
+        }
     }
 
-    let _ = db.commit();
+    if let Err(e) = db.commit() { return Err(format!("db commit: {}", e)); }
 
-    response::success(
+    ok(response::success(
         json!({"uid": uid, "deleted_from": if is_page { "node_page" } else { "node_derived" }}),
         &format!("deleted node {uid}"),
-    )
+    ))
 }
 
-pub fn cmd_deactivate(wiki_path: &str, uid: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_deactivate(wiki_path: &str, uid: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
 
     let rows = match db.query_map("SELECT active FROM node_page WHERE uid=?", vec![uid.into()]) {
         Ok(r) => r,
-        Err(e) => return response::error(&e.to_string(), "DbError", None, &[]),
+        Err(e) => return err(&e.to_string(), "DbError"),
     };
     if rows.is_empty() {
-        return response::error(&format!("node not found: {uid}"), "NodeNotFound", None, &[]);
+        return err(&format!("node not found: {uid}"), "NodeNotFound");
     }
     if rows[0].get("active").map(|a| a == "0").unwrap_or(false) {
-        return response::warning(json!({"uid":uid}), "node already deactivated");
+        return ok(response::warning(json!({"uid":uid}), "node already deactivated"));
     }
 
     let ts = now_ts();
-    let _ = db.exec("UPDATE node_page SET active=0, updated_at=? WHERE uid=?", vec![ts.to_string(), uid.into()]);
-    let _ = db.commit();
-    response::success(json!({"uid":uid,"active":false,"deactivated_at":ts}), "node deactivated")
+    if let Err(e) = db.exec("UPDATE node_page SET active=0, updated_at=? WHERE uid=?", vec![ts.to_string(), uid.into()]) {
+        return Err(format!("db error: {}", e));
+    }
+    if let Err(e) = db.commit() { return Err(format!("db commit: {}", e)); }
+    ok(response::success(json!({"uid":uid,"active":false,"deactivated_at":ts}), "node deactivated"))
 }
 
 pub fn cmd_verify(wiki_path: &str, uid: &str) -> Value {
@@ -460,8 +472,8 @@ pub fn cmd_verify(wiki_path: &str, uid: &str) -> Value {
     }
 }
 
-pub fn cmd_list_create(wiki_path: &str, title: &str, members_csv: &str, dimension: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_list_create(wiki_path: &str, title: &str, members_csv: &str, dimension: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
 
     let members: Vec<String> = members_csv.split(',')
         .map(|s| s.trim().to_string())
@@ -469,14 +481,14 @@ pub fn cmd_list_create(wiki_path: &str, title: &str, members_csv: &str, dimensio
         .collect();
 
     if members.is_empty() {
-        return response::error("provide --members uid1,uid2,...", "MissingMembers", None, &[]);
+        return err("provide --members uid1,uid2,...", "MissingMembers");
     }
 
     for m in &members {
         let rows = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![m.clone()])
             .unwrap_or_default();
         if rows.is_empty() {
-            return response::error(&format!("member not found: {m}"), "MemberNotFound", None, &[]);
+            return err(&format!("member not found: {m}"), "MemberNotFound");
         }
     }
 
@@ -492,32 +504,32 @@ pub fn cmd_list_create(wiki_path: &str, title: &str, members_csv: &str, dimensio
     }
     let body = serde_yaml::to_string(&body_entries).unwrap_or_default();
 
-    let _ = db.exec(
+    if let Err(e) = db.exec(
         "INSERT INTO node_derived(uid,layer,title,dimension,attrs,created_at,updated_at,body) VALUES(?,?,?,?,?,?,?,?)",
         vec![uid.clone(), "List".into(), title.into(), dimension.into(), "".into(), ts.to_string(), ts.to_string(), body.clone()],
-    );
+    ) { return Err(format!("db error: {}", e)); }
 
     for (pos, m) in members.iter().enumerate() {
-        let _ = db.exec(
+        if let Err(e) = db.exec(
             "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
             vec![uid.clone(), m.clone(), "contains".into(), "".into(), pos.to_string(), ts.to_string()],
-        );
+        ) { return Err(format!("db error: {}", e)); }
     }
 
-    let _ = db.commit();
-    response::success(
+    if let Err(e) = db.commit() { return Err(format!("db commit: {}", e)); }
+    ok(response::success(
         json!({"uid":uid,"layer":"List","title":title,"member_count":members.len()}),
         &format!("created List with {} member(s)", members.len()),
-    )
+    ))
 }
 
-pub fn cmd_list_extend(wiki_path: &str, uid: &str, members_csv: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_list_extend(wiki_path: &str, uid: &str, members_csv: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
 
     let rows = db.query_map("SELECT * FROM node_derived WHERE uid=? AND layer='List'", vec![uid.into()])
         .unwrap_or_default();
     if rows.is_empty() {
-        return response::error(&format!("List not found: {uid}"), "ListNotFound", None, &[]);
+        return err(&format!("List not found: {uid}"), "ListNotFound");
     }
 
     let new_members: Vec<String> = members_csv.split(',')
@@ -526,14 +538,14 @@ pub fn cmd_list_extend(wiki_path: &str, uid: &str, members_csv: &str) -> Value {
         .collect();
 
     if new_members.is_empty() {
-        return response::success(json!({"uid":uid,"added":0}), "nothing to add");
+        return ok(response::success(json!({"uid":uid,"added":0}), "nothing to add"));
     }
 
     for m in &new_members {
         let r = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![m.clone()])
             .unwrap_or_default();
         if r.is_empty() {
-            return response::error(&format!("member not found: {m}"), "MemberNotFound", None, &[]);
+            return err(&format!("member not found: {m}"), "MemberNotFound");
         }
     }
 
@@ -553,37 +565,37 @@ pub fn cmd_list_extend(wiki_path: &str, uid: &str, members_csv: &str) -> Value {
         let m_title = info.first().and_then(|r| r.get("title").cloned()).unwrap_or_default();
         entries.push(json!({"uid":m,"title":m_title}));
 
-        let _ = db.exec(
+        if let Err(e) = db.exec(
             "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
             vec![uid.into(), m.clone(), "contains".into(), "".into(), (max_pos + 1 + i).to_string(), ts.to_string()],
-        );
+        ) { return Err(format!("db error: {}", e)); }
     }
 
     let new_body = serde_yaml::to_string(&entries).unwrap_or_default();
-    let _ = db.exec(
+    if let Err(e) = db.exec(
         "UPDATE node_derived SET body=?, updated_at=? WHERE uid=?",
         vec![new_body, ts.to_string(), uid.into()],
-    );
-    let _ = db.commit();
+    ) { return Err(format!("db error: {}", e)); }
+    if let Err(e) = db.commit() { return Err(format!("db commit: {}", e)); }
 
-    response::success(
+    ok(response::success(
         json!({"uid":uid,"added":new_members.len(),"total_members":entries.len()}),
         &format!("added {} member(s), total {}", new_members.len(), entries.len()),
-    )
+    ))
 }
 
-pub fn cmd_entity_create(wiki_path: &str, title: &str, body: &str, source_page_uid: &str, attrs_json: &str, dimension: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_entity_create(wiki_path: &str, title: &str, body: &str, source_page_uid: &str, attrs_json: &str, dimension: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
 
     if title.trim().is_empty() {
-        return response::error("entity requires --title", "MissingTitle", None, &[]);
+        return err("entity requires --title", "MissingTitle");
     }
 
     if !source_page_uid.is_empty() {
         let rows = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![source_page_uid.into()])
             .unwrap_or_default();
         if rows.is_empty() {
-            return response::error(&format!("source page not found: {source_page_uid}"), "SourceNotFound", None, &[]);
+            return err(&format!("source page not found: {source_page_uid}"), "SourceNotFound");
         }
     }
 
@@ -592,7 +604,7 @@ pub fn cmd_entity_create(wiki_path: &str, title: &str, body: &str, source_page_u
     } else {
         match serde_json::from_str::<Value>(attrs_json) {
             Ok(Value::Object(_)) => serde_json::from_str::<Value>(attrs_json).unwrap_or(json!({})),
-            _ => return response::error("attrs must be a JSON object", "InvalidAttrs", None, &[]),
+            _ => return err("attrs must be a JSON object", "InvalidAttrs"),
         }
     };
 
@@ -600,30 +612,30 @@ pub fn cmd_entity_create(wiki_path: &str, title: &str, body: &str, source_page_u
     let ts = now_ts();
     let attrs_str = attrs.to_string();
 
-    let _ = db.exec(
+    if let Err(e) = db.exec(
         "INSERT INTO node_derived(uid,layer,title,dimension,attrs,created_at,updated_at,body) VALUES(?,?,?,?,?,?,?,?)",
         vec![uid.clone(), "Entity".into(), title.into(), dimension.into(), attrs_str, ts.to_string(), ts.to_string(), body.into()],
-    );
+    ) { return Err(format!("db error: {}", e)); }
 
     if !source_page_uid.is_empty() {
-        let _ = db.exec(
+        if let Err(e) = db.exec(
             "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
             vec![uid.clone(), source_page_uid.into(), "extracted_from".into(), "".into(), "0".into(), ts.to_string()],
-        );
+        ) { return Err(format!("db error: {}", e)); }
     }
 
-    let _ = db.commit();
-    response::success(
+    if let Err(e) = db.commit() { return Err(format!("db commit: {}", e)); }
+    ok(response::success(
         json!({"uid":uid,"layer":"Entity","title":title,"source_page":source_page_uid}),
         "entity created",
-    )
+    ))
 }
 
-pub fn cmd_report_create(wiki_path: &str, title: &str, body: &str, evidence_csv: &str, dimension: &str) -> Value {
-    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+pub fn cmd_report_create(wiki_path: &str, title: &str, body: &str, evidence_csv: &str, dimension: &str) -> Result<Value, String> {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return err(&e, "DbError") };
 
     if body.trim().is_empty() {
-        return response::error("report requires --body", "EmptyBody", None, &[]);
+        return err("report requires --body", "EmptyBody");
     }
 
     let evidence: Vec<String> = evidence_csv.split(',')
@@ -637,30 +649,30 @@ pub fn cmd_report_create(wiki_path: &str, title: &str, body: &str, evidence_csv:
             vec![uid.clone(), uid.clone()],
         ).unwrap_or_default();
         if rows.is_empty() {
-            return response::error(&format!("evidence uid not found: {uid}"), "EvidenceNotFound", None, &[]);
+            return err(&format!("evidence uid not found: {uid}"), "EvidenceNotFound");
         }
     }
 
     let uid = gen_uid();
     let ts = now_ts();
 
-    let _ = db.exec(
+    if let Err(e) = db.exec(
         "INSERT INTO node_derived(uid,layer,title,dimension,attrs,created_at,updated_at,body) VALUES(?,?,?,?,?,?,?,?)",
         vec![uid.clone(), "Report".into(), title.into(), dimension.into(), "".into(), ts.to_string(), ts.to_string(), body.into()],
-    );
+    ) { return Err(format!("db error: {}", e)); }
 
     for (pos, ev) in evidence.iter().enumerate() {
-        let _ = db.exec(
+        if let Err(e) = db.exec(
             "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
             vec![uid.clone(), ev.clone(), "cites".into(), "".into(), pos.to_string(), ts.to_string()],
-        );
+        ) { return Err(format!("db error: {}", e)); }
     }
 
-    let _ = db.commit();
-    response::success(
+    if let Err(e) = db.commit() { return Err(format!("db commit: {}", e)); }
+    ok(response::success(
         json!({"uid":uid,"layer":"Report","title":title,"evidence_count":evidence.len()}),
         "report created",
-    )
+    ))
 }
 
 // ======== NODES (DB metadata query) ========
