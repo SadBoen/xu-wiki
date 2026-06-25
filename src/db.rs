@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS node_page (uid TEXT PRIMARY KEY, title TEXT NOT NULL,
 CREATE INDEX IF NOT EXISTS idx_page_content_hash ON node_page(content_hash);
 CREATE INDEX IF NOT EXISTS idx_page_source_hash ON node_page(source_hash);
 
-CREATE TABLE IF NOT EXISTS node_derived (uid TEXT PRIMARY KEY, layer TEXT NOT NULL CHECK (layer IN ('List','Report')), title TEXT NOT NULL, dimension TEXT, attrs TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS node_derived (uid TEXT PRIMARY KEY, layer TEXT NOT NULL CHECK (layer IN ('Entity','List','Report')), title TEXT NOT NULL, dimension TEXT, attrs TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, body TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS patches (page_uid TEXT NOT NULL, version INTEGER NOT NULL, op TEXT NOT NULL CHECK (op IN ('create','revise','correct')), delta TEXT NOT NULL, author TEXT, created_at INTEGER, PRIMARY KEY (page_uid, version), FOREIGN KEY (page_uid) REFERENCES node_page(uid) ON DELETE CASCADE);
 

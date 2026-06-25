@@ -1,4 +1,4 @@
-"""xu CLI — argparse dispatcher -> Rust _core."""
+"""xu CLI 鈥?argparse dispatcher -> Rust _core."""
 import argparse, json, sys, os, tempfile
 from pathlib import Path
 from xu import __version__
@@ -63,6 +63,14 @@ def build_parser():
     sp.add_argument("--evidence", default="")
     sp.add_argument("--dimension", default="")
     sp.set_defaults(func="report_create")
+    sp = sub.add_parser("entity-create", help="create Entity node (concept)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--title", required=True)
+    sp.add_argument("--body", default="")
+    sp.add_argument("--source-page", default="")
+    sp.add_argument("--attrs", default="")
+    sp.add_argument("--dimension", default="")
+    sp.set_defaults(func="entity_create")
 
     sp = sub.add_parser("ingest-commit", help="Phase 2: commit to L1")
     sp.add_argument("--wiki", required=True)
@@ -121,7 +129,7 @@ def main():
 def dispatch(args):
     f = args.func
 
-    # Phase 1: ingest-file — Python parser chain (third-party: MinerU, markitdown, Pillow)
+    # Phase 1: ingest-file 鈥?Python parser chain (third-party: MinerU, markitdown, Pillow)
     if f == "ingest_file":
         from xu.parsers.registry import parse_file
         src = Path(args.file).expanduser()
@@ -155,14 +163,15 @@ def dispatch(args):
             py_ingest_commit, py_query, py_expand, py_ingest_context,
             py_update, py_deactivate, py_verify,
             py_list_create, py_list_extend, py_report_create,
+            py_entity_create,
         )
     except ImportError:
         return {"status": "error", "message": "_core not built. Install wheel or run maturin develop.", "hints": []}
 
     if f == "create":
-        r = json.loads(py_create(args.name or "", args.path, args.alias))
+        r = json.loads(py_create(args.name or "", args.path, getattr(args, 'alias', None)))
         if r["status"] == "success":
-            _register_wiki(args.name, args.path, args.alias)
+            _register_wiki(args.name, args.path, getattr(args, 'alias', None))
         return r
     if f == "selfcheck":
         return json.loads(py_selfcheck())
@@ -260,6 +269,17 @@ def dispatch(args):
             getattr(args, 'evidence', '') or '',
             getattr(args, 'dimension', '') or '',
         ))
+    if f == "entity_create":
+        wp = _resolve_or_err(args.wiki)
+        if isinstance(wp, dict):
+            return wp
+        return json.loads(py_entity_create(
+            wp, args.title,
+            getattr(args, 'body', '') or '',
+            getattr(args, 'source_page', '') or '',
+            getattr(args, 'attrs', '') or '',
+            getattr(args, 'dimension', '') or '',
+        ))
 
     return {"status": "error", "message": f"unknown command: {f}", "hints": []}
 
@@ -354,7 +374,7 @@ def _handle_ingest_album(*, wiki_path, title, files, raw_path, layout, captions_
     # --- delegate to ingest-commit (pass text directly, not file path) ---
     result = json.loads(py_ingest_commit(
         wiki_path,
-        pending_text,  # pending — raw text with xu-pending header
+        pending_text,  # pending 鈥?raw text with xu-pending header
         title,         # title
         "gallery",     # content_type
         raw_path,      # raw_path

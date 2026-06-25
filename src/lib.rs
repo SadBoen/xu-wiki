@@ -242,6 +242,7 @@ fn py_update(wiki: &str, uid: &str, title: Option<&str>, body: Option<&str>, rel
 #[pyfunction] fn py_list_create(wiki: &str, title: &str, members: &str, dimension: &str) -> String { commands::cmd_list_create(wiki, title, members, dimension).to_string() }
 #[pyfunction] fn py_list_extend(wiki: &str, uid: &str, members: &str) -> String { commands::cmd_list_extend(wiki, uid, members).to_string() }
 #[pyfunction] fn py_report_create(wiki: &str, title: &str, body: &str, evidence: &str, dimension: &str) -> String { commands::cmd_report_create(wiki, title, body, evidence, dimension).to_string() }
+#[pyfunction] fn py_entity_create(wiki: &str, title: &str, body: &str, source_page_uid: &str, attrs_json: &str, dimension: &str) -> String { commands::cmd_entity_create(wiki, title, body, source_page_uid, attrs_json, dimension).to_string() }
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -275,5 +276,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_list_create, m)?)?;
     m.add_function(wrap_pyfunction!(py_list_extend, m)?)?;
     m.add_function(wrap_pyfunction!(py_report_create, m)?)?;
+    m.add_function(wrap_pyfunction!(py_entity_create, m)?)?;
     Ok(())
 }

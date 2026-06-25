@@ -261,7 +261,75 @@ pub fn cmd_query(wiki_path: &str, core: &str, expansion: &str, top_k: usize) -> 
     }
     scored.sort_by(|a,b| b.0.cmp(&a.0));
     let top: Vec<Value> = scored.into_iter().take(top_k.max(1).min(50)).map(|(_,v)| v).collect();
-    response::success(json!({"related_nodes":top,"total_hits":top.len()}), &format!("{} snippet(s)", top.len()))
+
+    // --- Post-query reflection: hints for the Agent ---
+    let reflection = build_reflection(&db, &ck, &top);
+
+    response::success(
+        json!({"related_nodes":top,"total_hits":top.len(),"reflection":reflection}),
+        &format!("{} snippet(s)", top.len()),
+    )
+}
+
+fn build_reflection(db: &crate::db::Db, core_keywords: &[String], top: &[Value]) -> Value {
+    // Existing derived nodes matching core keywords
+    let mut existing_entities: Vec<Value> = vec![];
+    let mut existing_lists: Vec<Value> = vec![];
+    let mut existing_reports: Vec<Value> = vec![];
+
+    for kw in core_keywords {
+        let like = format!("%{kw}%");
+        // Entities
+        if let Ok(rows) = db.query_map(
+            "SELECT uid,title FROM node_derived WHERE layer='Entity' AND (title LIKE ? OR body LIKE ?)",
+            vec![like.clone(), like.clone()],
+        ) {
+            for r in &rows {
+                existing_entities.push(json!({"uid":r.get("uid").unwrap_or(&String::new()),"title":r.get("title").unwrap_or(&String::new())}));
+            }
+        }
+        // Lists
+        if let Ok(rows) = db.query_map(
+            "SELECT uid,title FROM node_derived WHERE layer='List' AND (title LIKE ? OR body LIKE ?)",
+            vec![like.clone(), like.clone()],
+        ) {
+            for r in &rows {
+                existing_lists.push(json!({"uid":r.get("uid").unwrap_or(&String::new()),"title":r.get("title").unwrap_or(&String::new())}));
+            }
+        }
+        // Reports
+        if let Ok(rows) = db.query_map(
+            "SELECT uid,title FROM node_derived WHERE layer='Report' AND (title LIKE ? OR body LIKE ?)",
+            vec![like.clone(), like.clone()],
+        ) {
+            for r in &rows {
+                existing_reports.push(json!({"uid":r.get("uid").unwrap_or(&String::new()),"title":r.get("title").unwrap_or(&String::new())}));
+            }
+        }
+    }
+
+    // Deduplicate
+    existing_entities.dedup_by(|a,b| a["uid"] == b["uid"]);
+    existing_lists.dedup_by(|a,b| a["uid"] == b["uid"]);
+    existing_reports.dedup_by(|a,b| a["uid"] == b["uid"]);
+
+    let has_pages = top.iter().any(|n| n["layer"].as_str() == Some("Page"));
+
+    json!({
+        "existing_entities": existing_entities,
+        "existing_lists": existing_lists,
+        "existing_reports": existing_reports,
+        "suggest_extract_entities": has_pages && existing_entities.len() < top.len(),
+        "suggest_create_list": top.len() >= 2 && existing_lists.is_empty(),
+        "suggest_create_report": top.len() >= 3 && existing_reports.len() < 2,
+        "hint": if has_pages && existing_entities.is_empty() {
+            format!("{} page(s) found — consider extracting entities with: xu entity-create --wiki <w> --title <name> --source-page <uid>", top.len())
+        } else if top.len() >= 2 && existing_lists.is_empty() {
+            "multiple results share a theme — consider: xu list-create".into()
+        } else {
+            "".into()
+        }
+    })
 }
 
 
@@ -604,6 +672,58 @@ pub fn cmd_list_extend(wiki_path: &str, uid: &str, members_csv: &str) -> Value {
     response::success(
         json!({"uid":uid,"added":new_members.len(),"total_members":entries.len()}),
         &format!("added {} member(s), total {}", new_members.len(), entries.len()),
+    )
+}
+
+// ======== ENTITY CREATE (L0 concept node) ========
+
+pub fn cmd_entity_create(wiki_path: &str, title: &str, body: &str, source_page_uid: &str, attrs_json: &str, dimension: &str) -> Value {
+    let db = match open_db(wiki_path) { Ok(d) => d, Err(e) => return response::error(&e, "DbError", None, &[]) };
+
+    if title.trim().is_empty() {
+        return response::error("entity requires --title", "MissingTitle", None, &[]);
+    }
+
+    // Validate source page if provided
+    if !source_page_uid.is_empty() {
+        let rows = db.query_map("SELECT uid FROM node_page WHERE uid=? AND active=1", vec![source_page_uid.into()])
+            .unwrap_or_default();
+        if rows.is_empty() {
+            return response::error(&format!("source page not found: {source_page_uid}"), "SourceNotFound", None, &[]);
+        }
+    }
+
+    // Parse attrs (optional structured properties)
+    let attrs = if attrs_json.trim().is_empty() {
+        json!({})
+    } else {
+        match serde_json::from_str::<Value>(attrs_json) {
+            Ok(Value::Object(_)) => serde_json::from_str::<Value>(attrs_json).unwrap_or(json!({})),
+            _ => return response::error("attrs must be a JSON object", "InvalidAttrs", None, &[]),
+        }
+    };
+
+    let uid = gen_uid();
+    let ts = now_ts();
+    let attrs_str = attrs.to_string();
+
+    let _ = db.exec(
+        "INSERT INTO node_derived(uid,layer,title,dimension,attrs,created_at,updated_at,body) VALUES(?,?,?,?,?,?,?,?)",
+        vec![uid.clone(), "Entity".into(), title.into(), dimension.into(), attrs_str, ts.to_string(), ts.to_string(), body.into()],
+    );
+
+    // Relation: Entity -> source page
+    if !source_page_uid.is_empty() {
+        let _ = db.exec(
+            "INSERT INTO relations(from_uid,to_uid,relation_name,comment,position,created_at) VALUES(?,?,?,?,?,?)",
+            vec![uid.clone(), source_page_uid.into(), "extracted_from".into(), "".into(), "0".into(), ts.to_string()],
+        );
+    }
+
+    let _ = db.commit();
+    response::success(
+        json!({"uid":uid,"layer":"Entity","title":title,"source_page":source_page_uid}),
+        "entity created",
     )
 }
 
