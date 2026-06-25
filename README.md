@@ -33,7 +33,7 @@ Prebuilt wheels. No Rust toolchain required.
 ```bash
 # 1. Install core engine (auto-pick wheel for your Python version)
 PIPX_PYTHON=$(python3 -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')
-pipx install "https://github.com/SadBoen/xu-wiki/releases/download/v0.2.1/xu_wiki-0.2.0-${PIPX_PYTHON}-linux_x86_64.whl"
+pipx install "https://github.com/SadBoen/xu-wiki/releases/download/v0.2.1/xu_wiki-0.2.1-${PIPX_PYTHON}-linux_x86_64.whl"
 
 # 2. Install Python extras (third-party parsers, not compiled)
 pipx inject xu-wiki "xu-wiki[all] @ git+https://github.com/SadBoen/xu-wiki.git"
