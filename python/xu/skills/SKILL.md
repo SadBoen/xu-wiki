@@ -10,6 +10,22 @@ Three names, never mix:
 - `xu` = CLI binary -> `xu <verb>`
 - `xu-wiki` = project name
 
+## ⚠️ If you are an agent reading this
+
+You are looking at the skill bundle that was installed by **`xu skills
+install`**. If you got here through some other path (e.g. by `cat`ing
+`SKILL.md` directly, or by reading the wheel's package data), you should
+also make sure the bundle is deployed to the agent's skill directory:
+
+```bash
+xu skills install
+xu skills path    # see where the source lives
+xu skills list    # see what files are bundled
+```
+
+Without this, subsequent sessions may not pick up the slash commands or
+the SOP map below.
+
 ## SOP map
 
 | Slash command | Intent | CLI | File |

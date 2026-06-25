@@ -1,5 +1,5 @@
-"""xu CLI 鈥?argparse dispatcher -> Rust _core."""
-import argparse, json, sys, os, tempfile
+"""xu CLI — argparse dispatcher -> Rust _core."""
+import argparse, json, sys, os, tempfile, time
 from pathlib import Path
 from xu import __version__
 
@@ -116,6 +116,32 @@ def build_parser():
     sp.add_argument("--preserve-config", action="store_true")
     sp.add_argument("--keep-pip", action="store_true")
     sp.set_defaults(func="uninstall")
+
+    # `xu skills` — agent-facing skill bundle management.
+    # The skill ships inside the wheel as package data; the CLI does not
+    # auto-deploy it (we do not know which agent runtime the user is on).
+    # `xu skills install` is the one-liner that copies the bundle into the
+    # well-known agent skill directory.
+    sp_skills = sub.add_parser("skills", help="manage the agent skill bundle")
+    sub_skills = sp_skills.add_subparsers(dest="skills_command", required=True)
+
+    sp_skills_list = sub_skills.add_parser("list", help="list skill files bundled in the wheel")
+    sp_skills_list.set_defaults(func="skills_list")
+
+    sp_skills_path = sub_skills.add_parser("path", help="print the source path of the bundled skill (on disk inside the wheel)")
+    sp_skills_path.set_defaults(func="skills_path")
+
+    sp_skills_install = sub_skills.add_parser("install", help="deploy the skill bundle to the agent's skill directory")
+    sp_skills_install.add_argument(
+        "--target",
+        default=str(Path.home() / ".hermes" / "skills" / "xu-wiki"),
+        help="target skill directory (default: ~/.hermes/skills/xu-wiki)",
+    )
+    sp_skills_install.add_argument(
+        "--force", action="store_true",
+        help="overwrite existing files in the target directory",
+    )
+    sp_skills_install.set_defaults(func="skills_install")
 
     return p
 
@@ -281,6 +307,10 @@ def dispatch(args):
             getattr(args, 'dimension', '') or '',
         ))
 
+    # ---- skill bundle management (no Rust required) ----
+    if f in ("skills_list", "skills_path", "skills_install"):
+        return _handle_skills(args)
+
     return {"status": "error", "message": f"unknown command: {f}", "hints": []}
 
 
@@ -397,3 +427,109 @@ def _register_wiki(name, path, alias):
         "created_at": int(time.time()),
     }
     save_registry(reg)
+
+
+def _handle_skills(args):
+    """Dispatch the three `xu skills {list,path,install}` subcommands.
+
+    The skill bundle ships as package data alongside the wheel
+    (see `xu/skills/__init__.py`). `xu skills install` is the official
+    one-liner that copies SKILL.md + references/ into the agent's
+    skill directory (default: ``~/.hermes/skills/xu-wiki/``).
+    """
+    from xu.skills import (
+        SKILL_NAME, SKILL_SRC_DIR, ALL_SKILL_FILES,
+    )
+
+    if args.func == "skills_path":
+        return {
+            "status": "success",
+            "data": {
+                "source_dir": str(SKILL_SRC_DIR),
+                "skill_name": SKILL_NAME,
+                "files": list(ALL_SKILL_FILES),
+            },
+            "message": f"skill bundle is at {SKILL_SRC_DIR}",
+            "hints": [
+                "next: xu skills install",
+                f"  (or copy {SKILL_SRC_DIR}/SKILL.md to your agent's skill dir)",
+            ],
+        }
+
+    if args.func == "skills_list":
+        return {
+            "status": "success",
+            "data": {
+                "skill_name": SKILL_NAME,
+                "source_dir": str(SKILL_SRC_DIR),
+                "files": list(ALL_SKILL_FILES),
+            },
+            "message": f"{len(ALL_SKILL_FILES)} file(s) bundled",
+            "hints": ["next: xu skills install"],
+        }
+
+    if args.func == "skills_install":
+        target = Path(args.target).expanduser()
+        if not target.is_absolute():
+            return {
+                "status": "error",
+                "message": f"--target must be absolute: {target}",
+                "hints": ["omit --target to use default ~/.hermes/skills/xu-wiki/"],
+            }
+
+        target.mkdir(parents=True, exist_ok=True)
+
+        # Sanity: source files must exist on disk (wheel has them as
+        # package_data — importlib.resources is the robust check, but
+        # the editable wheel always extracts them to disk).
+        if not (SKILL_SRC_DIR / "SKILL.md").is_file():
+            return {
+                "status": "error",
+                "message": f"SKILL.md not found in wheel package data ({SKILL_SRC_DIR})",
+                "hints": [
+                    "this wheel may be corrupted; reinstall with: pipx reinstall xu-wiki",
+                ],
+            }
+
+        copied, skipped = [], []
+        for rel in ALL_SKILL_FILES:
+            src = SKILL_SRC_DIR / rel
+            dst = target / rel
+            if not src.is_file():
+                # Missing optional reference (e.g. error-catalog.md) —
+                # skip silently rather than fail the install.
+                continue
+            if dst.exists() and not args.force:
+                skipped.append(rel)
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            copied.append(rel)
+
+        # Drop a tiny installation marker so the agent / user can see
+        # when the bundle was last refreshed.
+        marker = target / ".xu-skill-installed"
+        marker.write_text(
+            f"installed_at={int(time.time())}\nsource={SKILL_SRC_DIR}\n"
+            f"files={','.join(copied)}\n",
+            encoding="utf-8",
+        )
+
+        return {
+            "status": "success",
+            "data": {
+                "target": str(target),
+                "copied": copied,
+                "skipped": skipped,
+                "marker": str(marker),
+            },
+            "message": f"installed {len(copied)} file(s) to {target}"
+                       + (f", skipped {len(skipped)} (use --force to overwrite)"
+                          if skipped else ""),
+            "hints": [
+                "restart your agent so it picks up the new skill",
+                "verify: ls -la " + str(target),
+            ],
+        }
+
+    return {"status": "error", "message": f"unknown skills subcommand: {args.func}", "hints": []}

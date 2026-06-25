@@ -221,6 +221,11 @@ fn parse_pending_header_py(text: &str) -> (std::collections::HashMap<String, Str
     commands::parse_pending_header(text)
 }
 
+/// Compile-time package version, exposed to Python so `xu --version` and
+/// `from xu import __version__` always agree with the cargo build.
+#[pyfunction]
+fn pkg_version() -> &'static str { env!("CARGO_PKG_VERSION") }
+
 // === Command pyfunctions (return JSON strings) ===
 
 #[pyfunction]
@@ -261,6 +266,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_body_format, m)?)?;
     m.add_function(wrap_pyfunction!(strip_frontmatter, m)?)?;
     m.add_function(wrap_pyfunction!(parse_pending_header_py, m)?)?;
+    m.add_function(wrap_pyfunction!(pkg_version, m)?)?;
     m.add_function(wrap_pyfunction!(py_create, m)?)?;
     m.add_function(wrap_pyfunction!(py_selfcheck, m)?)?;
     m.add_function(wrap_pyfunction!(py_doctor, m)?)?;

@@ -17,6 +17,14 @@ design-docs/CREDENTIALS.md
 # Rust build artifacts
 target/
 
+# maturin develop / cargo test byproducts in the Python source tree
+# (the .pyd/.so is shipped *inside* the wheel built by CI, not checked
+# in alongside the source).
+python/xu/_core*.pyd
+python/xu/_core*.so
+python/xu/_core*.dylib
+python/xu/__pycache__/
+
 # Legacy migration scripts
 scripts/
 
