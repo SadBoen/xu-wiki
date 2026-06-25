@@ -321,15 +321,7 @@ pub fn cmd_query(wiki_path: &str, core: &str, expansion: &str, top_k: usize) -> 
         if score == 0 { continue; }
         let snippet: String = body.chars().take(100).collect();
         let layer = row.get("layer").cloned().unwrap_or_else(|| "Page".into());
-        // Derived nodes rank higher — they represent extracted knowledge
-        let layer_mult = match layer.as_str() {
-            "Entity" => 3,
-            "List"   => 3,
-            "Report" => 5,
-            _        => 1,
-        };
-        let boosted = score * layer_mult;
-        scored.push((boosted, json!({"uid":row.get("uid").unwrap_or(&String::new()),"title":row.get("title").unwrap_or(&String::new()),"layer":layer,"score":score,"boosted":boosted,"snippet":snippet})));
+        scored.push((score, json!({"uid":row.get("uid").unwrap_or(&String::new()),"title":row.get("title").unwrap_or(&String::new()),"layer":layer,"score":score,"snippet":snippet})));
     }
     scored.sort_by(|a,b| b.0.cmp(&a.0));
     let top: Vec<Value> = scored.into_iter().take(top_k.max(1).min(50)).map(|(_,v)| v).collect();
