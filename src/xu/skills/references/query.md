@@ -1,10 +1,8 @@
 # query — find knowledge
 
 `/xu-wiki query` finds L1/L2/L3 nodes by graded keywords. The CLI is purely
-a matcher — **it does not interpret free-text**. The agent's job is to
-grade the user's natural language into `--core` (entities, weighted high)
-and `--expansion` (synonyms, weighted low) before invoking
-DESIGN-ARCH-4).
+a matcher — **it does not interpret free-text**. The agent grades the user's
+query into a comma-separated `--keywords` list before invoking.
 
 This file is **self-contained**. Cross-cutting rules
 (4-key JSON, missing-args, paths) live in `SKILL.md`; the keyword-grading
@@ -99,9 +97,9 @@ xu report create --wiki <w> --title <t> --body <md> \
    similar List exists. Otherwise, by default, do not propose List after query.
 
    **Why query leans Report, not List**: query is "I asked a question"; the
-   natural follow-up is "save the answer". A List would just bundle related
-   hits without synthesizing anything. **CLI does NOT run this reflection**
-   The CLI does not run this reflection and never auto-creates.
+    natural follow-up is "save the answer". A List would just bundle related
+    hits without synthesizing anything. The CLI does NOT run this reflection
+    and never auto-creates.
 6. **If the user wants to wire edges** — `query-relation add` with
    `--from-uid` / `--to-uid` / `--relation-name`.
 7. **If the user wants the neighborhood** — re-run with `--neighbors`.

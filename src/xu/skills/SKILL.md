@@ -30,7 +30,7 @@ Each SOP is self-contained in its own file (`*.md` below); the agent says
 
 | SOP | Intent | CLI commands it calls | File |
 |---|---|---|---|
-| `/xu-wiki create` | build a new empty wiki at a path (raws/, nodes/{page,list,report}/, .xu/) | `create` (+ optional `wikis` to verify) | `create.md` |
+| `/xu-wiki create` | build a new empty wiki at a path (raws/, nodes/{page,entity,list,report}/, .xu/) | `create` (+ optional `wikis` to verify) | `create.md` |
 | `/xu-wiki ingest` | add content (PDF / DOCX / PPTX / MD / image / album) as immutable L1 Node_Page. Two-phase prose/doc flow (`ingest-file` → `ingest-commit`); single-shot album flow (`ingest-album`). Body style must match content type. **Post-commit reflection**: query for similar List → extend or create new; LLM decides autonomously | `ingest-file` → `ingest-commit`; `ingest-album`; `ingest-verify`; `reorganize` (if user不满意路径); optional `query-relation add` | `ingest.md` |
 | `/xu-wiki query` | find knowledge with elastic slicing, IDF, Fast Pass; read nodes; follow L2/L3 hints. **Post-query reflection**: query for similar Report → extend or create new; LLM decides autonomously | `query`; then `read`, `list show`, or `report show` per hint | `query.md` |
 | `/xu-wiki doctor` | read-only consistency checks on fields / files / relations / L1 immutability / Report evidence / IDF; apply `--fix` for safe repairs; rebuild derived layers | `doctor-all`; per-check subcommands; `--fix`; `delete-node`; `rebuild`; `nodes` (dangling lookup) | `doctor.md` |
@@ -41,8 +41,9 @@ Each SOP is self-contained in its own file (`*.md` below); the agent says
 - **L1 Node_Page** — immutable markdown facts. SHA256-dedup. UID never reused.
 - **L2 Node_List** — `.md` comparison/aggregation in `nodes/list/`. Members in frontmatter.
 - **L3 Node_Report** — `.md` reasoning in `nodes/report/`. **Requires ≥ 1 evidence ref** (else rejected).
+- **Entity** — first-class node at `nodes/entity/`, same level as Page/List/Report. Stores entity descriptors.
 - **Relations** — exactly **50 edges per node** (LRU, head=touch, tail=evict). No category, no score.
-- **FS** holds raw material pool (`raws/`), L1 markdown (`nodes/page/`), L2 (`nodes/list/`), L3 (`nodes/report/`).
+- **FS** holds raw material pool (`raws/`), L1 markdown (`nodes/page/`), Entity (`nodes/entity/`), L2 (`nodes/list/`), L3 (`nodes/report/`).
 - **CLI is offline-first.** MinerU is an optional parser in the fallback chain.
 
 ## Hard rules the agent MUST respect
