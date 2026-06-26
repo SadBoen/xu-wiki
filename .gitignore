@@ -16,3 +16,4 @@ dist/
 design-docs/CREDENTIALS.md
 # Generic safety net (matches MinerU JWT, github_pat_, etc.)
 design-docs/**/CREDENTIALS*.md
+target/
