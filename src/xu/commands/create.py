@@ -123,6 +123,12 @@ def cmd_create(args) -> dict:
             "InvalidName",
             hints=["name must be alnum/-/_ and <= 64 chars"],
         )
+    if args.alias and not NAME_RE.match(args.alias):
+        return error(
+            f"invalid alias: {args.alias!r} (CONST-CRT-4)",
+            "InvalidAlias",
+            hints=["alias must be alnum/-/_ and <= 64 chars"],
+        )
 
     # path normalization + symlink escape guard (CONST-CRT-5: absolute paths only)
     raw_path = Path(args.path).expanduser()

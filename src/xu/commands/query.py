@@ -65,7 +65,7 @@ def cmd_query(args) -> dict:
     for subdir in (ctx.page_dir, ctx.entity_dir, ctx.list_dir, ctx.report_dir):
         if not subdir.is_dir():
             continue
-        for p in subdir.glob("*.md"):
+        for p in subdir.rglob("*.md"):
             try:
                 text = p.read_text(encoding="utf-8", errors="replace")
                 fd, _ = fm.parse(text)

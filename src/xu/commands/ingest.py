@@ -47,7 +47,7 @@ from ..utils.paths import (
     sha256_text,
 )
 from ..utils.response import error, success, warning, make_response
-from ..utils.wiki import resolve_wiki, find_node_md, find_by_source_hash, find_by_source_hash
+from ..utils.wiki import resolve_wiki, find_node_md, find_by_source_hash
 
 
 def _scan_fm_index(ctx) -> tuple[dict, dict]:
