@@ -12,42 +12,45 @@
 
 ## 二、原则
 
-### [PRIN-QRY-1] 三层逐级介入——L1→L2→L3
+### [PRIN-QRY-1] 多轮 LLM 决策环——CLI 执行工具，LLM 决定下一步
 
 ```
 用户发起查询
    ↓
-1. 物理定位 (L1 介入)
-   ripgrep 扫描 → 标点延伸切片 → 物理证据坐标
+1. LLM 生成中英文关键词（不分 core/expansion）
    ↓
-2. 结构对齐 (L2 介入)
-   涉及多主体时，CLI 返回 list_hint —— 是否调取/生成 Node_List 由 Agent 决定
+2. CLI 搜 → 打分排序 → 取前 50 个切片块 → 合并为完整文本
+   （每个块带 UID / 标题 / Layer / 位置索引）
    ↓
-3. 逻辑提炼 (L3 介入)
-   CLI 返回 report_hint（是否有现成 Node_Report）—— 由 Agent 决定是否引用
+3. LLM 读 50 块合并文本，能结 → 停；不能结 →
+   LLM 从 50 块中挑 30 个最相关的 UID
    ↓
-4. 返回
-   - 有 Report → 给结论（L3）
-   - 只有事实 → 给对比表（L2）+ 物理证据切片（L1）
+4. CLI 取这 30 个 UID 的 body + relations 全文（合并）→ LLM
+   ↓
+5. LLM 读 30 个 body+relations，能结 → 停
+   不能结 → LLM 决策：换词重搜（Path A）或沿 relations 扩散（Path B）
+   ↓
+   每轮 LLM 都决策，最多 max_rounds 轮（默认 5）
 ```
 
-CLI 的职责只到 L1 的「找到证据坐标 + 给评分」——L2 / L3 是 Agent 决定要不要展开。
+CLI 职责：搜、取、拼文本。LLM 职责：生成关键词、决策下一步、读正文给结论。
+禁止 CLI 生成任何形式的摘要。
 
-### [PRIN-QRY-2] 关键词分级是 Agent 的责任——从原始查询直接生成，不依赖 CLI 分词
+### [PRIN-QRY-2] 关键词由 LLM 生成，含中英文——不分 core/expansion
 
-CLI 不做语义判断，也不做关键词生成。关键词（core + expansion）100% 由 Agent 从原始查询直接生成：
+CLI 不做语义判断，不做关键词分级。关键词 100% 由 LLM 从原始查询直接生成，中英文都要：
 
 ```
 用户发起查询 "A60 隔离区"
-   ↓ Agent 直接读取原始查询（无 CLI 分词介入）
-   ↓ Agent 语义分级（实体识别 + 同义词扩展 + 英文补充）：
-     - "A60" → 核心关键词（实体识别：船级代号）
-     - "隔离区" → 扩展关键词（中文同义：防火分区 / 阻燃区 / 隔火区）
-                         （英文补充：fire zone / fire compartment / fire barrier）
-   ↓ Agent 把分级结果传给 query
+   ↓ LLM 直接读取原始查询
+   ↓ LLM 生成中英文关键词：
+     - "A60"
+     - "隔离区" / "fire zone" / "fire compartment" / "fire barrier"
+     - "阻燃区" / "防火分区"
+   ↓ LLM 把这批词发给 CLI
 ```
 
-**扩展词必须包含英文**——无论查询语言为何，expansion 必须补充英文同义词。这是硬性要求。
+扩展词必须含英文，这是硬性要求。
 
 **Jieba 职责范围**：
 - ✅ **ingest 阶段**：构建 IDF 词频表时做名词提取
@@ -291,20 +294,42 @@ ripgrep 不可用时自动 fallback 到 Python re（慢但能用）。必须 fal
 
 目标是**全程子秒级、最差不过数秒**：全库扫描、Fast Pass 取 body、关系遍历都应远快于人的感知阈值。具体预算值由实现按硬件与库规模标定。超预算时返回 warning + partial result，绝不无限期阻塞 Agent。
 
-## 七、与 L2/L3 的协同
+## 七、多轮扩展查询（Agent 决策环）
 
-query 的 [PRIN-QRY-1] 三层介入里，L2 / L3 是**提示**而非**自动展开**：
+每轮完成后由 LLM 自己决定下一步，CLI 只提供工具能力。最大轮数由库内配置 `query.max_rounds` 控制（默认 5）。
 
-- L2 提示：`data.list_hint = ["2026-LIST01", ...]` ——告诉 Agent「这几个 List 跟你的查询相关」
-- L3 提示：`data.report_hint = "2026-RPT01 解释了 A60 阻燃区的工程规范"` ——告诉 Agent「有现成 Report 可直接引用」
+### [PRIN-QRY-14] 多轮扩展——LLM 决策，CLI 执行，Path A 优先，Path B 兜底
 
-Agent 拿到 hint 后**自己决定**要不要 `list show` / `report show` ——CLI 不自动展开，避免响应体爆炸。
+**Round 1 标准流程**：
+```
+LLM → CLI：中英文关键词
+CLI → LLM：前 50 个切片块合并文本
+         （每个块带 UID / 标题 / Layer / 位置索引，全文非摘要）
+LLM：能结 → 停；不能结 → 从 50 块中挑 30 个 UID 发给 CLI
+CLI → LLM：30 个 UID 的 body + relations 全文
+LLM：能结 → 停；不能结 → 选 Path A 或 Path B
+```
+
+**Path A（换词再搜）**：LLM 发新一批中英文关键词 → CLI 跑 Round N（回到上一步）→ LLM 决策
+
+**Path B（沿关系扩散）**：LLM 从当前 body+relations 中选若干 UID，指定要跟进的下一跳方向 → CLI 取这些节点的 body + relations → LLM 决策
+
+**LLM 每轮决策点**：
+- 结 / 不结
+- 不结：走 Path A 还是 Path B
+- Path B 中：跟哪些 UID 的哪些 relations
+
+**停机条件**：LLM 能给结论 / 达到 max_rounds / 关系链到头 / 50 条关系上限
+
+### [PRIN-QRY-15] 每轮独立计分，禁止摘要
+
+每轮 query 独立评分，不继承前轮分数。CLI 严禁生成任何形式的摘要，所有返回内容均为原文切片或原文全文。
 
 ## 八、自检清单（开发时勾选）
 
 **原则**：
-- [ ] 三层介入 L1→L2→L3（[PRIN-QRY-1]）
-  - [ ] 关键词分级是 Agent 责任（从原始查询直接生成，含英文补充）（[PRIN-QRY-2]）
+- [ ] 多轮 LLM 决策环：LLM 生成关键词、决策每轮下一步，CLI 执行搜索和取 body（[PRIN-QRY-1]）
+  - [ ] 关键词由 LLM 生成，含中英文，不分 core/expansion（[PRIN-QRY-2]）
 - [ ] CLI 不调 LLM（[PRIN-QRY-3]）
 - [ ] 检索内容不检索结构（[PRIN-QRY-4]）
 - [ ] 评分公式硬编码（[PRIN-QRY-5]）
@@ -316,6 +341,8 @@ Agent 拿到 hint 后**自己决定**要不要 `list show` / `report show` —�
 - [ ] IDF 常量除以（库内频次 + 1）（[PRIN-QRY-11]）
 - [ ] Fast Pass 动态阈值（[PRIN-QRY-12]）
 - [ ] 50 条关系上限不越界（LRU、命中前挪）（[PRIN-QRY-13]）
+- [ ] 多轮扩展：Path A 换词优先，Path B 关系扩散兜底，每轮 LLM 决策（[PRIN-QRY-14]）
+- [ ] 每轮独立计分，CLI 禁止生成摘要（[PRIN-QRY-15]）
 
 **禁令**：
 - [ ] CLI 不调 LLM 语义匹配（[BAN-QRY-1]）
@@ -336,9 +363,10 @@ Agent 拿到 hint 后**自己决定**要不要 `list show` / `report show` —�
 - [ ] 超时返回部分（[CONST-QRY-9]）
 - [ ] 4 键 JSON + list/report hint（[CONST-QRY-10]）
 - [ ] 不调 LLM（[CONST-QRY-11]）
+- [ ] max_rounds 由库内 config `query.max_rounds` 给出，默认 5（[CONST-QRY-12]）
 
 ---
 
-**作者注**：query 的灵魂是 [PRIN-QRY-2]（关键词分级是 Agent 责任）+ [PRIN-QRY-10]（打分公式）+ [PRIN-QRY-12]（Fast Pass 动态阈值）。新设计的关键改进是**「让 LLM 在检索前介入、检索中不介入」**——分级让 LLM 帮一次，公式让 CLI 自己跑。
+**作者注**：query 的灵魂是 [PRIN-QRY-1]（多轮 LLM 决策环）+ [PRIN-QRY-14]（Path A 换词优先，Path B 关系扩散兜底）+ [PRIN-QRY-15]（禁止摘要，全文返回）。新设计的关键改进是**「CLI 只管搜和取，LLM 每轮决策下一步」，Round 1 给 LLM 50 个索引块，LLM 挑 30 个 UID，CLI 取这 30 个 body+relations 全文，继续决策或扩展。最大 5 轮强制停机。
 
-LLM 重写时如果加了「语义相似度」之类需要 LLM 的功能，必须显式声明那是 separate command（比如 `xu query-semantic`），不要污染 `xu query` 的零延迟保证。**污染 query 路径 = 毁掉 query 的存在意义。**
+禁止 CLI 生成任何形式的摘要——这是系统级约束，任何摘要都必须由 LLM 自己从原文生成。

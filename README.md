@@ -50,14 +50,16 @@ pipx install "xu-wiki[pdf,parse,nlp,vision] @ git+https://github.com/SadBoen/xu-
 After install, deploy the skill bundle:
 
 ```bash
-xu deploy skill --target <agent>   # hermes, trae, claude, cursor, ...
+xu deploy skill --target <agent>   # hermes, trae, claude, cursor, auto (default: auto)
 xu selfcheck                       # verify install is complete
 ```
 
-To deploy to multiple harnesses:
+To deploy to multiple agents, call once per target:
 
 ```bash
-xu deploy skill --target hermes --target claude --target cursor
+xu deploy skill --target hermes
+xu deploy skill --target claude
+xu deploy skill --target cursor
 ```
 
 ## Uninstall

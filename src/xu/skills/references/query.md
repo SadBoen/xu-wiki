@@ -14,8 +14,10 @@ rule is restated here because it is the dominant failure mode of this SOP.
 
 ```bash
 # Main search
-xu query --wiki <w> --core <kw,kw> [--expansion <kw,kw>] [--top-k N] \
-              [--neighbors] [--include-inactive]
+xu query --wiki <w> --keywords <kw,kw,kw> [--top-k N] [--neighbors] [--include-inactive]
+
+# Expand specific UIDs (Path B: follow relation edges from selected hits)
+xu expand --wiki <w> --uids <uid,uid,...>
 
 # Read individual node (L1 markdown body)
 xu read  --wiki <w> --uid <uid>
@@ -40,8 +42,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 | Flag | Required | Purpose |
 |---|---|---|
 | `--wiki` | yes | Wiki name or alias |
-| `--core` | yes | Comma-separated core keywords (entities, weighted high) |
-| `--expansion` | no | Comma-separated expansion keywords (synonyms, weighted low) |
+| `--keywords` | yes | Comma-separated keywords (LLM grades core vs expansion before calling) |
 | `--top-k` | no | Max results; default 10 |
 | `--neighbors` | no | Also include 50-edge LRU neighbors of top hits |
 | `--include-inactive` | no | Include nodes marked inactive (default: active only) |
@@ -49,31 +50,30 @@ xu report create --wiki <w> --title <t> --body <md> \
 ## Hard rule for this SOP
 
 > **Keyword grading is the Agent's job. The CLI does NOT split a free-text
-> query.** You pass already-graded `--core` (entities, weighted high) and
-> `--expansion` (synonyms, weighted low) comma lists. There is **no** `--q`,
-> **no** `--mode`, **no** `--limit`.
+> query.** You pass a comma-separated `--keywords` list — the LLM grades
+> entities (high weight) vs synonyms (low weight) before calling CLI.
+> There is **no** `--core`, **no** `--expansion`, **no** `--q`, **no** `--mode`.
 >
-> - "find papers about BERT" → `xu query --wiki W --core "BERT,transformer" --expansion "pre-training,encoder,attention,model,architecture"`
-> - "现在库里面收录了几条船？" → `xu query --wiki W --core "船舶,IMO,MMSI,船名" --expansion "船只,舰船,货轮,ship,vessel,boat"`
+> - "find papers about BERT" → `xu query --wiki W --keywords "BERT,transformer,pre-training,encoder,attention,model,architecture"`
+> - "现在库里面收录了几条船？" → `xu query --wiki W --keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
 >
-> If the user gives a free-text query and you cannot grade it, **ask** for
-> core entities before invoking.
+> If the user gives a free-text query and you cannot extract entities, **ask**
+> for core entities before invoking.
 
 ## Workflow
 
-1. **Grade the user's query** into core + expansion keywords:
+1. **Grade the user's query** into a comma-separated keyword list:
    - Input: the **raw user query** (full natural language, e.g. "现在库里面收录了几条船？")
-   - **Always add English forms to expansion** — regardless of query language,
+   - **Always add English forms** — regardless of query language,
      include English synonyms (e.g. `ship,vessel,boat` for 船). This is a hard
-     requirement: every expansion set must include English.
-   - Output: `--core` (domain-specific entities, weighted high) +
-     `--expansion` (language-aware synonyms, weighted low)
+     requirement.
+   - Output: `--keywords` (comma-separated, LLM grades importance before calling)
    - Example: `"现在库里面收录了几条船？"` →
-     `--core "船舶,IMO,MMSI,船名"` `--expansion "船只,舰船,货轮,ship,vessel,boat"`
+     `--keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
    - Jieba plays **no role in query keyword generation** — it only runs inside
      ingest (IDF table construction). At query time, you grade from the raw
      query text directly.
-2. **Invoke `query`** with `--core` (required) and `--expansion` (recommended).
+2. **Invoke `query`** with `--keywords` (required).
 3. **Inspect the result's `data.hits`** — list of UIDs with relevance score.
 4. **Read the top hits** with `read --wiki W --uid <uid>`.
 5. **Post-query reflection** — the agent runs
@@ -109,8 +109,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 ## Example
 
 ```bash
-xu query --wiki research --core "BERT,transformer" \
-  --expansion "pre-training,encoder,attention" --top-k 5
+xu query --wiki research --keywords "BERT,transformer,pre-training,encoder,attention" --top-k 5
 # → {"status": "success", "data": {"hits": [{"uid": "...", "score": 0.92}, ...]}, ...}
 
 xu read --wiki research --uid WXYZ5678
@@ -124,8 +123,8 @@ xu query-relation add --wiki research \
 
 ## Common pitfalls
 
-- **Free-text to `--core`** — "BERT papers" is a free-text phrase, not a
-  core keyword. Convert to `--core "BERT,papers"` (commas) or ask the user
+- **Free-text to `--keywords`** — "BERT papers" is a free-text phrase, not
+  keyword list. Convert to `--keywords "BERT,papers"` (commas) or ask the user
   for the entities.
 - **`--neighbors` without intent** — adding `--neighbors` returns up to
   50 edges per top hit. For a 5-hit result with full neighborhoods, this

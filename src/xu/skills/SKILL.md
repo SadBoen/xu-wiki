@@ -112,9 +112,8 @@ xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → {"data":
 # Agent reviews the temp file content, then:
 xu ingest-commit --wiki research --pending /tmp/...-pre.md --title "BERT" --content-type article # → L1 entry
 
-# 3. query (Agent grades the keywords into core vs expansion)
-xu query --wiki research --core "transformer,attention" \
-  --expansion "self-attention,encoder" --top-k 5
+# 3. query (Agent grades keywords before calling)
+xu query --wiki research --keywords "transformer,attention,self-attention,encoder" --top-k 5
 
 # 4. wire relations
 xu query-relation add --wiki research \
