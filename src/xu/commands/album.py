@@ -1,9 +1,9 @@
-"""ingest-album — many images → one L1 Page (album scenario).
+"""ingest-album — many images → one Page (album scenario).
 
 This is a sub-flow of the ingest SOP, NOT a two-phase split
 (PRIN-ING-1 only governs the single-source pipeline). Each source
 file is copied to raws/, its essential metadata (resolution, GPS,
-capture time) is extracted via Pillow when available, and the L1
+capture time) is extracted via Pillow when available, and the
 body is rendered as a YAML list of dicts (PRIN-ING-13 body-style
 matching, same format as table/gallery content_type).
 
@@ -103,9 +103,9 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
 
 
 def cmd_ingest_album(args) -> dict:
-    """Album scenario: many images → one L1 Page with table or list body.
+    """Album scenario: many images → one Page with table or list body.
 
-    Single-shot (no two-phase). The L1 Page stores a markdown table or
+    Single-shot (no two-phase). The Page stores a markdown table or
     list with one row/entry per photo; minimal per-photo metadata
     (filename, source_hash, resolution, GPS, captured) goes into
     attrs.album.sources for queryability.
@@ -295,6 +295,6 @@ def cmd_ingest_album(args) -> dict:
         )
     return success(
         data,
-        f"album committed: {len(rows)} photos → 1 Node_Page (L1, content_type={ALBUM_CONTENT_TYPE})",
+        f"album committed: {len(rows)} photos → 1 Node_Page (content_type={ALBUM_CONTENT_TYPE})",
         hints=hints,
     )

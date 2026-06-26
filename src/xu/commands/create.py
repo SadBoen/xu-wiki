@@ -192,7 +192,7 @@ def cmd_create(args) -> dict:
     return success(
         data,
         f"created empty wiki '{name}' at {target}",
-        hints=["next: xu-wiki ingest-commit to add Node_Page (L1)"],
+        hints=["next: xu-wiki ingest-commit to add Node_Page"],
     )
 
 

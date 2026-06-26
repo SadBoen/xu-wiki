@@ -1,7 +1,7 @@
-"""L2 Node_List + L3 Node_Report — file-based upper layers (01-wiki-architecture.md).
+"""Node_List + Node_Report — file-based upper layers (01-wiki-architecture.md).
 
-L2 List: comparison/aggregation over existing nodes. Stored as .md in nodes/list/.
-L3 Report: reasoning + conclusion + MANDATORY evidence chain (BAN-ARCH-5).
+List: comparison/aggregation over existing nodes. Stored as .md in nodes/list/.
+Report: reasoning + conclusion + MANDATORY evidence chain (BAN-ARCH-5).
 A Report with zero references is rejected (CONST-DOC-3).
 Both are .md-only: body + frontmatter in nodes/list/|nodes/report/ (DESIGN-ARCH-1).
 """
@@ -84,7 +84,7 @@ def _list_create(args) -> dict:
         {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_items],
          "dimension": args.dimension, "node_path": node_path},
         f"created Node_List {uid} with {len(member_items)} member(s)",
-        hints=[f"read --uid {uid} to view; list show --uid {uid} for L2 presentation"],
+        hints=[f"read --uid {uid} to view; list show --uid {uid} for List presentation"],
     )
 
 
@@ -137,7 +137,7 @@ def _report_create(args) -> dict:
         return error(
             "a Report MUST cite at least one evidence node (BAN-ARCH-5, CONST-DOC-3)",
             "EmptyEvidence",
-            hints=["L3 conclusions require an evidence chain; no naked reports"],
+            hints=["Report conclusions require an evidence chain; no naked reports"],
         )
 
     ref_meta = []
@@ -188,7 +188,7 @@ def _report_create(args) -> dict:
         {"uid": uid, "layer": "Report", "references": [r["uid"] for r in ref_meta],
          "ref_count": len(ref_meta)},
         f"created Node_Report {uid} with {len(ref_meta)} evidence link(s)",
-        hints=[f"read --uid {uid} to view; report show --uid {uid} for L3 presentation"],
+        hints=[f"read --uid {uid} to view; report show --uid {uid} for Report presentation"],
     )
 
 

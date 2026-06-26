@@ -1,9 +1,9 @@
 """doctor / delete-node / rebuild — operations & resilience (07-doctor.md).
 
 doctor checks are READ-ONLY by default; --fix applies only mechanical,
-non-destructive repairs (PRIN-DOC). Never touches L1 source-of-truth content.
-delete-node checks L2/L3 references before physical deletion.
-rebuild reconstructs derived layers from L1 (never regenerates L1, PRIN-ARCH-3).
+non-destructive repairs (PRIN-DOC). Never touches Page source-of-truth content.
+delete-node checks derived-layer references before physical deletion.
+rebuild reconstructs derived layers from Page (never regenerates Page, PRIN-ARCH-3).
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
 
 
-_LAYER_TAG = {"Page": "L1", "List": "L2", "Report": "L3"}
+_LAYER_TAG = {}
 
 
 def _all_frontmatter_nodes(ctx):
@@ -56,7 +56,7 @@ def _find_node_fm(ctx, uid: str) -> tuple[dict, Path] | None:
 
 def _summarize(checks_report: dict) -> dict:
     """Aggregate issues by layer + fixability (CONST-DOC-7)."""
-    by_layer = {"L1": 0, "L2": 0, "L3": 0, "cross": 0}
+    by_layer = {"Page": 0, "List": 0, "Report": 0, "Entity": 0, "cross": 0}
     auto_fixable = 0
     read_only = 0
     total = 0
@@ -116,8 +116,9 @@ def cmd_doctor(args) -> dict:
                  if not fix else [])
             return status(data,
                           f"doctor-all: {summary['total_issues']} issue(s) "
-                          f"(L1={summary['by_layer']['L1']} L2={summary['by_layer']['L2']} "
-                          f"L3={summary['by_layer']['L3']} cross={summary['by_layer']['cross']})",
+                          f"(Page={summary['by_layer']['Page']} List={summary['by_layer']['List']} "
+                          f"Report={summary['by_layer']['Report']} Entity={summary['by_layer']['Entity']} "
+                          f"cross={summary['by_layer']['cross']})",
                           hints=hints)
         fn = checks.get(kind)
         if not fn:
@@ -151,7 +152,7 @@ def _check_fields(ctx, conn, fix) -> dict:
     fixed = []
     for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
         uid = fm_dict.get("uid", "")
-        lyr = _LAYER_TAG.get(fm_dict.get("layer", ""), "cross")
+        lyr = fm_dict.get("layer", "cross")
         missing = [f for f in REQUIRED_FM_FIELDS if f not in fm_dict]
         if missing:
             issues.append({"uid": uid, "problem": "missing frontmatter fields",
@@ -171,7 +172,7 @@ def _check_files(ctx, conn, fix) -> dict:
         rel = str(md.relative_to(ctx.root))
         if rel not in fm_paths:
             issues.append({"problem": "orphan md file (not in frontmatter)", "path": rel,
-                           "layer": "L1", "fixable": False})
+                           "layer": "Page", "fixable": False})
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
@@ -204,7 +205,7 @@ def _check_relations(ctx, conn, fix) -> dict:
 
 
 def _check_l1_immutable(ctx, conn, fix) -> dict:
-    """L1 body must match its recorded content_hash (PRIN-ARCH-3, never auto-fix)."""
+    """Page body must match its recorded content_hash (PRIN-ARCH-3, never auto-fix)."""
     issues = []
     for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
         if fm_dict.get("layer") != "Page":
@@ -214,12 +215,12 @@ def _check_l1_immutable(ctx, conn, fix) -> dict:
             continue
         actual = sha256_text(body)
         if actual != stored_hash:
-            issues.append({"uid": fm_dict.get("uid"), "problem": "L1 content_hash mismatch (tampered)",
+            issues.append({"uid": fm_dict.get("uid"), "problem": "Page content_hash mismatch (tampered)",
                            "expected": stored_hash[:12], "actual": actual[:12],
-                           "layer": "L1", "fixable": False})
-    # NEVER auto-fix L1 content (BAN-DOC-5: L1 is source of truth)
+                           "layer": "Page", "fixable": False})
+    # NEVER auto-fix Page content (BAN-DOC-5: Page is source of truth)
     return {"issue_count": len(issues), "issues": issues, "fixed": [],
-            "note": "L1 mismatches are reported only; manual review required (BAN-DOC-5)"}
+            "note": "Page mismatches are reported only; manual review required (BAN-DOC-5)"}
 
 
 def _check_report_evidence(ctx, fix) -> dict:
@@ -245,7 +246,7 @@ def _check_report_evidence(ctx, fix) -> dict:
         evidence_list = fd.get(FM_EVIDENCE, [])
         if not evidence_list:
             issues.append({"report_uid": uid, "problem": "report with zero evidence (BAN-ARCH-5)",
-                           "layer": "L3", "fixable": False})
+                           "layer": "Report", "fixable": False})
             continue
         to_remove = []
         for ref in evidence_list:
@@ -253,14 +254,14 @@ def _check_report_evidence(ctx, fix) -> dict:
             active = uid_active.get(ref_uid)
             if active is None:
                 issues.append({"report_uid": uid, "problem": "dangling evidence ref",
-                               "ref_uid": ref_uid, "layer": "L3", "fixable": True})
+                               "ref_uid": ref_uid, "layer": "Report", "fixable": True})
                 if fix:
                     to_remove.append(ref)
                     fixed.append({"report_uid": uid, "ref_uid": ref_uid,
                                   "action": "removed dangling ref"})
             elif not active:
                 issues.append({"report_uid": uid, "problem": "evidence ref points to inactive node",
-                               "ref_uid": ref_uid, "layer": "L3", "fixable": True})
+                               "ref_uid": ref_uid, "layer": "Report", "fixable": True})
                 if fix:
                     to_remove.append(ref)
                     fixed.append({"report_uid": uid, "ref_uid": ref_uid,
@@ -361,7 +362,7 @@ def _check_node_path_organization(ctx, conn, fix) -> dict:
             "current_path": str(md_path.relative_to(ctx.root)) if md_path else "",
             "suggested_node_path": suggested,
             "suggest_reason": f"title contains noun: {suggested!r}",
-            "layer": "L1",
+            "layer": "Page",
             "fixable": True,
         })
         if fix:
@@ -399,7 +400,7 @@ def cmd_delete_node(args) -> dict:
     if not node_fd:
         return error(f"node not found: {args.uid}", "NodeNotFound")
 
-    # who references this node? (L2 members, L3 evidence, relations)
+    # who references this node? (List members, Report evidence, relations)
     list_refs = []
     evidence_refs = []
     rel_refs = []
@@ -429,7 +430,7 @@ def cmd_delete_node(args) -> dict:
     blocking = bool(list_refs or evidence_refs)
     if blocking and not args.force:
         return error(
-            f"node {args.uid} is referenced by L2/L3; refusing delete (use --force)",
+            f"node {args.uid} is referenced by List/Report; refusing delete (use --force)",
             "NodeReferenced",
             data={"list_refs": list_refs, "evidence_refs": evidence_refs,
                   "relation_refs": rel_refs},
@@ -503,11 +504,11 @@ def cmd_delete_node(args) -> dict:
 
 
 def cmd_rebuild(args) -> dict:
-    """Rebuild derived layers from L1. NEVER regenerates L1 content (PRIN-ARCH-3).
+    """Rebuild derived layers from Page. NEVER regenerates Page content (PRIN-ARCH-3).
 
     granularity:
       keep-l1     : rebuild IDF + renumber relation positions from frontmatter (default)
-      keep-l1-l2  : also leave L2 lists intact, rebuild IDF/relations
+      keep-l1-l2  : also leave List intact, rebuild IDF/relations
       full        : same as keep-l1 (frontmatter is source of truth)
     """
     ctx = resolve_wiki(args.wiki)
@@ -519,7 +520,7 @@ def cmd_rebuild(args) -> dict:
     if gran == "full":
         actions.append("DB reconciliation skipped (frontmatter is source of truth)")
 
-    # rebuild IDF from all active L1 bodies (always, for any granularity)
+    # rebuild IDF from all active Page bodies (always, for any granularity)
     # reads from frontmatter via fs walk; writes to idf.md
     freq: dict[str, tuple[int, float]] = {}
     for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
@@ -552,4 +553,4 @@ def cmd_rebuild(args) -> dict:
     actions.append("renumbered relation LRU positions in frontmatter")
 
     return success({"granularity": gran, "actions": actions},
-                   f"rebuild ({gran}) complete; L1 content untouched (PRIN-ARCH-3)")
+                   f"rebuild ({gran}) complete; Page content untouched (PRIN-ARCH-3)")

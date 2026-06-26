@@ -105,16 +105,16 @@ def test_lru_touch_moves_forward():
 
 def test_doctor_summarize_by_layer_and_fixability():
     report = {
-        "doctor-files": {"issues": [{"layer": "L1", "fixable": True}]},
+        "doctor-files": {"issues": [{"layer": "Page", "fixable": True}]},
         "doctor-report-evidence": {"issues": [
-            {"layer": "L3", "fixable": False},
-            {"layer": "L3", "fixable": False},
+            {"layer": "Report", "fixable": False},
+            {"layer": "Report", "fixable": False},
         ]},
         "doctor-idf": {"issues": [{"layer": "cross", "fixable": True}]},
     }
     s = _summarize(report)
     assert s["total_issues"] == 4
-    assert s["by_layer"] == {"L1": 1, "L2": 0, "L3": 2, "cross": 1}
+    assert s["by_layer"] == {"Page": 1, "List": 0, "Report": 2, "Entity": 0, "cross": 1}
     assert s["auto_fixable"] == 2
     assert s["read_only"] == 2
 

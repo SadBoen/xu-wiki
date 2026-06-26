@@ -1,4 +1,4 @@
-"""Wiki instance context: locate root, expose three-piece layout paths."""
+"""Wiki instance context: locate root, expose four-piece layout paths."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,6 +32,10 @@ class WikiContext:
     @property
     def report_dir(self) -> Path:
         return self.root / "nodes" / "report"
+
+    @property
+    def entity_dir(self) -> Path:
+        return self.root / "nodes" / "entity"
 
     @property
     def xu_dir(self) -> Path:

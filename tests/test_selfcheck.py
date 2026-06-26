@@ -36,13 +36,28 @@ def _args():
 
 
 def _all_ok_patcher(monkeypatch):
-    """Patch agent_skill_deployed to pass — only valid when skill is
-    actually deployed somewhere, which we mock out for tests."""
+    """Patch all environment-dependent checks so tests run reliably
+    regardless of what's installed on the host."""
+    monkeypatch.setattr(cmd_mod, "_check_cli_on_path",
+                        lambda: {"ok": True, "path": "/usr/bin/xu",
+                                 "hint": "xu on PATH (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_skill_bundle_readable",
+                        lambda: {"ok": True, "source_dir": "/fake/src",
+                                 "file_count": 7, "skill_name": "xu-wiki",
+                                 "hint": "skill bundle readable (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
+                        lambda: {"ok": True, "path": "/tmp/.xu-wiki",
+                                 "hint": "global dir writable (test mock)"})
     monkeypatch.setattr(cmd_mod, "_check_agent_skill_deployed",
                         lambda: {"ok": True,
                                  "found": [{"agent": "test", "path": "/fake"}],
                                  "missing": [],
                                  "hint": "skill deployed (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_optional_extras",
+                        lambda: {"ok": True, "extras": {},
+                                 "hint": "all extras installed (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_ripgrep",
+                        lambda: {"ok": True, "hint": "rg available (test mock)"})
 
 
 # ----------------------------------------------------------------------
@@ -289,6 +304,16 @@ def test_agent_skill_not_deployed_returns_warning(xu_home, monkeypatch):
     not an installation-success criterion. The check still runs and
     surfaces actionable next_actions, but does not make selfcheck fail.
     """
+    monkeypatch.setattr(cmd_mod, "_check_cli_on_path",
+                        lambda: {"ok": True, "path": "/usr/bin/xu",
+                                 "hint": "xu on PATH (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_skill_bundle_readable",
+                        lambda: {"ok": True, "source_dir": "/fake/src",
+                                 "file_count": 7, "skill_name": "xu-wiki",
+                                 "hint": "skill bundle readable (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
+                        lambda: {"ok": True, "path": "/tmp/.xu-wiki",
+                                 "hint": "global dir writable (test mock)"})
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "warning"
     assert "agent_skill_deployed" in r["data"]["failed_noncritical"]

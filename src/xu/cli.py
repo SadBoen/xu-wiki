@@ -57,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--node-path", default="", help="logical partition path")
     sp.set_defaults(func="ingest_file")
 
-    sp = sub.add_parser("ingest-commit", help="Phase 2: commit pending pages into L1 (only write entry)")
+    sp = sub.add_parser("ingest-commit", help="Phase 2: commit pending pages into wiki (only write entry)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--pending", required=False, help="Phase 1 temp file to commit")
     sp.add_argument("--title", required=False, help="title (required unless --native with frontmatter)")
@@ -71,9 +71,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func="ingest_commit")
 
     sp = sub.add_parser("ingest-album",
-                        help="Album: N images → 1 L1 Page (single-shot, no two-phase; PRIN-ING-13)")
+                        help="Album: N images → 1 Page (single-shot, no two-phase; PRIN-ING-13)")
     sp.add_argument("--wiki", required=True)
-    sp.add_argument("--title", required=True, help="album theme (becomes the L1 title)")
+    sp.add_argument("--title", required=True, help="album theme (becomes the title)")
     sp.add_argument("--files", required=True,
                     help="comma-separated absolute image paths")
     sp.add_argument("--node-path", default="", help="logical partition path (album lives under nodes/page/<node-path>/)")
@@ -87,28 +87,30 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func="ingest_album")
 
     sp = sub.add_parser("ingest-verify",
-                        help="Verify a committed L1 node's integrity (DB / nodes/ / raws/ / body format)")
+                        help="Verify a committed node's integrity (DB / nodes/ / raws/ / body format)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--uid", required=True, help="uid of the node to verify")
     sp.set_defaults(func="ingest_verify")
 
-    sp = sub.add_parser("query", help="three-layer retrieval (L1 locate + L2/L3 hints)")
+    sp = sub.add_parser("query", help="search wiki: returns top N indexed blocks (UID/title/layer/position)")
     sp.add_argument("--wiki", required=True)
-    sp.add_argument("--core", default="", help="comma-separated core keywords")
-    sp.add_argument("--expansion", default="", help="comma-separated expansion keywords")
-    sp.add_argument("--top-k", type=int, default=None)
-    sp.add_argument("--neighbors", action="store_true", help="include 1-hop relation neighbors")
+    sp.add_argument("--keywords", required=True, help="comma-separated keywords (LLM generates these)")
     sp.add_argument("--include-inactive", action="store_true")
     sp.set_defaults(func="query")
 
-    sp = sub.add_parser("read", help="read a single node full body (L1 applies patches)")
+    sp = sub.add_parser("expand", help="fetch body + relations for specific UIDs (Path B)")
+    sp.add_argument("--wiki", required=True)
+    sp.add_argument("--uids", required=True, help="comma-separated UIDs to expand")
+    sp.set_defaults(func="expand")
+
+    sp = sub.add_parser("read", help="read a single node full body (applies patches)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--uid", required=True)
     sp.set_defaults(func="read")
 
     sp = sub.add_parser("nodes", help="DB node metadata query (read-only)")
     sp.add_argument("--wiki", required=True)
-    sp.add_argument("--layer", default=None, choices=["Page", "List", "Report"])
+    sp.add_argument("--layer", default=None, choices=["Page", "List", "Report", "Entity"])
     sp.add_argument("--include-inactive", action="store_true")
     sp.set_defaults(func="nodes")
 
@@ -127,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func="query_relation")
 
     # ---- M4: list / report ----
-    sp = sub.add_parser("list", help="L2 Node_List create/show")
+    sp = sub.add_parser("list", help="Node_List create/show")
     lsub = sp.add_subparsers(dest="list_action", required=True)
     lc = lsub.add_parser("create")
     lc.add_argument("--wiki", required=True)
@@ -140,13 +142,13 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--uid", required=True)
     sp.set_defaults(func="list_cmd")
 
-    sp = sub.add_parser("report", help="L3 Node_Report create/show (evidence chain required)")
+    sp = sub.add_parser("report", help="Node_Report create/show (evidence chain required)")
     rpsub = sp.add_subparsers(dest="report_action", required=True)
     rc = rpsub.add_parser("create")
     rc.add_argument("--wiki", required=True)
     rc.add_argument("--title", required=True)
     rc.add_argument("--body", required=True, help="report body (markdown)")
-    rc.add_argument("--references", required=True, help="comma-separated L1/L2 evidence UIDs")
+    rc.add_argument("--references", required=True, help="comma-separated evidence UIDs")
     rc.add_argument("--node-path", default="")
     rs = rpsub.add_parser("show")
     rs.add_argument("--wiki", required=True)
@@ -167,10 +169,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("delete-node", help="physically delete a node (checks references first)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--uid", required=True)
-    sp.add_argument("--force", action="store_true", help="proceed despite L2/L3 references")
+    sp.add_argument("--force", action="store_true", help="proceed despite derived-layer references")
     sp.set_defaults(func="delete_node")
 
-    sp = sub.add_parser("rebuild", help="rebuild derived layers (never touches L1)")
+    sp = sub.add_parser("rebuild", help="rebuild derived layers (never touches Page)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--granularity", default="keep-l1", choices=["keep-l1", "keep-l1-l2", "full"])
     sp.set_defaults(func="rebuild")
@@ -250,10 +252,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp_skill = deploy_sub.add_parser("skill",
                                       help="copy the skill bundle to <target>'s discovery dir")
     sp_skill.add_argument("--target",
-                          action="append",
                           choices=("hermes", "trae", "claude", "cursor", "auto"),
-                          help="agent platform to deploy to; can be specified multiple times "
-                               "(default: auto-detect if absent)")
+                          default="auto",
+                          help="agent platform to deploy to (default: auto)")
     sp_skill.add_argument("--copy",
                           action="store_true",
                           help="copy files instead of symlinking (symlink is default)")
@@ -289,6 +290,9 @@ def _dispatch(args) -> dict:
     if func == "query":
         from .commands.query import cmd_query
         return cmd_query(args)
+    if func == "expand":
+        from .commands.query import cmd_expand
+        return cmd_expand(args)
     if func == "read":
         from .commands.query import cmd_read
         return cmd_read(args)

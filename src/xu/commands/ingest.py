@@ -1,4 +1,4 @@
-"""ingest — two-phase L1 Node_Page creation (05-ingest.md).
+"""ingest — two-phase Node_Page creation (05-ingest.md).
 
 Phase 1 (ingest-file): parse → write temporary file (system temp dir).
                         No node created.
@@ -461,7 +461,7 @@ def cmd_ingest_commit(args) -> dict:
         bare = created[0]["md_path"][len("nodes/page/"):]
         if "/" not in bare:
             hints.append("node_path is empty — all pages are piling at nodes/page/ root; future ingest should pass --node-path to organize by category")
-    return success(data, f"committed {len(created)} Node_Page (L1) via {parser_used}", hints=hints)
+    return success(data, f"committed {len(created)} Node_Page via {parser_used}", hints=hints)
 
 
 def _raw_path_checks(ctx, frontmatter) -> list[dict]:
@@ -550,7 +550,7 @@ def _verify_committed(ctx, md_path, uid) -> tuple[list[dict], list[str], list[st
 
 
 def cmd_ingest_verify(args) -> dict:
-    """Verify a committed L1 node's on-disk integrity (post-commit, read-only)."""
+    """Verify a committed Page's on-disk integrity (post-commit, read-only)."""
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")

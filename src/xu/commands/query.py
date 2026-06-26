@@ -1,9 +1,11 @@
-"""query / read / nodes commands (06-query.md).
+"""query / expand / read / nodes commands (06-query.md).
 
-query: three-layer retrieval. CLI does L1 (ripgrep + slice + score + Fast Pass)
-and returns L2/L3 hints. Zero LLM calls (PRIN-QRY-3).
-read: single-node full body, applying patches for L1 (PRIN-QRY-6).
+query: CLI searches keywords → returns top N indexed blocks (uid/title/layer/position/text).
+       LLM decides next step (conclude / Path A new keywords / Path B follow relations).
+expand: CLI fetches body + relations for specific UIDs (Path B).
+read: single-node full body, applying patches.
 nodes: DB metadata query (read-only, no ripgrep).
+CLI never generates summaries (PRIN-QRY-15).
 """
 from __future__ import annotations
 
@@ -25,70 +27,65 @@ def _split_kw(s: str) -> list[str]:
 
 
 def cmd_query(args) -> dict:
+    """Search wiki: return top N blocks with full index (uid/title/layer/position/text).
+
+    LLM generates keywords → CLI searches → LLM picks UIDs for expand (Path B).
+    """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
-    core = _split_kw(args.core)
-    expansion = _split_kw(args.expansion)
-    if not core and not expansion:
-        return error("provide --core and/or --expansion keywords", "NoKeywords",
-                     hints=["Agent does semantic grading; CLI ranks deterministically (PRIN-QRY-2)"])
+    keywords = _split_kw(args.keywords)
+    if not keywords:
+        return error("provide --keywords", "NoKeywords")
 
     qcfg = ctx.config.get("query", {})
     soft = cfg_get(qcfg, "slice.soft_limit", 80)
     hard = cfg_get(qcfg, "slice.hard_limit", 150)
     radius = cfg_get(qcfg, "slice.merge_radius", 80)
     core_w = cfg_get(qcfg, "scoring.core_weight", 2000)
-    exp_w = cfg_get(qcfg, "scoring.expansion_weight", 500)
     density = cfg_get(qcfg, "scoring.density_bonus", 1.5)
-    top_k = args.top_k or cfg_get(qcfg, "top_k", 10)
-    fp_k = cfg_get(qcfg, "fast_pass.k", 3.0)
-    fp_low = cfg_get(qcfg, "fast_pass.low_hit", 3)
+    top_blocks = cfg_get(qcfg, "blocks", 50)
     timeout = cfg_get(qcfg, "timeout_seconds", 10)
 
-    all_kw = core + expansion
-    raw_hits = scan(ctx.page_dir, all_kw, timeout=timeout)
+    raw_hits = scan(ctx.nodes_dir, keywords, timeout=timeout)
 
-    # IDF weights (PRIN-QRY-11, BAN-QRY-5: from idf.md)
     idf_table = load_idf(ctx)
     idf_weight = {}
-    for kw in all_kw:
+    for kw in keywords:
         freq, weight = idf_table.get(kw.lower(), (0, 0.0))
         idf_weight[kw] = weight
 
-    # Group hits by file, build slices
     by_file: dict[str, list] = {}
     for kw, hits in raw_hits.items():
         for h in hits:
             by_file.setdefault(h["file"], []).append((kw, h))
 
-    # Map md file -> uid (skip inactive nodes); pre-load from frontmatter
     uid_cache: dict[str, dict] = {}
-    for p in ctx.page_dir.rglob("*.md"):
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-            fd, _ = fm.parse(text)
-            uid_cache[str(p)] = {
-                "uid": fd.get("uid"),
-                "title": fd.get("title"),
-                "layer": fd.get("layer"),
-                "active": fd.get("active", True),
-                "node_path": fd.get("node_path", ""),
-            }
-        except Exception:
+    for subdir in (ctx.page_dir, ctx.entity_dir, ctx.list_dir, ctx.report_dir):
+        if not subdir.is_dir():
             continue
-
-    def lookup_node(file_path: str) -> dict | None:
-        return uid_cache.get(file_path)
+        for p in subdir.glob("*.md"):
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+                fd, _ = fm.parse(text)
+                uid_cache[str(p)] = {
+                    "uid": fd.get("uid"),
+                    "title": fd.get("title"),
+                    "layer": fd.get("layer", "Page"),
+                    "active": fd.get("active", True),
+                    "node_path": fd.get("node_path", ""),
+                }
+            except Exception:
+                continue
 
     scored_blocks = []
     for file_path, kw_hits in by_file.items():
-        node = lookup_node(file_path)
+        node = uid_cache.get(file_path)
         if not node:
             continue
         if not node["active"] and not args.include_inactive:
-            continue  # BAN-QRY-4
+            continue
         try:
             text = Path(file_path).read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -98,104 +95,95 @@ def cmd_query(args) -> dict:
 
         slices = []
         for kw, h in kw_hits:
-            # locate the hit char offset within full text via line+col
             char_pos = _line_col_to_offset(text, h["line"], h["col"])
             if char_pos is None:
                 continue
             if char_pos < offset:
-                continue  # ignore frontmatter hits; only body counts (PRIN-QRY-7)
+                continue
             s, e, snippet = make_slice(text, char_pos, char_pos + len(h["match"]), soft, hard)
             slices.append({"start": s, "end": e, "text": snippet,
                            "hits": {kw}, "line": h["line"]})
 
         merged = merge_slices(slices, radius, text)
         for blk in merged:
-            score = _score_block(blk, core, expansion, core_w, exp_w, density, idf_weight, text)
+            score = _score_block(blk, keywords, core_w, density, idf_weight, text)
             scored_blocks.append({
-                "uid": node["uid"], "title": node["title"], "layer": node["layer"],
-                "node_path": node["node_path"], "file": file_path,
-                "line": blk["line"], "snippet": blk["text"].strip(),
-                "matched": sorted(blk["hits"]), "score": round(score, 2),
+                "uid": node["uid"],
+                "title": node["title"],
+                "layer": node["layer"],
+                "node_path": node["node_path"],
+                "file": file_path,
+                "line": blk["line"],
+                "text": blk["text"].strip(),
+                "matched": sorted(blk["hits"]),
+                "score": round(score, 2),
             })
 
     scored_blocks.sort(key=lambda b: b["score"], reverse=True)
-    top = scored_blocks[:top_k]
+    top = scored_blocks[:top_blocks]
 
-    # Fast Pass (PRIN-QRY-12, CONST-QRY-6)
-    fast_pass = False
-    body_map = {}
-    if top:
-        scores = [b["score"] for b in top]
-        if len(top) <= fp_low:
-            fast_pass = True
-        else:
-            mean = sum(scores) / len(scores)
-            if scores[0] > mean * fp_k:
-                fast_pass = True
-        if fast_pass:
-            seen = []
-            for b in top:
-                if b["uid"] in seen:
+    return success(
+        {
+            "blocks": top,
+            "total_hits": len(scored_blocks),
+            "block_count": len(top),
+        },
+        f"{len(scored_blocks)} block(s); returning top {len(top)}",
+    )
+
+
+def cmd_expand(args) -> dict:
+    """Fetch body + relations for specific UIDs. Used by Path B.
+
+    LLM picks UIDs → CLI returns full body text (no summary) + relations list.
+    """
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    uids = _split_kw(args.uids)
+    if not uids:
+        return error("provide --uids", "NoUIDs")
+
+    nodes_root = ctx.nodes_dir
+    result: dict = {}
+
+    for uid in uids:
+        for p in nodes_root.rglob("*.md"):
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+                fd, body = fm.parse(text)
+                if fd.get("uid") != uid:
                     continue
-                seen.append(b["uid"])
-                body_map[b["uid"]] = _read_body(ctx, b["file"])
-                if len(seen) >= 3:
-                    break
-
-    # L2/L3 hints (PRIN-QRY-1) + neighbors (M3)
-    hit_uids = [b["uid"] for b in top]
-    list_hint, report_hint = _build_hints(ctx, hit_uids)
-
-    neighbor_preview = None
-    if args.neighbors and hit_uids:
-        neighbor_preview = {}
-        for uid in hit_uids[:5]:
-            fm_node, _ = find_node_md(ctx, uid)
-            if not fm_node:
+                rels = list_relations(fd, uid)
+                for r in rels:
+                    touch_relation(fd, uid, r["to_uid"])
+                _write_node_fm(ctx, uid, fd)
+                result[uid] = {
+                    "uid": uid,
+                    "title": fd.get("title", ""),
+                    "layer": fd.get("layer", "Page"),
+                    "body": body,
+                    "relations": rels,
+                }
+                break
+            except Exception:
                 continue
-            rels = list_relations(fm_node, uid)
-            neighbor_preview[uid] = rels
-            for r in rels:
-                touch_relation(fm_node, uid, r["to_uid"])
-            _write_node_fm(ctx, uid, fm_node)
+        if uid not in result:
+            result[uid] = {"uid": uid, "error": "not found"}
 
-    data = {
-        "related_nodes": top,
-        "fast_pass": fast_pass,
-        "total_hits": len(scored_blocks),
-    }
-    if body_map:
-        data["body_map"] = body_map
-    if list_hint:
-        data["list_hint"] = list_hint
-    if report_hint:
-        data["report_hint"] = report_hint
-    if neighbor_preview is not None:
-        data["neighbor_preview"] = neighbor_preview
-
-    hints = []
-    if top:
-        hints.append("read --uid <uid> to fetch full body")
-        if list_hint:
-            hints.append("list show <uid> for L2 comparison")
-        if report_hint:
-            hints.append("report show <uid> for L3 conclusion + evidence")
-        hints.append("run post-query reflection (PRIN-CR-1): query for similar Report first, extend existing if found; otherwise LLM decides autonomously (no user approval needed)")
-        hints.append("post-query reflection (PRIN-CR-1): query for similar List only if hits share a comparable dimension and no similar exists (secondary, opportunistic)")
-    if not top:
-        hints.append("no hits; try different keywords or check ingest")
-
-    status = success if top else warning
-    return status(data, f"{len(scored_blocks)} block(s) across {len(by_file)} file(s); "
-                        f"fast_pass={fast_pass}", hints=hints)
+    found = {u: v for u, v in result.items() if "error" not in v}
+    return success(
+        {"nodes": result, "found": len(found), "requested": len(uids)},
+        f"expanded {len(found)}/{len(uids)} UID(s)",
+    )
 
 
-def _score_block(blk, core, expansion, core_w, exp_w, density, idf_weight, text) -> float:
+def _score_block(blk, keywords, core_w, density, idf_weight, text) -> float:
     """score = (coverage + rarity) × density_bonus (PRIN-QRY-10)."""
     snippet = blk["text"]
-    core_hits = sum(snippet.lower().count(k.lower()) for k in core)
-    exp_hits = sum(snippet.lower().count(k.lower()) for k in expansion)
-    coverage = core_w * core_hits + exp_w * exp_hits
+    hits = sum(snippet.lower().count(k.lower()) for k in keywords)
+    coverage = core_w * hits
     rarity = sum(idf_weight.get(k, 0.0) for k in blk["hits"])
     distinct = len(blk["hits"])
     bonus = density if distinct > 1 else 1.0
@@ -213,15 +201,6 @@ def _line_col_to_offset(text: str, line: int, col: int) -> int | None:
     return None
 
 
-def _read_body(ctx, file_path: str) -> str:
-    try:
-        text = Path(file_path).read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-    _, body = fm.parse(text)
-    return body
-
-
 def _write_node_fm(ctx, uid: str, fm_node: dict) -> None:
     """Find node .md by uid and rewrite its frontmatter, preserving body."""
     nodes_root = ctx.nodes_dir
@@ -236,47 +215,6 @@ def _write_node_fm(ctx, uid: str, fm_node: dict) -> None:
                 return
         except Exception:
             continue
-
-
-def _build_hints(ctx, hit_uids: list[str]) -> tuple[list, str | None]:
-    """Find L2 Lists referencing hit pages, and L3 Reports citing them — via filesystem scan."""
-    if not hit_uids:
-        return [], None
-    hit_set = set(hit_uids)
-    list_hint = []
-    report_ids = []
-
-    list_dir = ctx.list_dir
-    if list_dir.is_dir():
-        for p in list_dir.glob("*.md"):
-            try:
-                fm_dict, body = fm.parse(p.read_text(encoding="utf-8", errors="replace"))
-                members = []
-                if body.strip():
-                    try:
-                        members = yaml.safe_load(body) or []
-                    except yaml.YAMLError:
-                        members = []
-                if any(isinstance(m, dict) and m.get("uid") in hit_set for m in members):
-                    list_hint.append(fm_dict.get("uid", p.stem))
-            except Exception:
-                continue
-
-    report_dir = ctx.report_dir
-    if report_dir.is_dir():
-        for p in report_dir.glob("*.md"):
-            try:
-                fm_dict, _ = fm.parse(p.read_text(encoding="utf-8", errors="replace"))
-                refs = fm_dict.get("references", [])
-                if any(r.get("uid") in hit_set for r in refs):
-                    report_ids.append(fm_dict.get("uid", p.stem))
-            except Exception:
-                continue
-
-    report_hint = None
-    if report_ids:
-        report_hint = f"{len(report_ids)} report(s) cite these pages: {', '.join(report_ids)}"
-    return list_hint, report_hint
 
 
 def cmd_read(args) -> dict:

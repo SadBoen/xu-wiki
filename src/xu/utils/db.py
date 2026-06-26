@@ -1,6 +1,6 @@
 """SQLite schema + access layer (PRIN-ARCH-16, CONST-ARCH-7).
 
-Schema reserves positions for all three layers (L1/L2/L3) plus the two
+Schema reserves positions for Page/Entity/List/Report layers plus the two
 derived tables (patches / idf) and the relation LRU linked list.
 WAL mode + foreign keys + busy timeout are mandatory (CONST-ARCH-7).
 """
@@ -12,12 +12,12 @@ from pathlib import Path
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
     uid           TEXT PRIMARY KEY,
-    layer         TEXT NOT NULL CHECK (layer IN ('Page','List','Report')),
+    layer         TEXT NOT NULL CHECK (layer IN ('Page','List','Report','Entity')),
     content_type  TEXT NOT NULL,
     title         TEXT NOT NULL,
     node_path     TEXT NOT NULL DEFAULT '',
     slug          TEXT,
-    rel_md_path   TEXT,                 -- relative path to .md (NULL only for legacy DB-only L2/L3 rows)
+    rel_md_path   TEXT,                 -- relative path to .md (NULL only for legacy DB-only rows)
     raw_path      TEXT,                 -- relative path under raws/
     content_hash  TEXT,                 -- body SHA256 (Level 1 dedup)
     source_hash   TEXT,                 -- source file SHA256 (Level 2 dedup)
@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_content_hash ON nodes(content_hash);
 CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash);
 CREATE INDEX IF NOT EXISTS idx_nodes_node_path ON nodes(node_path);
 
--- L1 revision table (PRIN-ARCH-3, CONST-ING-7)
+-- Page revision table (PRIN-ARCH-3, CONST-ING-7)
 CREATE TABLE IF NOT EXISTS patches (
     page_uid    TEXT NOT NULL,
     version     INTEGER NOT NULL,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS relations (
 CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_uid, position);
 CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_uid);
 
--- L3 evidence chain (BAN-ARCH-5, CONST-DOC-3)
+-- Report evidence chain (BAN-ARCH-5, CONST-DOC-3)
 CREATE TABLE IF NOT EXISTS evidence (
     report_uid  TEXT NOT NULL,
     ref_uid     TEXT NOT NULL,
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS evidence (
 CREATE INDEX IF NOT EXISTS idx_evidence_report ON evidence(report_uid);
 CREATE INDEX IF NOT EXISTS idx_evidence_ref ON evidence(ref_uid);
 
--- L2 list membership (PRIN-ARCH-4)
+-- List membership (PRIN-ARCH-4)
 CREATE TABLE IF NOT EXISTS list_members (
     list_uid    TEXT NOT NULL,
     member_uid  TEXT NOT NULL,

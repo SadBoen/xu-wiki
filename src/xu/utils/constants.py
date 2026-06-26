@@ -9,7 +9,7 @@ WIKI_FORMAT_VERSION = "1.0.0"
 # Frontmatter field names (CONST-ARCH-2). Implementation-chosen names.
 FM_UID = "uid"
 FM_TITLE = "title"
-FM_LAYER = "layer"          # ∈ {Page, List, Report}
+FM_LAYER = "layer"          # ∈ {Page, List, Report, Entity}
 FM_CONTENT_TYPE = "content_type"  # ∈ {article, table, gallery, ...}
 FM_ACTIVE = "active"        # bool (not 0/1)
 FM_CREATED = "created_at"
@@ -28,7 +28,7 @@ REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_CONTENT_TYPE, FM_ACTIVE, FM
 
 CONTENT_TYPES = {"article", "table", "gallery"}
 
-LAYERS = {"Page", "List", "Report"}
+LAYERS = {"Page", "List", "Report", "Entity"}
 
 # Extension → content_type routing (PRIN-ING-13).
 # LLM uses this to auto-fill --content-type; CLI validates against CONTENT_TYPES.
@@ -59,6 +59,10 @@ MERGE_RADIUS = 80
 FAST_PASS_K = 3.0
 FAST_PASS_LOW_HIT = 3
 TOP_K = 10                    # CONST-QRY-7
+
+# Multi-round query (PRIN-QRY-14, CONST-QRY-12)
+QUERY_BLOCKS = 50             # top N blocks returned per round
+QUERY_BATCH = 30             # top N UIDs after LLM filtering
 
 # Relations (PRIN-ARCH-7)
 MAX_EDGES = 50
@@ -102,7 +106,10 @@ def default_wiki_config(name: str) -> dict:
                 "low_hit": FAST_PASS_LOW_HIT,
             },
             "top_k": TOP_K,
+            "blocks": QUERY_BLOCKS,
+            "uid_batch": QUERY_BATCH,
             "timeout_seconds": QUERY_TIMEOUT_SECONDS,
+            "max_rounds": 5,
         },
         "relation": {
             "max_edges": MAX_EDGES,
