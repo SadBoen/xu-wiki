@@ -8,6 +8,7 @@ use serde_json::Value;
 
 static NAME_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9_-]{1,64}$").unwrap());
 
+#[derive(Clone)]
 pub struct RegistryEntry {
     pub path: String,
     pub alias: Option<String>,
@@ -202,7 +203,7 @@ pub fn cmd_alias_set(wiki_ref: &str, new_alias: &str) -> Value {
     }
     let _ = save_registry(&reg);
 
-    response::success(
+    response::success_with_hints(
         response::json!({"name": name, "alias": new_alias, "previous_alias": previous}),
         &format!("set alias of {name:?} to {new_alias:?}"),
         &[format!("now reachable as `xu --wiki {new_alias} ...`")],
@@ -307,7 +308,7 @@ pub fn cmd_register(name: &str, path: &str, alias: Option<&str>) -> Value {
 
     let entry = RegistryEntry {
         path: path.to_string(),
-        alias: bound_alias,
+        alias: bound_alias.clone(),
         created_at,
     };
     reg.wikis.insert(name.to_string(), entry);
@@ -324,9 +325,9 @@ pub fn cmd_register(name: &str, path: &str, alias: Option<&str>) -> Value {
     });
 
     if let Some(msg) = alias_msg {
-        response::warning(data, &format!("registered {name:?} at {path}; {msg}"), &["resolve the conflict and re-run to bind the alias".into()])
+        response::warning(data, &format!("registered {name:?} at {path}; {msg}"))
     } else {
-        response::success(data, &format!("registered {name:?} at {path} (no files written)"), &["wiki files were not touched; only the global registry was updated".into()])
+        response::success(data, &format!("registered {name:?} at {path} (no files written)"))
     }
 }
 
@@ -342,7 +343,7 @@ pub fn cmd_unregister(name_or_alias: &str) -> Value {
     let removed_path = reg.wikis.remove(&name).map(|e| e.path).unwrap_or_default();
     let _ = save_registry(&reg);
 
-    response::success(
+    response::success_with_hints(
         response::json!({"name": name, "removed_path": removed_path}),
         &format!("unregistered {name:?}; wiki files at {removed_path:?} were NOT touched"),
         &[
@@ -414,7 +415,7 @@ pub fn cmd_config_set_mineru_key() -> Value {
         return response::error(&format!("failed to save: {e}"), "SaveError", None, &[]);
     }
 
-    response::success(
+    response::success_with_hints(
         response::json!({"masked": mask_key(&key), "scope": "global"}),
         "MinerU API key saved to global config",
         &["test with: xu config show".into(), "rotation: re-run with new MINERU_API_KEY env value".into()],

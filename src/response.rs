@@ -1,6 +1,7 @@
 //! 4-key JSON response protocol (CONST-ARCH-1).
 
-use serde_json::{json, Value};
+use serde_json::Value;
+pub use serde_json::json;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {

@@ -110,7 +110,7 @@ fn resolve_target(path: &str) -> Result<PathBuf, String> {
     } else {
         raw
     };
-    expanded.canonicalize().or_else(|_| Ok(expanded.clone())).map_err(|e| e.to_string())
+    expanded.canonicalize().or_else(|_| Ok(expanded.clone())).map_err(|e: std::io::Error| e.to_string())
 }
 
 fn is_wiki_root(path: &Path) -> bool {
@@ -120,34 +120,36 @@ fn is_wiki_root(path: &Path) -> bool {
 
 fn register_wiki(name: &str, path: &str, alias: Option<&str>) -> Result<Option<String>, String> {
     let mut reg = load_registry();
-    let wikis = reg.wikis.entry(name.to_string()).or_insert_with(|| RegistryEntry {
-        path: String::new(),
-        alias: None,
-        created_at: 0,
-    });
-
-    let existing_path = PathBuf::from(&wikis.path);
     let target_resolved = PathBuf::from(path).canonicalize().unwrap_or_else(|_| PathBuf::from(path));
 
-    if !wikis.path.is_empty() && existing_path != target_resolved {
-        return Err(format!("wiki name '{}' already registered at a different path: {}", name, wikis.path));
+    let existing_path = reg.wikis.get(name).map(|e| PathBuf::from(&e.path));
+    if let Some(ref ep) = existing_path {
+        if ep != &target_resolved {
+            return Err(format!("wiki name '{}' already registered at a different path: {}", name, ep.display()));
+        }
     }
 
     let mut alias_warning = None;
     if let Some(a) = alias {
         for (n, e) in reg.wikis.iter() {
-            if n == a || e.alias.as_deref() == Some(a) {
+            if n == name || e.alias.as_deref() == Some(a) {
                 alias_warning = Some(format!("alias '{}' conflicts; wiki created without alias", a));
                 break;
             }
         }
-        if alias_warning.is_none() {
-            wikis.alias = Some(a.to_string());
-        }
     }
 
-    wikis.path = path.to_string();
-    wikis.created_at = now_ts();
+    let entry = reg.wikis.entry(name.to_string()).or_insert_with(|| RegistryEntry {
+        path: path.to_string(),
+        alias: if alias_warning.is_some() { None } else { alias.map(|s| s.to_string()) },
+        created_at: now_ts(),
+    });
+
+    if existing_path.is_none() {
+        entry.path = path.to_string();
+        entry.created_at = now_ts();
+    }
+
     save_registry(&reg)?;
 
     Ok(alias_warning)
@@ -176,12 +178,10 @@ pub fn cmd_create(name: &str, path: &str, alias: Option<&str>) -> Value {
         if is_wiki_root(&target_resolved) {
             match register_wiki(name, &target_resolved.to_string_lossy(), alias) {
                 Ok(alias_warning) => {
-                    let mut hints = vec!["use as-is, or rm -rf and re-create to start fresh".into()];
                     if let Some(w) = alias_warning {
                         return response::warning(
                             response::json!({"name": name, "path": target_resolved.to_string_lossy()}),
                             &w,
-                            &["alias not bound; pick another".into()],
                         );
                     }
                     return response::success(
@@ -197,14 +197,13 @@ pub fn cmd_create(name: &str, path: &str, alias: Option<&str>) -> Value {
         }
     }
 
-    let parent = target.parent();
+    let parent = target.parent().unwrap_or(&target);
     if let Err(e) = fs::create_dir_all(parent) {
         return response::error(&format!("cannot create parent dir: {e}"), "PathError", None, &[]);
     }
 
-    let tmp_parent = parent;
-    let tmp_name = format!(".xu-create-{}-{}", pid(), uuid_v4());
-    let tmp = tmp_parent.join(tmp_name);
+    let tmp_name = format!(".xu-create-{}-{}", pid(), nanos_id());
+    let tmp = parent.join(tmp_name);
 
     if let Err(e) = fs::create_dir_all(&tmp) {
         return response::error(&format!("cannot create temp dir: {e}"), "TempDirError", None, &[]);
@@ -227,17 +226,14 @@ pub fn cmd_create(name: &str, path: &str, alias: Option<&str>) -> Value {
                     return response::warning(
                         response::json!({"name": name, "path": target_str, "version": "1.0.0", "layout": ["raws/", ".xu/"], "tables": ["node_page", "node_derived", "patches", "relations"]}),
                         &format!("created wiki but registry failed: {e}"),
-                        &["wiki created but not registered; run: xu register".into()],
                     );
                 }
             };
 
-            let mut hints = vec!["next: xu ingest-commit to add Node_Page (L1)".into()];
             if let Some(w) = alias_warning {
                 return response::warning(
                     response::json!({"name": name, "path": target_str, "version": "1.0.0", "layout": ["raws/", ".xu/"], "tables": ["node_page", "node_derived", "patches", "relations"]}),
                     &w,
-                    &["alias not bound; pick another".into()],
                 );
             }
             response::success(

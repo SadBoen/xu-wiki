@@ -40,25 +40,27 @@ impl Db {
 
     /// Execute with String params. Returns Err on SQL failure.
     pub fn exec(&self, sql: &str, params: Vec<String>) -> Result<(), String> {
-        Python::with_gil(|py| {
+        Python::with_gil(|py| -> Result<(), String> {
             let conn = self.py_conn.bind(py).clone();
             let py_params = PyTuple::new_bound(py, &params);
             conn.call_method1("execute", (sql, &py_params))
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            Ok(())
         })
     }
 
     /// Query returning Vec<HashMap<String,String>>.
     /// Handles INTEGER/REAL/TEXT/NULL via Python str() fallback.
     pub fn query_map(&self, sql: &str, params: Vec<String>) -> Result<Vec<HashMap<String, String>>, String> {
-        Python::with_gil(|py| {
+        Python::with_gil(|py| -> Result<Vec<HashMap<String, String>>, String> {
             let conn = self.py_conn.bind(py).clone();
             let py_params = PyTuple::new_bound(py, &params);
             let cursor = conn.call_method1("execute", (sql, &py_params))
                 .map_err(|e| e.to_string())?;
             let mut rows = vec![];
-            for row in cursor.iter() {
-                if let Ok(r) = row {
+            let iter = cursor.iter().map_err(|e| e.to_string())?;
+            for item in iter {
+                if let Ok(r) = item {
                     let keys: Vec<String> = r.getattr("keys")
                         .and_then(|k| k.call0())
                         .and_then(|k| k.extract())
@@ -80,9 +82,10 @@ impl Db {
     }
 
     pub fn commit(&self) -> Result<(), String> {
-        Python::with_gil(|py| {
+        Python::with_gil(|py| -> Result<(), String> {
             let conn = self.py_conn.bind(py).clone();
-            conn.call_method0("commit").map_err(|e| e.to_string())
+            conn.call_method0("commit").map_err(|e| e.to_string())?;
+            Ok(())
         })
     }
 }

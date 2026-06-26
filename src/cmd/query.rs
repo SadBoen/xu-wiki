@@ -96,10 +96,10 @@ pub fn cmd_query(wiki_path: &str, core: &str, expansion: &str, top_k: usize) -> 
         if score == 0 { continue; }
 
         let snippet = {
-            let all_keywords: Vec<&str> = ck.iter().chain(ek.iter()).collect();
+            let all_keywords: Vec<&String> = ck.iter().chain(ek.iter()).collect();
             let mut best_pos: Option<usize> = None;
             for kw in &all_keywords {
-                if let Some(pos) = search_text.find(kw) {
+                if let Some(pos) = search_text.find(*kw) {
                     if best_pos.map(|p| pos < p).unwrap_or(true) {
                         best_pos = Some(pos);
                     }
@@ -294,11 +294,11 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Result<Value, String> {
     ).unwrap_or_default();
     let mut list_referrers: Vec<Value> = vec![];
     for r in &list_refs {
-        let body = r.get("body").unwrap_or(&String::new());
-        if list_body_contains_uid(body, uid) {
+        let body = r.get("body").cloned().unwrap_or_default();
+        if list_body_contains_uid(&body, uid) {
             list_referrers.push(json!({
-                "uid": r.get("uid").unwrap_or(&String::new()),
-                "title": r.get("title").unwrap_or(&String::new()),
+                "uid": r.get("uid").cloned().unwrap_or_default(),
+                "title": r.get("title").cloned().unwrap_or_default(),
                 "layer": "List",
             }));
         }
@@ -329,14 +329,14 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Result<Value, String> {
     ).unwrap_or_default();
     let mut rel_referrers: Vec<Value> = vec![];
     for r in &incoming_rels {
-        let from_uid = r.get("from_uid").unwrap_or(&String::new());
-        let (title, layer) = if let Ok(page_rows) = db.query_map("SELECT title,'Page' as layer FROM node_page WHERE uid=?", vec![from_uid.into()]) {
+        let from_uid = r.get("from_uid").cloned().unwrap_or_default();
+        let (title, layer) = if let Ok(page_rows) = db.query_map("SELECT title,'Page' as layer FROM node_page WHERE uid=?", vec![from_uid.clone()]) {
             if !page_rows.is_empty() {
-                (page_rows[0].get("title").unwrap_or(&String::new()).clone(), "Page".to_string())
+                (page_rows[0].get("title").cloned().unwrap_or_default(), "Page".to_string())
             } else {
-                let derived_rows = db.query_map("SELECT title,layer FROM node_derived WHERE uid=?", vec![from_uid.into()]).unwrap_or_default();
+                let derived_rows = db.query_map("SELECT title,layer FROM node_derived WHERE uid=?", vec![from_uid.clone()]).unwrap_or_default();
                 if !derived_rows.is_empty() {
-                    (derived_rows[0].get("title").unwrap_or(&String::new()).clone(), derived_rows[0].get("layer").unwrap_or(&String::new()).clone())
+                    (derived_rows[0].get("title").cloned().unwrap_or_default(), derived_rows[0].get("layer").cloned().unwrap_or_default())
                 } else {
                     ("(unknown)".to_string(), "?".to_string())
                 }
@@ -348,7 +348,7 @@ pub fn cmd_delete_node(wiki_path: &str, uid: &str) -> Result<Value, String> {
             "from_uid": from_uid,
             "title": title,
             "layer": layer,
-            "relation_name": r.get("relation_name").unwrap_or(&String::new()),
+            "relation_name": r.get("relation_name").cloned().unwrap_or_default(),
         }));
     }
 
@@ -720,11 +720,11 @@ pub fn cmd_query_relation(wiki_path: &str, from_uid: &str) -> Value {
 
     let mut rels: Vec<Value> = vec![];
     for r in &rows {
-        let to_uid = r.get("to_uid").unwrap_or(&String::new());
+        let to_uid = r.get("to_uid").cloned().unwrap_or_default();
 
         let to_info = if let Ok(page_rows) = db.query_map("SELECT title,'Page' as layer FROM node_page WHERE uid=?", vec![to_uid.clone()]) {
             if !page_rows.is_empty() {
-                Some((page_rows[0].get("title").unwrap_or(&String::new()).clone(), "Page".to_string()))
+                Some((page_rows[0].get("title").cloned().unwrap_or_default(), "Page".to_string()))
             } else {
                 None
             }
@@ -734,7 +734,7 @@ pub fn cmd_query_relation(wiki_path: &str, from_uid: &str) -> Value {
             (t, l)
         } else if let Ok(derived_rows) = db.query_map("SELECT title,layer FROM node_derived WHERE uid=?", vec![to_uid.clone()]) {
             if !derived_rows.is_empty() {
-                (derived_rows[0].get("title").unwrap_or(&String::new()).clone(), derived_rows[0].get("layer").unwrap_or(&String::new()).clone())
+                (derived_rows[0].get("title").cloned().unwrap_or_default(), derived_rows[0].get("layer").cloned().unwrap_or_default())
             } else {
                 ("(missing)".to_string(), "?".to_string())
             }
@@ -746,10 +746,10 @@ pub fn cmd_query_relation(wiki_path: &str, from_uid: &str) -> Value {
             "to_uid": to_uid,
             "to_title": to_title,
             "to_layer": to_layer,
-            "relation_name": r.get("relation_name").unwrap_or(&String::new()),
-            "comment": r.get("comment").unwrap_or(&String::new()),
-            "position": r.get("position").unwrap_or(&String::new()),
-            "created_at": r.get("created_at").unwrap_or(&String::new()),
+            "relation_name": r.get("relation_name").cloned().unwrap_or_default(),
+            "comment": r.get("comment").cloned().unwrap_or_default(),
+            "position": r.get("position").cloned().unwrap_or_default(),
+            "created_at": r.get("created_at").cloned().unwrap_or_default(),
         }));
     }
 
@@ -846,7 +846,6 @@ pub fn cmd_report_show(wiki_path: &str, uid: &str) -> Value {
         response::warning(
             data,
             &format!("Report shown; {} dangling evidence ref(s)", dangling.len()),
-            &[format!("dangling: {:?}", dangling)],
         )
     }
 }
