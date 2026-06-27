@@ -260,94 +260,54 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+_DISPATCH_TABLE: dict[str, tuple[str, str]] = {
+    "skills_path": ("commands.skills", "cmd_skills"),
+    "skills_list": ("commands.skills", "cmd_skills"),
+    "skills_default": ("commands.skills", "cmd_skills"),
+    "create": ("commands.create", "cmd_create"),
+    "wikis": ("_inline", "wikis"),
+    "ingest_file": ("commands.ingest", "cmd_ingest_file"),
+    "ingest_commit": ("commands.ingest", "cmd_ingest_commit"),
+    "ingest_verify": ("commands.ingest", "cmd_ingest_verify"),
+    "query": ("commands.query", "cmd_query"),
+    "expand": ("commands.query", "cmd_expand"),
+    "read": ("commands.query", "cmd_read"),
+    "nodes": ("commands.query", "cmd_nodes"),
+    "query_relation": ("commands.relations", "cmd_query_relation"),
+    "list_cmd": ("commands.layers", "cmd_list"),
+    "report_cmd": ("commands.layers", "cmd_report"),
+    "doctor": ("commands.doctor", "cmd_doctor"),
+    "delete_node": ("commands.doctor", "cmd_delete_node"),
+    "rebuild": ("commands.doctor", "cmd_rebuild"),
+    "reorganize": ("commands.reorganize", "cmd_reorganize"),
+    "alias_set": ("commands.config", "cmd_alias_set"),
+    "alias_unset": ("commands.config", "cmd_alias_unset"),
+    "alias_show": ("commands.config", "cmd_alias_show"),
+    "register": ("commands.config", "cmd_register"),
+    "unregister": ("commands.config", "cmd_unregister"),
+    "config_set_mineru_key": ("commands.config", "cmd_config_set_mineru_key"),
+    "config_show": ("commands.config", "cmd_config_show"),
+    "config_path": ("commands.config", "cmd_config_path"),
+    "uninstall": ("commands.uninstall", "cmd_uninstall"),
+    "selfcheck": ("commands.selfcheck", "cmd_selfcheck"),
+    "deploy_skill": ("commands.deploy_skill", "cmd_deploy_skill"),
+}
+
+
 def _dispatch(args) -> dict:
+    import importlib
     func = args.func
-    if func in ("skills_path", "skills_list", "skills_default"):
-        from .commands.skills import cmd_skills
-        return cmd_skills(args)
-    if func == "create":
-        from .commands.create import cmd_create
-        return cmd_create(args)
-    if func == "wikis":
-        from .utils.config import load_registry
-        from .utils.response import success
-        return success(load_registry().get("wikis", {}), "registered wikis")
-    if func == "ingest_file":
-        from .commands.ingest import cmd_ingest_file
-        return cmd_ingest_file(args)
-    if func == "ingest_commit":
-        from .commands.ingest import cmd_ingest_commit
-        return cmd_ingest_commit(args)
-    if func == "ingest_verify":
-        from .commands.ingest import cmd_ingest_verify
-        return cmd_ingest_verify(args)
-    if func == "query":
-        from .commands.query import cmd_query
-        return cmd_query(args)
-    if func == "expand":
-        from .commands.query import cmd_expand
-        return cmd_expand(args)
-    if func == "read":
-        from .commands.query import cmd_read
-        return cmd_read(args)
-    if func == "nodes":
-        from .commands.query import cmd_nodes
-        return cmd_nodes(args)
-    if func == "query_relation":
-        from .commands.relations import cmd_query_relation
-        return cmd_query_relation(args)
-    if func == "list_cmd":
-        from .commands.layers import cmd_list
-        return cmd_list(args)
-    if func == "report_cmd":
-        from .commands.layers import cmd_report
-        return cmd_report(args)
-    if func == "doctor":
-        from .commands.doctor import cmd_doctor
-        return cmd_doctor(args)
-    if func == "delete_node":
-        from .commands.doctor import cmd_delete_node
-        return cmd_delete_node(args)
-    if func == "rebuild":
-        from .commands.doctor import cmd_rebuild
-        return cmd_rebuild(args)
-    if func == "reorganize":
-        from .commands.reorganize import cmd_reorganize
-        return cmd_reorganize(args)
-    if func == "alias_set":
-        from .commands.config import cmd_alias_set
-        return cmd_alias_set(args)
-    if func == "alias_unset":
-        from .commands.config import cmd_alias_unset
-        return cmd_alias_unset(args)
-    if func == "alias_show":
-        from .commands.config import cmd_alias_show
-        return cmd_alias_show(args)
-    if func == "register":
-        from .commands.config import cmd_register
-        return cmd_register(args)
-    if func == "unregister":
-        from .commands.config import cmd_unregister
-        return cmd_unregister(args)
-    if func == "config_set_mineru_key":
-        from .commands.config import cmd_config_set_mineru_key
-        return cmd_config_set_mineru_key(args)
-    if func == "config_show":
-        from .commands.config import cmd_config_show
-        return cmd_config_show(args)
-    if func == "config_path":
-        from .commands.config import cmd_config_path
-        return cmd_config_path(args)
-    if func == "uninstall":
-        from .commands.uninstall import cmd_uninstall
-        return cmd_uninstall(args)
-    if func == "selfcheck":
-        from .commands.selfcheck import cmd_selfcheck
-        return cmd_selfcheck(args)
-    if func == "deploy_skill":
-        from .commands.deploy_skill import cmd_deploy_skill
-        return cmd_deploy_skill(args)
-    return error(f"unknown command function: {func}", "UnknownCommand")
+    entry = _DISPATCH_TABLE.get(func)
+    if entry is None:
+        return error(f"unknown command function: {func}", "UnknownCommand")
+    module_path, func_name = entry
+    if module_path == "_inline":
+        if func == "wikis":
+            from .utils.config import load_registry
+            from .utils.response import success
+            return success(load_registry().get("wikis", {}), "registered wikis")
+    mod = importlib.import_module(f"xu.{module_path}")
+    return getattr(mod, func_name)(args)
 
 
 def main(argv: list[str] | None = None) -> int:

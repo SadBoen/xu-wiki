@@ -1,291 +1,97 @@
 # ingest — add content to a wiki
 
-`/xu-wiki ingest` adds content to a wiki as **Page** (immutable). It
-is the most complex SOP because Page body style **must match the content
-type**. The `content_type` frontmatter key stores the body form
-(`article` for prose, `table` for tabular, `gallery` for album).
+Page is immutable. Body form must match content type.
 
-This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
-(Page immutability, 4-key JSON, missing-args, paths-must-be-absolute) live in
-`SKILL.md`; the body-form decision tree lives here because it only applies
-to ingest.
+## Content routing (before Phase 1)
 
-## Hard rule for this SOP
-
-> **Route by content form first; Phase 1↔2↔3 intermediate values are LLM-generated.**
->
-> Content form routing (before Phase 1 — only this step requires a user question):
->
-> | User says | Route to | Agent action |
-> |---|---|---|
-> | PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` → `ingest-verify` | Auto-fill `--content-type` from `CONTENT_TYPE_MAP` (`.xlsx/.csv`→`table`, images→`gallery`, rest→`article`); do not ask |
-> | N images, one theme | `ingest-album` | Ask "vision per-photo? (yes/no)" before calling |
-> | code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article`; do not ask |
->
-> After `ingest-file` succeeds, the Agent reads the temp file and synthesizes ALL
-> intermediate values **without asking the user**: title, node_path, relations,
-> content_type — these are LLM-generated decisions. The user never
-> sees or approves these values.
->
-> **content_type body validation**: the CLI validates body format
-> before write — `article` accepts free text; `table` requires YAML list of dicts;
-> `gallery` requires YAML list of dicts each with a `filename` field. Mismatch
-> returns `BodyFormatMismatch` error and blocks commit.
->
-> **Never split a single album into N parallel `ingest-file` + `ingest-commit`
-> cycles** — that breaks the body-form rule and leaves N disjoint Page nodes
-> with no album structure.
+| User says | Route to | Agent action |
+|---|---|---|
+| PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` → `ingest-verify` | Auto-fill `--content-type` from map |
+| N images, one theme | `ingest-album` | Ask "vision per-photo?" first |
+| code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article` |
 
 ## CLI palette
 
 ```bash
-# Three-phase prose flow
-xu ingest-file   --wiki <w> --file <abs>   # Phase 1: dedup check → parse → temp file
+# Phase 1: dedup → parse → temp file
+xu ingest-file --wiki <w> --file <abs>
+
+# Phase 2: temp → Page
 xu ingest-commit --wiki <w> --temp <f> --title <t> \
-                      [--content-type article|table|gallery] \
-                      [--node-path <p>] \
-                      [--native '<md>'] --source <abs-path> [--author <a>]
-                      # NOTE: --source is required when using --native
+  [--content-type article|table|gallery] [--node-path <p>] \
+  --source <abs-path> [--author <a>]
+# NOTE: --source required even with --native (dedup via source_hash)
 
-# Album single-shot flow
-xu ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
-                      [--node-path <p>] [--layout table|list] [--vision] \
-                      [--captions '<json>'] [--author <a>]
+# Album single-shot
+xu ingest-album --wiki <w> --title <t> --files <abs1,abs2,...> \
+  [--node-path <p>] [--layout table|list] [--vision] \
+  [--captions '<json>'] [--author <a>]
 
-# Phase 3 — after commit, LLM queries wiki then wires relations
-xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
-                            --relation-name <r> [--comment <c>]
-# Reflection: append to existing List/Report if overlap found
-xu list create --wiki <w> --title <t> --members <uid,uid,...> \
-                    [--dimension <d>] [--node-path <p>]
-xu report create --wiki <w> --title <t> --body <md> \
-                      --references <uid,uid,...> [--node-path <p>]
+# Phase 3
+xu ingest-verify --wiki <w> --uid <uid>
+xu query-relation add --wiki <w> --from-uid <uid> --to-uid <uid> \
+  --relation-name <r> [--comment <c>]
+xu list create --wiki <w> --title <t> --members <uid,uid,...> [--dimension <d>] [--node-path <p>]
+xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [--node-path <p>]
 ```
 
-| Flag (album) | Required | Purpose |
-|---|---|---|
-| `--wiki` | yes | Wiki name or alias |
-| `--title` | yes | Album theme = Page title |
-| `--files` | yes | Comma-separated absolute paths to images |
-| `--node-path` | no | Where in the wiki tree to place the page |
-| `--layout` | no | `table` (default) or `list` |
-| `--vision` | no | Flag that user wants per-photo captions; sets intent even if backend absent |
-| `--captions` | no | Pre-computed captions as JSON; if absent, vision backend runs at view time |
-| `--author` | no | Page frontmatter author field |
+## Workflow — prose / document
 
-## Workflow — prose / document (PDF / DOCX / MD / image)
+1. **Phase 1** — `ingest-file`: SHA256 dedup → parse → temp file. Returns `data.temp`
+2. **Phase 2** — `ingest-commit --temp <f> --title <t>`: promotes to Page. Internal verify + atomic rollback on failure
+3. **Verify raws/** — `raw_path` must be non-null (source copied to `raws/<node_path>/`). Exception: `--native` mode → null by design
+4. **Phase 3** — `ingest-verify`: mandatory after every commit. On failure: files rolled back → start from Phase 1
+5. **Wire relations** — query first, then `query-relation add`
+6. **Reflection** — append to existing List/Report if overlap; prefer extend over create
 
-1. **Confirm wiki exists and file is absolute** (rule 8, rule 9 in `SKILL.md`).
-2. **Phase 1 — `ingest-file`**: computes SHA256 → dedup check (Phase 1,
-   before calling any parser) → if duplicate, returns `DuplicateSource` error
-   immediately (no parser called, no money spent). If unique: parses via MinerU →
-   markitdown chain → writes a temp file to the system temp directory.
-   Returns the temp file path in `data.temp`. No node is created at this stage.
-3. **Agent decides metadata — query wiki first**: before synthesizing node_path,
-   agent calls `xu query --wiki <w> --keywords <theme>` to see the existing
-   node tree and find candidate related UIDs. Then synthesizes:
-   title, node_path, content_type — all LLM-generated, never asked of the user.
-   `--title` is required by CLI but the value comes from the LLM.
-4. **Phase 2 — `ingest-commit --temp <f> --title <t>`**: promotes temp file
-   to Page. Intermediate values (content_type, node_path, author) are LLM-generated.
-   **Commit includes internal verify + atomic rollback on failure** — if verify fails,
-   all written files are deleted; the response returns `VerifyFailed`
-   error with `hints=["fix the failed checks and re-run ingest-commit"]`.
-5. **取证副本**: after `ingest-commit` succeeds, the CLI copies
-   the source file to `raws/<node_path>/<original_name>` (first page only).
-   **This is mandatory for all document types** — `.md / .pdf / .docx / .pptx`
-   must all be physically stored. The response `data.created[].raw_path` should
-   be non-null. If it is null, the copy step was bypassed — stop and investigate.
-   > **Exception**: `--native` mode has no source file (agent-synthesized text),
-   > so `raw_path` is null by design. But `--native` still requires `--source`
-    > (a reference path) for dedup. Use `--temp` for any external document.
-6. **Phase 3 — `ingest-verify --wiki <w> --uid <uid>`**: explicit verification
-   after commit succeeds. **Must be run after every commit** before declaring
-   the task done. Re-runnable at any time (read-only). On failure: LLM fixes
-    the issue and re-runs `ingest-commit` (temp file was deleted on success;
-   start from Phase 1 again if needed).
-   > Commit succeeded + verify failed = files were rolled back; start fresh.
-7. **Page splitting notice**: if `data.page_count > 1`, tell the user
-   "文档较长，已自动按容量分片为 N 个 Page 节点"。This is normal behavior, not an error.
-8. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
-   An empty `raws/` directory with populated `nodes/page/` = copy was
-   bypassed (usually from `--native` on a document).
-9. **Phase 3 — Wire relations**: agent calls `xu query --wiki <w> --keywords <theme>`
-   to find related UIDs, then `xu query-relation add` for each relation.
-   This step requires a query first — never wire relations blindly.
-10. **Phase 3 — Reflection (append-only)**: agent queries for existing
-    List/Report that overlap with the new page(s). Priority: **append to
-    existing** List/Report rather than creating new ones. Query's reflection
-    (not ingest's) is the primary place for List/Report creation.
+## Workflow — album
 
-## Workflow — album (multiple images, one theme)
+1. **Ask vision intent** — "need per-photo AI captions?" → set `--vision` if yes
+2. **`ingest-album`** — one Page with table/list. Album theme = `--title`
+3. **`ingest-verify`**
+4. **(Optional) Wire relations**
 
-1. **Verify files**: all `--files` must be absolute paths to images.
-2. **Ask vision intent**: "需要每张照片的 AI 描述吗？" — set `--vision` if yes
-   (never decide for the user).
-3. **Single-shot `ingest-album`**: writes ONE Page with a markdown
-   table (or list if `--layout list`). Album theme = `--title`.
-   Includes internal verify + rollback on failure.
-4. **Phase 3 — `ingest-verify --wiki <w> --uid <uid>`**: explicit verify
-   after album commit (same as prose flow).
-5. **(Optional) Wire relations / group** as in prose flow.
+## Workflow — code / terminal output
 
-## Workflow — code block / terminal output
-
-1. **`ingest-commit --native "<code>" --source <abs-path>`**: skips Phase 1 (no parse),
-   goes through dedup / patches v1 directly. `--source` is required even
-   for `--native` (for Level-2 dedup via source_hash).
-   > **Warning — bypass**: `--native` has **no physical source file**
-   > (it is agent-synthesized text), so `raw_path` in the response is null by
-   > design. **Do NOT use `--native` for external `.md / .pdf / .docx / .pptx`
-   > ingestion** — that silently skips the raws/ forensic copy. Use the
-    > `--temp` path (Phase 1 + Phase 2) for any external document.
+```bash
+xu ingest-commit --wiki <w> --native "<code>" --source <abs-path> --title <t>
+```
+Skips Phase 1. `--source` required (dedup via source_hash). **No physical source file** → `raw_path` null by design. Do NOT use `--native` for external documents.
 
 ## Phase 1 temp file lifecycle
 
-Phase 1 writes to a **system temp file** (not `nodes/pending/`). The temp file
-path is returned in `data.temp` of the `ingest-file` response. Its lifecycle:
-
 | Event | What happens |
 |---|---|
-| `ingest-file` runs | Creates temp file via `tempfile.gettempdir()` (e.g. `/tmp/<stem>-pre.md`) |
-| `ingest-commit` succeeds | CLI deletes temp file immediately |
-| `ingest-commit` fails | Temp file **retained** for debug / retry |
-| Any leftover temp file after success | **Bug** — fix the error and re-run `ingest-commit` to trigger deletion |
+| `ingest-file` runs | Creates temp via `tempfile.gettempdir()` |
+| `ingest-commit` succeeds | CLI deletes temp immediately |
+| `ingest-commit` fails | Temp retained for debug/retry |
+| Leftover temp after success | Bug — re-run `ingest-commit` to trigger deletion |
 
-**There is no `nodes/pending/` directory.** The two-phase separation is achieved
-by the system temp file; no wiki-internal staging directory exists.
+No `nodes/pending/` directory.
 
-## Reorganize — move a page to a different partition
-
-If the user is dissatisfied with a page's location after ingest, **never delete
-and re-ingest**. Use `xu reorganize`:
+## Reorganize
 
 ```bash
 xu reorganize --wiki <w> --uid <uid> --new-node-path certificates/qsa
-# → nodes/page/old/slug.md  →  nodes/page/certificates/qsa/slug.md
-# → raws/old/file.pdf         →  raws/certificates/qsa/file.pdf
-# → DB node_path updated atomically
+# Atomic: nodes/ + raws/ + DB all updated
 ```
 
-This is atomic: nodes/ + raws/ + DB are all updated in one transaction. No
-content is re-parsed; the page body and all metadata are preserved.
+## Page splitting
 
-When to call reorganize:
-- User says "move this to X folder"
-- `doctor-node-path-organization` reports the page is at root with no organization
-- Agent decides the page belongs in a different logical partition after review
+If `data.page_count > 1`: tell user "文档较长，已自动按容量分片为 N 个 Page 节点"
 
-## Post-commit reflection (append-focused, not creation-focused)
+## Ingest verify — 5 checks
 
-After **every** `ingest-commit`, the agent runs a reflection with one goal:
-**append the new page(s) to existing List/Report if overlap exists**. Creating
-new List/Report is primarily query's job (query-side reflection); ingest-side
-reflection should prefer linking over creating.
+`nodes_file_exists` · `frontmatter_complete` · `content_hash_match` · `content_type↔body_match` · `raw_path_checks`
 
-**Step 1 — Find overlapping List (mandatory):**
-Query the wiki to find existing Lists that share a dimension or member with
-the new page(s). If found → call `list create --members <existing UIDs + new UIDs>`
-to extend the existing List. Do not ask the user.
+## Pitfalls
 
-**Step 2 — Find overlapping Report (if obviously relevant):**
-Only if the new page directly contradicts or materially updates an existing
-Report should you propose appending to it. By default, leave Report creation
-to the query-side reflection.
-
-**Step 3 — Wire relations (from Step 1's query results):**
-Use the UIDs discovered in Step 1's query to call `query-relation add`.
-Do not guess UID values — always query first.
-
-This section is the **ingest-side counterpart** to the query-side reflection
-in `query.md §Workflow` step 5. Same asymmetric bias (List primary after
-ingest, Report primary after query), opposite default type.
-
-## Example — prose
-
-```bash
-xu ingest-file   --wiki research --file ~/Downloads/bert.pdf
-# → {"status": "success", "data": {"temp": "/tmp/bert-pre.md", "parser": "pdf", ...}, ...}
-# Agent reviews /tmp/bert-pre.md, then:
-xu ingest-commit --wiki research \
-  --temp /tmp/bert-pre.md \
-  --title "BERT: Pre-training of Deep Bidirectional Transformers"
-# → {"status": "success", "data": {"uid": "WXYZ5678", "title": "BERT: ..."}, ...}
-```
-
-## Example — album
-
-```bash
-xu ingest-album --wiki research \
-  --title "SGW001 #1 完工照片" \
-  --files ~/uploads/001.jpg,~/uploads/002.jpg,~/uploads/003.jpg \
-  --vision
-# → {"status": "success", "data": {"uid": "...", "rows": 3}, ...}
-
-### Verify (Phase 3)
-
-Phase 3 is a mandatory, explicit verification step after every commit:
-
-```bash
-xu ingest-verify --wiki research --uid <uid from commit response>
-# → {"status": "success", "data": {"passed": [...], "failed": [], "checks": [...]}, ...}
-```
-
-**5 checks**: nodes_file_exists, frontmatter_complete, content_hash_match, content_type↔body_match, raw_path_checks (raw file exists, raw_path↔node_path mirroring for both top-level `raw_path` and `attrs.album.sources[].raw_rel_path`).
-
-If Phase 2 commit returned `VerifyFailed`: files were rolled back. Start fresh from Phase 1.
-
-### Multi-file serial ingest
-
-When ingesting N files, repeat the three-phase cycle **per file** — serial, not parallel:
-
-```bash
-# File 1
-xu ingest-file --wiki <w> --file /abs/path/to/a.pdf
-# Agent reads temp file, decides title/node_path/relations, then:
-xu ingest-commit --wiki <w> --temp <temp_a.md> --title a ...
-# (verify + rollback happen inside commit; if VerifyFailed → start Phase 1 over)
-xu ingest-verify --wiki <w> --uid <uid_from_commit_a>
-# Only proceed if ingest-verify passes
-
-# File 2
-xu ingest-file --wiki <w> --file /abs/path/to/b.pdf
-xu ingest-commit --wiki <w> --temp <temp_b.md> --title b ...
-xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
-
-# ... repeat for each file
-```
-
-**Rule**: if `ingest-verify` fails for any file, stop and fix that node before moving to the next. Do not skip a failed verify and continue the batch.
-
-## Common pitfalls
-
-- **Wrong body form** — applying `ingest-file` to an album produces N
-  disjoint Page nodes with no album structure. Always confirm form first.
-- **Deciding vision for the user** — if the user didn't say, ASK. Setting
-  `--vision` when the build has no vision backend records the intent
-   but does NOT crash. This is the right way to defer.
-- **Splitting an album** — never call `ingest-file` N times then
-  `ingest-commit` N times for an album. Use `ingest-album` once.
-- **Editing the Page body after commit** — the Page markdown is immutable
-   (Page is immutable; see hard rule 1 in `SKILL.md`). To "add another photo to
-   the album", use `ingest-album` with a fresh call targeting the existing
-   node-path — this creates a new Page node; there is currently no CLI
-   for appending photos to an existing album node.
-- **Empty raws/ despite Page nodes** — if `nodes/page/` has content but
-   `raws/` is empty, the copy step was bypassed (usually from using `--native`
-  on a document). `data.created[].raw_path` in the response would be null.
-  Fix: delete the Page and re-ingest via `--temp` path.
-- **Skip ingest-verify after commit** — run `xu ingest-verify <wiki> <uid>` to
-  confirm DB / nodes/ / content_hash / raw file / body format are all consistent;
-  do not treat `ingest-commit` returning success as sufficient proof of integrity.
-- **Phase 1 temp file not deleted after commit** — if `ingest-commit` succeeded
-   but the temp file at `data.temp` still exists on disk, that is a bug.
-   Re-running `ingest-commit` with the same temp file will reject as duplicate
-   (Level-2 dedup), but will confirm the file is deleted.
-
-## Cross-references
-
-- Cross-cutting rules (immutability, JSON, paths, missing-args) → `SKILL.md §Hard rules`
-- The `query` and `read` CLIs (for reading the ingest result) → `SKILL.md §SOP map` (query SOP); use `ingest-verify` for integrity checks
-- The 50-edge LRU semantics → `SKILL.md §Architecture in 30 seconds`
+| Pitfall | Fix |
+|---|---|
+| `ingest-file` on album | Creates N disjoint Pages — use `ingest-album` |
+| Deciding vision for user | Always ask first |
+| Splitting album into N calls | Use `ingest-album` once |
+| Editing Page body after commit | Page immutable — use `reorganize` or new ingest |
+| Empty raws/ despite Page nodes | Used `--native` on document → re-ingest via `--temp` |
+| Skipping `ingest-verify` | Always run after commit |
+| Phase 1 temp not deleted after success | Bug — re-run `ingest-commit` with same temp |

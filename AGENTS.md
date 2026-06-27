@@ -7,8 +7,11 @@ Relation-driven three-layer wiki engine for AI agents. Python CLI, fully determi
 ## Developer Commands
 
 ```bash
-python3 -m pytest tests/              # unit tests (pyenv 3.14.5)
-bash tests/e2e_verify.sh              # end-to-end M1->M5 run
+# Unit tests (pyenv 3.14.5)
+python3 -m pytest tests/
+
+# End-to-end M1->M5 run (uses .venv/bin/xu)
+bash tests/e2e_verify.sh
 ```
 
 ## Architecture
@@ -19,17 +22,29 @@ bash tests/e2e_verify.sh              # end-to-end M1->M5 run
 - L1 nodes are **immutable** — revisions go through `patches` table
 - Ingest is **two-phase**: `ingest-file` (parse → system temp dir) → `ingest-commit` (atomic write, only write entry)
 
-## Skill Deployment
+## Node Types
 
-```bash
-xu deploy skill --target <agent>   # hermes, trae, claude, cursor, auto
-```
+| Type | Storage | Key Rule |
+|---|---|---|
+| Page | `nodes/page/*.md` | Immutable, SHA256 dedup, revisions via `patches` |
+| List | `nodes/list/*.md` | Members via frontmatter `members` list |
+| Report | `nodes/report/*.md` | **≥1 evidence Page required**, no naked reports |
+| Entity | `nodes/entity/*.md` | First-class nodes |
 
 ## Key Constraints
 
 - `rg` (ripgrep) must be on PATH; pure-Python fallback used if absent
-- Wiki data is **NEVER deleted** by uninstall under any circumstances — hard invariant (BAN-UNINST-1)
-- Never commit: `.venv/`, `test-wikis/`, `CREDENTIALS*.md`
+- Wiki data is **NEVER deleted** by uninstall — hard invariant (BAN-UNINST-1)
+- Never commit: `.venv/`, `test-wikis/`, `CREDENTIALS*.md`, `target/`, `.trae/`, `.mimocode/`
+
+## Skill Deployment
+
+```bash
+xu deploy skill --target <agent>   # hermes, trae, claude, cursor, auto
+xu selfcheck                       # verify install is complete
+```
+
+Skill files are in `src/xu/skills/` (SKILL.md + references/).
 
 ## Uninstall is a 2-surface operation
 
@@ -44,3 +59,7 @@ xu deploy skill --target <agent>   # hermes, trae, claude, cursor, auto
 - ❌ Running `pipx uninstall xu-wiki` as a separate step
 - ❌ Manually deleting skill bundle directories
 - ❌ Any flow that deletes wiki data, even with `--purge-wikis`
+
+## Design Docs
+
+Architecture decisions are in `design-docs/` — notably `01-wiki-architecture.md` and `08-sop-architecture.md`. The SKILL.md in `src/xu/skills/` is the agent-facing skill entry (installed via `xu deploy skill`), not the same as this file.

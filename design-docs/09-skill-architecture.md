@@ -178,41 +178,13 @@ Agent 通过 `Read` 工具或 `cat` 加载文件时，**整文件加载**。不�
 
 ## 六、设计取舍
 
-### [DESIGN-SKILL-1] 选择"自给自足任务文件"模式，放弃"共享 reference"模式
+### [DESIGN-SKILL-1] 选择"自给自足任务文件"模式
 
-**问题**：5 个 SOP 文件之间有公共内容（如命令清单、hard rules），如何组织？
+**决定**：**重复胜于污染**。每个 SOP 任务文件内联所需内容；跨切内容放 SKILL.md；多 SOP 共享内容内联到各自文件。
 
-**备选 A：共享 reference 模式**
-```
-SKILL.md
-reference/
-  ├── commands.md       # 全量 CLI 命令清单
-  ├── hard-rules.md     # 12 条 hard rules
-  └── error-classes.md  # 全部 error_class
-sop/create.md
-sop/ingest.md
-...
-```
-每个 SOP 文件通过引用加载必要的 reference 子集。
+**理由**：Agent 整文件加载，引用即污染（CONST-SKILL-2）。共享 reference 导致一个 reference 膨胀时所有 SOP 被污染。
 
-**优点**：节省字数、避免重复。
-**缺点**：每个 SOP 任务加载时，**全量**加载被引用的 reference。reference 一旦膨胀，所有任务都被污染。
-
-**备选 B：自给自足任务文件模式（采用）**
-```
-SKILL.md
-create.md       # 该任务需要的全部内容内联
-ingest.md       # 该任务需要的全部内容内联
-...
-```
-跨切内容放 SKILL.md；多 SOP 共享的小段内容**内联两遍**；多 SOP 共享的大段内容**不存在**——要么在 SKILL.md，要么降级为「只在该 SOP 出现」。
-
-**优点**：每个任务加载的内容 100% 相关于该任务，零污染。
-**缺点**：少量重复。
-
-**决定**：**重复胜于污染**。当一个事实需要"出现在两个 SOP"时，复制到两个文件，而不是抽 reference 再让两边都加载整个 reference。
-
-触发反例（什么时候要重新考虑此决定）：如果某条信息需要在 **3 个以上 SOP 出现且长度 > 50 行**，则提到 SKILL.md（接受 SKILL.md 膨胀）；如果 5 个 SOP 都需要且确实很长，**重新拆任务**而不是重新加 reference。
+**触发反例**：某信息需在 3+ SOP 出现且 > 50 行 → 提到 SKILL.md；5 个 SOP 都需且确实很长 → 重新拆任务。
 
 ---
 
@@ -254,20 +226,8 @@ ingest.md       # 该任务需要的全部内容内联
 
 ## 九、自检清单
 
-- [ ] `src/xu/skills/` 根目录有 `SKILL.md` + `references/` 子目录（PRIN-SKILL-4）
-- [ ] `references/` 目录包含全部 5 个 SOP 文件 + error-catalog（统一组织）
-- [ ] 没有 `scripts/` 文件夹（PRIN-SKILL-3）
-- [ ] 5 个 SOP 文件之间无直接链（BAN-SKILL-1）
-- [ ] 跨切内容（hard rules、response、quick start）在 SKILL.md（PRIN-SKILL-2）
-- [ ] 没有「省字数」抽 references/ 的痕迹（BAN-SKILL-2）
-- [ ] SKILL.md 是所有任务文件的唯一入口（PRIN-SKILL-6）
-- [ ] 没有散文件（`error1.md` / `notes-<date>.md` / `bug-<id>.md`）—— 累积型内容全进 `references/<type>.md`（BAN-SKILL-3）
-- [ ] bundle 内无安装 / 部署内容（无 `INSTALL.md`，SKILL.md / SOP 提安装只一句指向 README）（BAN-SKILL-3a）
-
----
-
-**作者注**：本模块有两层灵魂。
-
-**第一层——防污染**：[PRIN-SKILL-1]（自给自足）+ [BAN-SKILL-1]（禁跨链）+ [CONST-SKILL-2]（整文件加载）。**前者保证"加载即相关"、后者保证"不被强制加载"**——三者结合是"零污染" Skill 文档的架构闭环。
-
-**第二层——结构引导**：[PRIN-SKILL-7]（reference/ 空占位）+ [BAN-SKILL-3]（禁散文件）。**前者用空文件做未来内容的结构信号、后者用禁令阻止 Agent 乱建文件**——两者结合是"内容累积有序" Skill 文档的维护闭环。
+结构：`SKILL.md` + `references/` 子目录，无 `scripts/`（PRIN-SKILL-3/4）
+无直接链：SOP 文件间禁跨链（BAN-SKILL-1）
+无污染：禁抽 reference 省字数（BAN-SKILL-2）；跨切内容在 SKILL.md（PRIN-SKILL-2）
+无散文件：累积型内容全进 `references/<type>.md`（BAN-SKILL-3）
+无安装内容：bundle 内只含"装好后怎么操作"（BAN-SKILL-3a）

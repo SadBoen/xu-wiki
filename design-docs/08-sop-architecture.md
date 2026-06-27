@@ -194,21 +194,7 @@ SOP 编排必须基于**已实现**的 CLI 子命令。如果某个 SOP 需要�
 
 ### [BAN-SOP-5] 文档不许教 User 直接跑 CLI
 
-README / SOP / SKILL.md 不应出现「用户直接运行 `xu <verb> ...`」的指引——CLI 的用户是 Agent，不是 User。任何 CLI 调用示例必须明确标注「这是 Agent 内部调用的示例」（[PRIN-SOP-8]）。允许的例外：
-
-- **开发者临时扮演 Agent**：在本机 shell 跑 `xu query ...` 验证逻辑；这是 [PRIN-SOP-8] 第 4 条的反例豁免，不算 User。
-- **CI / 自动化测试脚本**：`tests/` 下的 `e2e_verify.sh` 等可直跑 CLI，因为脚本**扮演 Agent**，且其输出会被测试框架解析。
-
-但 README 的 Quick start、SOP 的「Workflow」、SKILL.md 的「Quick start for the agent」——**这些文档的读者都不是 User**：
-
-| 文档 | 读者 |
-|---|---|
-| README Quick start | **Agent**（读 SKILL.md 的 Agent 上下文） |
-| SKILL.md Quick start | **Agent**（被加载到 Agent 的 system prompt） |
-| SOP 的 Workflow 段 | **Agent**（被加载到 Agent 的上下文） |
-| 设计文档（design-docs/） | **开发者**（本机 shell 跑 CLI 验证逻辑） |
-
-User 不读这些文档；User 通过 `/xu-wiki <verb>` 进入 SOP，然后 Agent 在 SOP 内自己查这些文档。
+README / SKILL.md / SOP 的读者是 **Agent**（Skill 上下文），不是 User。User 通过 `/xu-wiki <verb>` 进入 SOP。允许例外：开发者在 shell 跑 `xu query ...` 验证逻辑（临时扮演 Agent）；CI 脚本直跑 CLI（扮演 Agent 解析输出）。
 
 ---
 
@@ -491,27 +477,8 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 ## 九、自检清单
 
-**原则**：
-- [ ] slash command ≠ CLI 子命令（[PRIN-SOP-1]）
-- [ ] SOP 是多步编排（[PRIN-SOP-2]）
-- [ ] CLI 是原子能力，SOP 是其按需组合（[PRIN-SOP-3]）
-- [ ] 错误恢复显式定义（[PRIN-SOP-4]）
-- [ ] 副作用必须经由 CLI（[PRIN-SOP-5]）
-- [ ] SOP 边界由用户意图决定，不由 CLI 决定（[PRIN-SOP-6]）
-- [ ] SOP 接受自然语言意图，不是只接受动词命令（[PRIN-SOP-7]）
+**原则**：PRIN-SOP-1~7（分层/编排/原子化/失败恢复/封层/意图分层/自然语言入口）
+**禁令**：BAN-SOP-1~4（禁 SOP 当 CLI/禁直写/禁发明/禁隐式副作用）
+**约束**：CONST-SOP-1~4（SKILL.md 文档化/SOP→CLI 可反向查/install 不归 CLI/5 SOP 固定）
 
-**禁令**：
-- [ ] Agent 不许把 SOP 当 CLI 调（[BAN-SOP-1]）
-- [ ] SOP 不许绕过 CLI 直接写文件（[BAN-SOP-2]）
-- [ ] SOP 不许发明新 CLI（[BAN-SOP-3]）
-- [ ] SOP 不许隐式副作用（[BAN-SOP-4]）
-
-**约束**：
-- [ ] SOP 在 SKILL.md 完整文档化（[CONST-SOP-1]）
-- [ ] SOP → CLI 映射显式且唯一反向可查（[CONST-SOP-2]）
-- [ ] install / uninstall 由 pip 处理，不属 5 SOP（[CONST-SOP-3]）
-- [ ] 5 SOP 数量固定（[CONST-SOP-4]）
-
----
-
-**作者注**：SOP 层是 Agent 时代 wiki 引擎的关键抽象——它把「用户在说什么」与「代码在做什么」解耦，让 skill 描述稳定、CLI 命令独立演化、Agent 工作流可验证。建议把 SOP 视为**协议级契约**：每加一个 SOP 是 API 加一个端点，必须有设计文档 + SKILL.md 段落 + 至少一个 SOP-recipe 样例三件套，缺一不可。
+> 详细条目见各原则的 `[ ]` 验收条件。

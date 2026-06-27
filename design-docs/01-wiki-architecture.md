@@ -1,619 +1,148 @@
-# 01 — Wiki 三层逻辑架构设计原则
+# 01 — Wiki 三层架构设计原则
 
-> **目的**：本文是面向开发者的设计原则文档，用于实现一个**关系驱动型**wiki 引擎。
-> **范围**：Node_Page / Node_List / Node_Report 三层节点、关系管理、检索工作流、物理存储、Schema 约束。
-> **风格**：每条原则标 [PRIN-N] / [BAN-N] / [CONST-N] / [DESIGN-N]。
-
----
-
-## 一、一句话定位
-
-本系统是**面向 AI Agent 的关系驱动型工程知识库**——让 Agent 像**图书管理员**一样管理知识，而不是像打字员一样堆砌文档。系统的核心目标是构建一个**高熵减**的知识库：把杂乱的原始素材压缩成结构化的、可推理的知识。
-
----
-
-## 一·五、安全总纲（最高优先级）
+## 安全总纲
 
 ### [PRIN-SAFETY] 歧义即停——宁可问，不要猜
 
-> **知识库是长期信任资产，一次错误写入的代价远超一次追问。**
-
-这是**跨模块的最高安全原则**，优先级高于一切功能性原则。被各模块在自己的语境里落地引用（如 [PRIN-ING-11] 摄取意图、[BAN-CRT-3] 库名歧义、[PRIN-ARCH-24] node_path 判定）。
-
-**职责划分**：
-
 | 角色 | 行为 |
 |---|---|
-| **CLI** | 保持确定性——参数合法就跑，参数缺失/非法就报错。**意图判断不是 CLI 的职责**。 |
-| **Agent** | 护栏在这一层——改变状态的命令（ingest / create / delete-node 等）之前，意图不明确就**先问用户**,绝不猜默认值、绝不自作主张新建对象。 |
+| **CLI** | 确定性——参数合法就跑，缺失/非法就报错。意图判断不是 CLI 的职责。 |
+| **Agent** | 护栏在这一层——改变状态的命令之前，意图不明确就先问用户，绝不猜。 |
 
-**关键边界——「判断一个值」≠「猜测意图」**：
-- ✅ Agent 判断「这份内容该归哪个 node_path 分区」=本职工作（[PRIN-ARCH-24]），不算猜意图
-- ❌ Agent 看到「查无此库的名字」就转头建新库=猜意图（[BAN-CRT-3] 的事故根源），必须停下来问
+**边界**：「判断一个值」（内容归哪个分区）= 本职；「猜意图」（写错库名就建新库）= 必须停。
 
-判断内容属性是 Agent 的本职；揣测用户的操作意图（尤其涉及新建/删除/覆盖）必须停下来确认。
-
----
-
-## 二、三层节点架构（核心模型）
-
-系统的全部知识由**三种节点**构成，层层叠加：
+## 三层节点架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Node_Report (L3) — 主观的智能                              │
-│  "为什么 / 怎么办 / 如果…会怎样"                            │
-│  LLM 推理的固化，承载逻辑推演、因果总结、虚拟预测            │
-├─────────────────────────────────────────────────────────────┤
-│  Node_List (L2) — 严谨的对比                                │
-│  "同属于 / 同类设备 / 同一项目"                              │
-│  横向聚合 + 差异分析；只对比，不评价                        │
-├─────────────────────────────────────────────────────────────┤
-│  Node_Page (L1) — 冷冰冰的客观                              │
-│  "这页说了什么"                                             │
-│  与原始 RAW 文件高度对齐的物理切片，原则上不可变            │
-└─────────────────────────────────────────────────────────────┘
+L3 Report — 主观智能（为什么/怎么办/如果…）
+L2 List  — 严谨对比（同属于/同类设备）
+L1 Page  — 冷冰冰客观（这页说了什么）
 ```
 
-### [PRIN-ARCH-1] 三层各司其职——职责分离原则
+### [PRIN-ARCH-1] 三层各司其职
 
-| 层 | 它做什么 | 它不做什么 |
+| 层 | 做 | 不做 |
 |---|---|---|
-| **L1 Node_Page** | 物理事实切片、原文留痕、可溯源 | 不评价、不对比、不推演 |
-| **L2 Node_List** | 横向聚合、YAML list 成员、维度抽取 | 不评价、不推演 |
-| **L3 Node_Report** | 逻辑推演、因果总结、虚拟预测 | 不生产原始事实 |
+| L1 Page | 物理事实切片、原文留痕 | 不评价、不对比、不推演 |
+| L2 List | 横向聚合、YAML 成员 | 不评价、不推演 |
+| L3 Report | 逻辑推演、因果总结 | 不生产原始事实 |
 
-**推论**：LLM 抽风写错了 L2 / L3，**L1 原始证据永远干净、可恢复**。这就是「底层确定性 + 上层灵活性」的架构闭环。
+### [PRIN-ARCH-2] 图书馆哲学
 
-### [PRIN-ARCH-2] 图书馆哲学——收集但不写
+Page = 书，List = 索引，Report = 导读，SQLite = 借阅记录。L1 永远是 ground truth；L2/L3 可重建。
 
-> **图书馆收集书，但不写书。**
+### [PRIN-ARCH-3] L1 不可变 + 修订表
 
-类比：
+Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 
-| 实体 | 图书馆 | wiki 系统 |
-|---|---|---|
-| 藏书 | 书架上的书 | Node_Page（RAW 切片） |
-| 索引 | 分类卡片、主题目录 | Node_List（结构化聚合） |
-| 导读 | 馆员根据读者需求写的**导读与研究报告** | Node_Report（逻辑合成） |
-| 借阅记录 | 借书簿、便笺 | SQLite（Metadata & Revisions） |
+### [PRIN-ARCH-4] L2 只对比不评价
 
-这条哲学的工程含义：
-- **Node_Page 不生产新事实**——它只是 RAW 的规范化切片
-- **Node_List 不生产评价**——它只是「同一类书的横向摆开」
-- **Node_Report 生产知识的增量**——这是「图书管理员写给特定读者的导读」，固化 LLM 推理成果
-- **SQLite 是便笺**——管理员随手记的借阅记录与修订备注，不是书本身
+### [PRIN-ARCH-5] L3 承载 LLM 推理，必须有证据链
 
-工程上这意味着：**L1 永远是 ground truth**；**L2/L3 可重建、可清除、可重生成**——但 L1 不能动。
+### [PRIN-ARCH-6] [PRIN-ARCH-6a] Rebuild 粒度可调，L1 永远不动
 
-### [PRIN-ARCH-3] L1 不可变 + 修订表——可溯源原则
+## 关系管理
 
-**Node_Page 一旦生成，原则上不直接修改 Markdown 内容。**
+### [PRIN-ARCH-7] 每节点出边上限 50 条
 
-理由：
-- 修订历史可追溯（任何时点的状态都可回放）
-- 防止「改了正文但忘了改索引」的连锁腐化
-- L3 报告可以基于修订历史生成（哪一版的 Page 推导出的哪一版 Report）
+### [PRIN-ARCH-8] 关系不分类，平等 LRU 链表
 
-**修订机制**：若发现错误或有更新，不改原文件，而是在 **SQLite 修订表** 中记录增量补丁（Patches）。前端/检索层按需叠加 patch 还原当前最新视图。
+### [PRIN-ARCH-9] 满 50 条 → 弹队尾最久未触碰者
 
-### [PRIN-ARCH-4] L2 只对比不评价——客观性边界
+### [PRIN-ARCH-10] 建关系 = 触碰（进队首）；查询命中 = 前挪一位
 
-Node_List 的核心动作是**横向对比**：把多个 Node_Page 按某个维度排起来，生成表格。
+## 检索工作流
 
-**禁止 L2 做评价**——"这个比那个好"、"X 优于 Y"这类主观判断属于 L3。
+### [PRIN-ARCH-11] 三层介入：L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
 
-理由：评价依赖语境、价值取向、用户偏好——这些是 LLM 的事，不是 List 的事。List 只提供**结构化的并列**。
+### [PRIN-ARCH-12] 关键词由 Agent 生成（含中英文），CLI 不做语义判断
 
-### [PRIN-ARCH-4a] L2 对比维度可插拔——动态对比原则
+### [PRIN-ARCH-13] 打分 = 标题×5 + body命中 + 层权重（Entity=2, Report=3, List=1, Page=0）
 
-List 的**对比维度不是写死的**——可以由用户/Agent 在查询时**实时指定**。
+## 存储与元数据
 
-例：用户问「对比这批船舶的船体颜色」→ Agent 从相关 Node_Page 中抽取「船体颜色」字段 → 填充 List。
+### [PRIN-ARCH-15] Markdown + YAML Frontmatter — 可移植性，脱离 DB 知识完整
 
-实现方向：
-- List 模板声明「可抽取字段列表」
-- Agent / query 阶段按需调用抽取逻辑（不必 pre-build 所有维度）
-- 维度 = 列表的属性 + List 节点的「关联 Page 集合」
+### [PRIN-ARCH-16] SQLite + JSONB — 结构化字段 + 灵活扩展
 
-哲学：List 是**活视图**而不是**死表格**——数据不变、视角可变。
+### [PRIN-ARCH-17] Markdown 是 ground truth，DB 可重建
 
-**dimension 示例**：
-- `"by-document-type"` — 按文档类型聚合（证书/许可证/图纸）
-- `"by-date"` — 按日期聚合（事件时间线）
-- `"by-owner"` — 按船东聚合
-- `"by-flag-state"` — 按船旗国聚合
-- `"船体颜色"` — 对比这批船的船体颜色
-- `"吃水深度"` — 对比不同工况下的吃水深度
+### [PRIN-ARCH-18] 强 Schema 是质量底线
 
-### [PRIN-ARCH-5] L3 承载所有 LLM 推理——增量固化
+### [PRIN-ARCH-19] 物理分区防 IO 崩溃（node_path 即目录结构）
 
-Node_Report 回答的是「为什么 / 怎么办 / 如果…会怎样」——这些**没有客观答案**的问题。
+### [PRIN-ARCH-22] UID 稳定引用，永不重用
 
-L3 的价值是固化 LLM 推理的成果：让一次性的 LLM 思考变成**可复用**的知识。
+### [PRIN-ARCH-23] 三件套：`raws/` + `nodes/` + `.xu/`
 
-推论：
-- L3 必须能追溯到 L1 / L2 的证据（否则就是凭空捏造）
-- L3 可重建（基于同一份 L1+L2 重新生成 Report），但**不应自动重建**——保留历史版本
+### [PRIN-ARCH-24] node_path：用户指定优先，否则 Agent 判定
 
-### [PRIN-ARCH-6] 重建粒度可调——弹性 Rebuild
+### [PRIN-ARCH-25] nodes 与 raws 按 node_path 镜像，reorganize 原子联动
 
-Rebuild 不是一个开关键，而是**多档位**:只重建结构层(L2) / 只清报告层(L3) / 全量重建。粒度由实现暴露,但任何档位都受 [PRIN-ARCH-6a] 约束。
+### [PRIN-ARCH-26] 过程层（audit.jsonl）只用于诊断 SOP，不参与内容/修订
 
-### [PRIN-ARCH-6a] Rebuild 铁律——L1 永远不动
+三层各司其职：内容层在 nodes/.md，修订层在 patches 表，过程层在 audit.jsonl。
 
-> **Rebuild 任何档位都不能动 L1。**
+## 模板与节点身份
 
-L1 是真理底座（[PRIN-ARCH-3] 不可变原则 + Markdown 是 ground truth）。即使最激进的全量档位,可重建的只有衍生数据(L2/L3、关系),L1 的 Markdown 内容与 patches 修订历史绝不重建。
+### [PRIN-ARCH-21] 模板只决定内容形态（article/table/gallery），不决定层级
 
-理由：Agent 抽风可能污染 L2/L3——但 L1 的原始证据必须永远能「时光倒流」恢复。rebuild 能动 L1,真理底座就垮了。
-
----
-
-## 三、关系管理（50 条上限 + LRU 排序链表）
-
-### [PRIN-ARCH-7] 关系不是无限图——上限熔断器
-
-每节点出边上限 **50 条**。满了只能置换、不能追加。这是防「语义爆炸」的必要约束——少了它,wiki 会变成什么都能连的噪声图。
-
-### [PRIN-ARCH-8] 关系不分类——一律平等的 LRU 链表
-
-没有强/弱/热点之分,也没有评分公式。本系统用时才敲命令、无后台进程,无从实时统计「哪条关系最近热」。因此关系一律平等,只按「最近是否被触碰」排成一条 LRU 链表。开发者只需一个有序结构 + 三个操作(插队首/前挪/弹队尾),不需要分类、打分、时间戳。
-
-### [PRIN-ARCH-8a] 被挤掉不可惜——固化走 L2 List
-
-被挤掉的关系下次查询命中会自动重建——关系链表是易失的临时关联记忆,丢了不心疼。真正要长期固化的关联应升级为 Node_List(L2)。不要为「保住重要关系」给链表加分类/钉住/权重——要固化就升 L2。
-
-### [PRIN-ARCH-9] 置换 = 弹队尾——无需打分
-
-50 条满了再新建:新关系进队首,弹出队尾(最久没被触碰的)。链表位置本身就是「价值」的代理,不需要新旧分数比较。
-
-### [PRIN-ARCH-10] 进队首、命中上浮、冷落下沉
-
-建立关系即一次触碰(进队首);查询命中前挪一位(上浮);长期没命中自然被挤向队尾、最终弹出(下沉)。连续建多条时挤掉的永远是当前最旧的几条,不会自己挤自己。
-
----
-
-## 四、检索工作流（三层介入）
-
-### [PRIN-ARCH-11] 检索是三层逐级介入的过程
-
-```
-用户发起查询
-   ↓
-1. 物理定位 (L1 介入)
-   ripgrep 扫描 → 标点延伸切片 → 物理证据坐标
-   ↓
-2. 结构对齐 (L2 介入)
-   涉及多主体时，CLI 返回 list_hint（相关 Node_List 提示）——是否调取/生成由 Agent 决定，CLI 不自动展开
-   ↓
-3. 逻辑提炼 (L3 介入)
-   CLI 返回 report_hint（是否有现成 Node_Report 解释这些事实）——由 Agent 决定是否引用
-   ↓
-4. 返回
-   - 有 Report → 给结论（L3）
-   - 只有事实 → 给对比表（L2）+ 物理证据切片（L1）
-```
-
-**核心含义**：查询不是「找到一些段落就完事」——而是从底层物理证据逐级合成到顶层逻辑结论。
-
-### [PRIN-ARCH-12] 关键词分级是 Agent 的责任——从原始查询直接生成，不依赖 CLI 分词
-
-CLI 不做语义判断，**也不做关键词生成**。关键词（core + expansion）100% 由 Agent 从原始查询直接生成：
-
-```
-原始查询 "A60 隔离区"
-   ↓ Agent 直接读取原始查询（无 CLI 分词介入）
-   ↓ Agent 语义分级（实体识别 + 同义词扩展 + 英文补充）：
-     - "A60" → 核心关键词（Priority 1，实体识别为船级防火代号）
-     - "隔离区" → 扩展关键词（中文同义：防火分区 / 阻燃区 / 隔火区）
-                         （英文补充：fire zone / fire compartment / fire barrier）
-```
-
-**扩展词必须包含英文**——无论查询使用何种语言，expansion 必须补充英文同义词。这是硬性要求。
-
-**Jieba 的职责范围**：
-- ✅ **ingest 阶段**：提取名词（当前未入库，仅提取）
-- ❌ **query 阶段**：不参与关键词生成，Agent 从原始查询直接推理关键词
-
-**分级目的**：防止同义词噪音淹没精确实体。CLI 后续按权重比处理。
-
-### [PRIN-ARCH-13] 打分公式——重平衡算法
-
-总分 = `(覆盖分 + 稀有分) × 密度奖励`
-
-| 项 | 计算 | 含义 |
-|---|---|---|
-| **A 覆盖分** | `核心词权重 × 命中数 + 扩展词权重 × 命中数` | 核心词权重远大于扩展词 |
-| **B 稀有分** | `命中关键词的稀有权重之和` |  加成（稀有词贡献远超通用词） |
-| **C 密度奖励** | `同一切片块内多词共现 → × 密度奖励系数（> 1）` | 放大「高密度证据区」 |
-
-**核心权重远大于扩展**——确保核心实体（船名、项目号）不被同义词淹没。
-
-
-## 五、存储与元数据
-
-### [PRIN-ARCH-15] Markdown + YAML Frontmatter——可移植性
-
-**正文 = Markdown；元数据 = YAML Frontmatter；脱离数据库，知识依然完整**。
-
-理由：
-- Markdown 跨平台、跨工具、版本友好（git diff 友好）
-- Frontmatter 自描述、不依赖任何外部 schema
-- 用户用 vim / Obsidian / VS Code 都能读
-
-### [PRIN-ARCH-16] SQLite + JSONB——结构 + 灵活
-
-- **结构化字段**（基础字段（身份 / 标题 / 类型 / 时间等） 等）走 SQLite 标准列
-- **非标准标签 / 扩展属性**走 JSONB（SQLite 3.45+），保留灵活性
-
-**价值**：兼顾严谨（核心字段强约束）与灵活（业务标签可变）。
-
-### [PRIN-ARCH-17] Markdown 始终是第一真理——Rebuild 一致性
-
-DB 是索引层，**可重建**。Markdown 永远是 ground truth。
-
-推论：
-- 任何时刻都能从 Markdown 文件夹 100% 还原 SQLite
-- DB 损坏不丢数据——跑 rebuild 即可
-- 开发者不必担心「DB 与文件不一致」——L1 不可变 + 修订表让一致性可证
-
----
-
-## 五·五、元数据三层架构（内容 / 修订 / 过程）
-
-> **延续图书管理比喻**：一本「书」入库之后，有「内容」（印在纸上的字）、
-> 「修订记录」（后来加的勘误 / 第二版 / 第三版的批注）、
-> 「流通记录」（谁在哪天借阅过）。这三件事**互不替代**，**存哪、怎么写、给谁看**都不同。
-
-| 层 | 它是什么 | 存哪 | 谁来写 | 给谁看 |
-|---|---|---|---|---|
-| **内容层** content | 节点正文 + frontmatter | `nodes/<...>/<UID>.md` + `nodes + raws 表` | `ingest-*` / `ingest-album` 命令 | 人类 + Agent（最终消费者） |
-| **修订层** revision | 内容随时间的演化 | SQLite `patches 表`（叠加 patch 还原当前视图） | `revise` / `ingest-revise` / doctor 自动 patch | 人类（看历史） |
-| **过程层** process | CLI 与 LLM 的对话、SOP 是否正常执行 | `<wiki>/.xu/audit.jsonl`（或 `~/.xu-wiki/global_audit.jsonl`） | CLI 入口自动埋点 | 程序（用来优化 CLI / 排查 SOP 问题） |
-
-**三层的边界**（这是过去踩过坑的地方）：
-
-- **过程层 ≠ 内容历史**。一本相册追加一张照片，不是「发布文档修订」，不需要在修订层留痕，更不该让 LLM 重写 .md（[BAN-ARCH-1]）。过程层**只关心「命令有没有跑成功 / 跑了多久 / SOP 是否正常」**，不关心「内容长成什么样」。
-- **修订层 ≠ 过程层**。`patches 表`是「内容怎么演化的」——L1 不变靠它叠加；过程层是「CLI 这一秒在干什么」——一次性、不可重放、用来调程序。两者不能混在一起。
-- **内容层 ≠ 过程层**。`nodes` 表存的是「这本书长什么样」，`audit.jsonl`存的是「刚才那个命令干了什么」。同一个命令可能在 `audit.jsonl` 留下一行,但**不应该**在 `nodes` 表里留下「我执行过一次」的字段——后者会污染内容层。
-
-**类比**：
-
-> 内容层 = 书本身（永久陈列）
-> 修订层 = 历次再版的勘误页（保留给读者追溯）
-> 过程层 = 图书馆借阅台账（管理员用来优化排架、查高峰期）
-
-图书管理员不会在「书」里写一行「我今天整理过这本书」；也不必为每次借阅出一份「勘误页」。三层各管各的。
-
----
-
-## 六、Schema 约束（图书管理员关卡）
-
-### [PRIN-ARCH-18] 强 Schema 是质量底线——准入控制
-
-在 SQLite 层设置**强 Schema 约束**：严苛校验 关键字段（如标题 / 时间） 等关键字段。
-
-**效果**：
-- Agent 提交字段缺失的文档 → 系统直接拦截 → 报错提示缺失项
-- Agent 必须先纠正 → 再提交
-- 「垃圾数据堆砌」在入口被卡掉
-
-哲学：图书管理员不会让「无标题、无作者、无出版日期」的书上架。
-
-### [PRIN-ARCH-19] 物理分区——防 IO 崩溃
-
-**模拟图书馆分区**（北区理工、南区人文）——分目录存放，配合额外索引表。
-
-理由：
-- 单目录文件过多 → 文件系统 IO 崩溃（ext4 btree / inode 耗尽）
-- 物理分片让索引扫描可并行
-- 逻辑分层与物理分片对齐——「查船舶证书」直接定位到 `nodes/船舶/`
-
-**分区粒度的归属**：物理分区直接**由 node_path 派生**——node_path 的层级结构（如 `船舶/QSA-FORTUNE-88/证书`）即是物理目录结构。因此：
-
-- **谁决定分区** = 谁决定 node_path（[PRIN-ARCH-24]：用户指定优先，否则 LLM 按内容判定）——这是 Agent 的语义责任，不是 CLI 的算法
-- **CLI 不自动二次分桶**——CLI 不在 node_path 之下再发明 `00/ 01/ 02/` 之类的哈希分桶层。若某个 node_path 下文件过多，应由 Agent 设计更细的 node_path 层级来分散，而不是 CLI 偷偷加目录
-- **单目录过载的兜底**是设计约束而非自动行为：doctor 可检测「单目录文件数超阈值」并报警（阈值由实现定），提示 Agent 重新规划 node_path 分区——但绝不自动移动节点（移动 = 改位置，需走 [PRIN-ARCH-25] 的原子联动）
-
-哲学：分区是**知识的逻辑组织**（Agent 决定），不是**存储的技术细节**（CLI 自动哈希）——让分区结构对人类和 Agent 都可读。
-
-## 七、模板与节点身份
-
-### [PRIN-ARCH-21] 模板只决定内容形态——不决定层级
-
-模板 = Node_Page 的**内容形态**（article / table / gallery），不决定它是 L1 还是 L2 或 L3。
-
-| 模板 | 适合什么 |
-|---|---|
-| article | 段落式文字（证书条文、检修报告） |
-| table | 行+列数据（设备清单、检查表） |
-| gallery | 照片+短说明（现场施工照） |
-
-Node_List / Node_Report 通常用 **article** 模板（结构化文字），但**不是规定**——具体由 Agent 根据内容决定。
-
-### [PRIN-ARCH-22] UID 是稳定引用——不变原则
-
-跨节点引用、Agent 操作节点入口——**永远用 UID**，不用 title、path、slug。
-
-UID 永不重用（即使节点被硬删，UID 也不回收给新节点）。
-
-### [PRIN-ARCH-23] 物理布局三件套
-
-```
-<wiki_root>/
-├── raws/        # 原始文件（与 nodes/page 按 node_path 镜像对应）
-├── nodes/       # 节点正文（Markdown + YAML Frontmatter）
-│   ├── page/    # Node_Page（按 node_path 分区）
-│   ├── list/    # Node_List（.md: frontmatter + 对比表）
-│   └── report/  # Node_Report（.md: frontmatter + 正文）
-└── .xu/
-    ├── config.yaml
-    ├── state.json
-    └── patches 表      # L1 修订表（增量补丁）
-```
-
-三个目录**永远共存**——任何一个缺失 = wiki 不完整。
-
-### [PRIN-ARCH-24] node_path 来源——用户指定优先，否则 LLM 判定
-
-Page 落在哪个层级由 node_path 决定:用户显式指定时直接用;未指定时由 LLM 按内容判断分区。
-
-这与 [PRIN-SAFETY] 不冲突——「内容该归哪个文件夹」是 LLM 的本职判断,不是意图歧义。判断一个值 ≠ 猜测意图。真正要停下来问的是「目标库不存在」这类意图歧义。
-
-**reorganize 命令**：用户对 ingest 后的路径不满意时，调用 `xu reorganize --wiki W --uid <uid> --new-node-path <path>` 将 Page 原子迁移到新分区。迁移是位置变更，不是内容修改，**不触发 patches**。
-
-### [PRIN-ARCH-25] nodes 与 raws 按 node_path 镜像——移动联动
-
-nodes/ 与 raws/ 按同一 node_path 镜像对应。Page 移位时两侧联动移动，原子事务，由 `xu reorganize` 命令执行。
-
-```
-xu reorganize --wiki W --uid <uid> --new-node-path certificates/qsa
-  → nodes/page/old/slug.md  →  nodes/page/certificates/qsa/slug.md
-  → raws/old/file.pdf        →  raws/certificates/qsa/file.pdf
-  → DB: node_path, rel_md_path, raw_path 全部更新
-  → 三者原子事务（DB 回滚即撤销）
-```
-
-要点：移动改的是位置不是内容，**不触发 patches**；引用走 UID（[PRIN-ARCH-22]），移动不断引用。
-
-### [PRIN-ARCH-26] 过程层只用于诊断 SOP——不参与内容
-
-`audit.jsonl` 唯一用途是**诊断 CLI / LLM 协作是否正常**：error 聚合、耗时分析、SOP 健康度（哪个命令经常失败、哪个 wiki 卡在哪一步）。它**不参与**：
-
-- 内容回溯（由 `patches 表` + `nodes.created_at` 承担）
-- 业务侧变更追溯（「这张照片是哪次加的」——这是 [PRIN-ING-15] 的数据库操作记录，不是过程日志）
-
-推论：
-- **禁止命令内手动 append 过程日志**——过程日志唯一来源是 CLI 入口的自动埋点（[CONST-ARCH-6]）。命令体只关心业务，不该操心「我该怎么被记」
-- **CLI 不解析 `audit.jsonl` 自己用**——它是给开发者/Agent 看的，CLI 不基于它做决策
-- **过程层日志不需要被 Rebuilt**——DB / Markdown 的 rebuild 不应连带重建 `audit.jsonl`，那是另一个时间维度
-
-这条原则是过去把 `op-log` 写进各命令、又用 LLM 重写 .md 的反模式里沉淀出来的——把过程当内容，是高熵增的源头。
-
----
-
-## 八、设计取舍（DESIGN）
+## 设计取舍
 
 ### [DESIGN-ARCH-1] L2/L3 只存 .md，不存 SQLite
 
-Node_List 与 Node_Report 是**逻辑视图**，统一以 .md 文件存储，不写入 SQLite。
-- L2: `nodes/list/<node_path>.md`，frontmatter 含 `uid/title/layer/node_path/split_index/parent_uid/dimension/created_at/updated_at`，body 是 YAML list of dicts（uid/title/layer/note），顺序即位置；split_index=1，parent_uid=self（不分页时）
-- L3: `nodes/report/<node_path>.md`，frontmatter 含 `uid/title/layer/node_path/split_index/parent_uid/references[]`（uid/title/layer/note），body 是报告正文；split_index=1，parent_uid=self（不分页时）
-
-L1 必写 .md（不可变 + 可溯源）；L2 / L3 同样写 .md，保证所有节点统一文件系统访问。
-
-### [DESIGN-ARCH-2] L1 切分粒度 = 300 行（正文,按余数）
-
-Node_Page 按 300 行（正文内容,不含 frontmatter）切分 RAW 文件。**章节粒度涵盖任意层级**(`#` / `##` / `###` 及更深)——单个层级行数过短时,按物理邻近度向上吞并相邻小节,凑到接近 300 行为止。
-
-**按余数算**:累计每到 300 行切一页,余数仍算一页(向下取整,不做向上吞并)。
-
-理由:太小则证据碎片化、查询组合成本高;太大则定位精度低;**不合并小节会产生"幽灵 Page",引用链冗余、查询结果噪音化**;300 是默认阈值（库内 config 可调,键名由实现决定）,保证跨实例切分行为在缺省下保持一致。
+### [DESIGN-ARCH-2] L1 切分粒度 = 300 行正文（按余数）
 
 ### [DESIGN-ARCH-3] ripgrep 是检索底层引擎
 
-**正文搜索 = ripgrep（rg）二进制**——1-2 秒横扫百万文件。
+### [DESIGN-ARCH-4] LLM 介入点：检索前生成关键词 / L2 抽取维度 / L3 生成推理
 
-不用 SQLite FTS5 / 任何 DB 全文索引（双写易腐化、增量复杂）。
+### [DESIGN-ARCH-5] 删除是物理删除 + 审计 + 引用检查（删前查 L2/L3 引用）
 
-### [DESIGN-ARCH-4] LLM 介入点（三个）
+### [DESIGN-ARCH-6] 切片窗口：前后第一个标点，或 50 字符上限
 
-CLI 是确定性的，但 LLM 在三处介入：
+### [DESIGN-ARCH-7] 邻域合并半径：物理距离 < 阈值则合并
 
-1. **检索前**：生成中英文关键词 flat list
-2. **L2 生成**：抽取对比维度 + 填充 YAML list 成员
-3. **L3 生成**：基于 L1+L2 推理生成 Report
+## 禁令
 
-**CLI 不调 LLM**——LLM 由 Agent 自己调用，CLI 只跑机械搜索 + 评分。
-
-### [DESIGN-ARCH-5] 删除是物理删除 + 审计 + 引用检查
-
-`delete-node` 真正删文件 + DB 行 + raw——不是软删（不靠某个 `is_active=0` 标志位留鬼节点）。
-
-理由：
-- 软删让 DB 充满「鬼节点」
-- 审计日志足以追溯历史
-
-**但删除前必须查引用**：物理删一个 Page 之前，CLI 先查有没有 L2 List / L3 Report 在引用它。
-- 没人引用 → 直接物理删（如「一批照片被错摄成单张 Page，要删掉重新按相册组织」——通常还没被报告引用）。
-- 有 L2/L3 引用 → **不闷头删**，返回 warning 列出引用方，交 Agent / 用户决定（先改报告 / 先断引用 / 确认连带处理）。
-
-理由：被引用的 Page 被物理删后，引用它的 Report 会变成「号称有证据、证据却不存在」的悬挂状态（违反 [BAN-ARCH-5]），且 [BAN-DOC-6] 又规定悬挂 Report 不自动删——会永久卡死。删前查引用是打破这个死结的唯一出口。这不是「CLI 猜意图」，而是「保护引用完整性」的机械检查。
-
-### [DESIGN-ARCH-6] 切片窗口 = 前后第一个标点，或 50 字符上限
-
-探测语义边界：
-- 优先：句号 `。` / 问号 `？` / 叹号 `！`
-- 其次：逗号 `，`
-- 50 字符上限（`slice.chars`）内仍无标点 → 强制截断
-- 配置值从库级 config 读取，CLI 自己读，不经 LLM
-
-### [DESIGN-ARCH-7] 邻域合并半径 = 合并距离阈值（紧凑关联物理证据）
-
-同一文档内切片若物理距离 < 紧凑阈值字符数（具体数值由实现决定）（或边界重叠），合并为上下文块。
-
----
-
-## 九、禁令
-
-### [BAN-ARCH-1] 不直写任何 wiki 文件
-
-Agent 永远**不直写** .md / DB 文件。所有写操作走 CLI。
-
-CLI 校验、写盘原子化、维护一致性——LLM 直写 = 绕过校验 = 数据腐化。
+### [BAN-ARCH-1] Agent 不直写任何 wiki 文件
 
 ### [BAN-ARCH-2] UID 永不重用
 
-**生成时即保证唯一**（确定性），不是碰撞检测：
-
-- 格式：8 位大写字母数字 `{2-digit base36 counter}{6-digit base36 random}`
-- 同秒内每次调用 counter 递增，绝不重复；1 秒最多覆盖 1296 个 UID
-- counter 溢出时切纯随机（36⁶ ≈ 22 亿空间），碰撞概率可忽略
-- 节点被删除后 UID **永不**分配给新节点（即使同名内容重新 ingest）
-
-理由：历史关系链可能引用旧 UID——重用会让历史数据指向新节点，制造混乱。
-
 ### [BAN-ARCH-3] L1 不改 Markdown
-
-Node_Page 一旦生成，**不直接修改 Markdown**——修订走 SQLite patches 表。
 
 ### [BAN-ARCH-4] L2 不做评价
 
-Node_List 只对比不评价。"X 优于 Y"、"这个比那个好"——属于 L3。
-
 ### [BAN-ARCH-5] L3 不可凭空生成
-
-Node_Report 必须能追溯到 L1 / L2 的证据——没有证据链的 Report 拒收。
 
 ### [BAN-ARCH-6] 关系不无限增长
 
-每节点 50 条上限是硬规则——满了必须弹出队尾置换，不允许「自动扩张」。
-
 ### [BAN-ARCH-7] 路径不越界
 
-所有用户输入的路径必须规范化（解析符号链接、消除相对段）后断言仍在 wiki root 内。symlink 逃逸 / `..` 段 / 绝对路径注入——一律拒绝。
-
----
-
-## 十、约束
+## 约束
 
 ### [CONST-ARCH-1] 4 键 JSON 协议
 
-每条命令返回 `status/data/message/hints`——所有线索足够 Agent 决定下一步。
+### [CONST-ARCH-2] frontmatter 必填：状态 bool / 层级 ∈ {Page,List,Report} / 形态 ∈ {article,table,gallery}
 
-### [CONST-ARCH-2] frontmatter 必填字段（Page）
+### [CONST-ARCH-3] UID 格式：8 位大写字母数字
 
-每个 Node_Page 的 frontmatter 必须含一组基础必填字段：**身份标识、标题、层级字段、形态字段、状态字段、时间、内容哈希**等。其中三个字段有明确取值约束：
-
-- 〈状态字段〉：必须是 `bool`（不是 0/1 整数）
-- 〈层级字段〉：枚举 ∈ {Page, List, Report}（决定节点属于 L1/L2/L3）
-- 〈形态字段〉：枚举 ∈ {article, table, gallery, …}（内容形态，集合可由实现扩展，见 [PRIN-ARCH-21]）
-
-字段的具体命名由实现决定；这里只约束「必须有、且这三个的取值范围」。
-
-### [CONST-ARCH-3] UID 格式
-
-固定正则:8 位大写字母数字。具体长度由实现定。
-
-### [CONST-ARCH-4] 关系是无分类的 LRU 链表
-
-每节点一条出边 LRU 链表(上限 50),不分类、不打分。实现细节见 [PRIN-ARCH-8]。
+### [CONST-ARCH-4] 关系是无分类 LRU 链表
 
 ### [CONST-ARCH-5] 写盘原子
 
-先写临时副本再原子换名,写盘前后各做一组一致性检查(具体项由实现定),崩溃不留截断文件。
+### [CONST-ARCH-6] 每条 CLI 调用记一行 process-layer 日志（双路：per-wiki + global）
 
-### [CONST-ARCH-6] 每条 CLI 调用记一行 process-layer 日志
+### [CONST-ARCH-7] SQLite WAL 模式 + 外键约束 + busy timeout
 
-每条命令调用 append 一行 JSONL,**双路写入**:
-- 命令能解析 `--wiki` → 写到 `<wiki>/.xu/audit.jsonl`
-- 命令无 wiki 上下文 / wiki 解析失败 → 写到 `~/.xu-wiki/global_audit.jsonl`
+## 节点 CRUD
 
-每行至少含: `ts` / `command` / `wiki` / `status` / `elapsed_ms`;失败再加 `error_class`。
-
-**禁止任何命令内手动 append 过程日志**——过程日志唯一来源是 CLI 入口的自动埋点。这样保证「每个动作都有、每个动作只有一条」。
-
-设计动机、过程层的语义边界、与内容层/修订层的区分,见 [PRIN-ARCH-26]。
-
-### [CONST-ARCH-7] SQLite 并发安全
-
-并发安全依赖三项强制配置:WAL 模式(避免读写互斥)、外键约束、busy timeout(避免读卡死)。JSONB 字段用 SQLite 的 JSON 函数访问。
-
-### [CONST-ARCH-8]  入库时机
-
-`ingest-commit` 时提取名词 + 频次入库；`query` 时实时调取。
-
----
-
-## 十一、节点 CRUD 矩阵（概念层）
-
-| 动作 | 命令族 | 备注 |
-|---|---|---|
-| **建 Page** | `ingest-commit` | L1 不可变，落地后写 patches 表初值 |
-| **建 List** | `list create` | L2 .md-only（nodes/list/<node_path>.md） |
-| **建 Report** | `report create` | L3 必须引用 L1 / L2 证据链 |
-| **读 Page** | `read --uid` | 叠加 patches 还原当前视图 |
-| **读 List** | `list show` | 横向对比表 |
-| **读 Report** | `report show` | 推理结论 + 证据链 |
-| **改字段** | `revise` | 改 metadata，不动 body（Page）；List/Report 可改内容 |
-| **建关系** | `query-relation add` | 50 条 LRU 上限，满了弹队尾置换 |
-| **删节点** | `delete-node` | 物理删除 + 审计日志 |
-
----
-
-## 十二、自检清单（开发时勾选）
-
-**三层架构**：
-- [ ] Node_Page = L1 客观（[PRIN-ARCH-1]）
-- [ ] Node_List = L2 对比，不评价（[PRIN-ARCH-4]）
-- [ ] Node_Report = L3 推理，有证据链（[PRIN-ARCH-5]）
-- [ ] L1 不可变，修订走 patches 表（[PRIN-ARCH-3]）
-- [ ] L2 对比维度可插拔（[PRIN-ARCH-4a]）
-- [ ] Rebuild 粒度可调（[PRIN-ARCH-6]）
-- [ ] Rebuild 永远不动 L1（[PRIN-ARCH-6a]）
-
-**关系管理**：
-- [ ] 50 条出边上限（[PRIN-ARCH-7]）
-- [ ] 关系不分类、不打分（[PRIN-ARCH-8]）
-- [ ] 要固化的关联升级为 L2 List（[PRIN-ARCH-8a]）
-- [ ] LRU 链表：建立进队首 / 命中前挪 / 满了弹队尾（[PRIN-ARCH-9] / [PRIN-ARCH-10]）
-
-**检索工作流**：
-- [ ] 三层介入（L1 定位 → L2 对齐 → L3 提炼）（[PRIN-ARCH-11]）
-- [ ] 关键词分级是 LLM 责任（CLI 分词 + Agent 分级）（[PRIN-ARCH-12]）
-- [ ] 打分公式 (覆盖分 + 稀有分) × 密度奖励，核心词权重远大于扩展词（[PRIN-ARCH-13]）
-
-**存储与 Schema**：
-- [ ] Markdown + YAML Frontmatter（[PRIN-ARCH-15]）
-- [ ] SQLite + JSONB（[PRIN-ARCH-16]）
-- [ ] Markdown 是 ground truth（[PRIN-ARCH-17]）
-- [ ] 强 Schema 准入控制（[PRIN-ARCH-18]）
-- [ ] 物理分区防 IO 崩溃（[PRIN-ARCH-19]）
-
-**模板与身份**：
-- [ ] 模板只决定内容形态（[PRIN-ARCH-21]）
-- [ ] UID 稳定引用、永不重用（[PRIN-ARCH-22]）
-- [ ] 三件套目录永远共存（[PRIN-ARCH-23]）
-- [ ] node_path 来源：用户指定优先、否则 LLM 判定（[PRIN-ARCH-24]）
-- [ ] nodes 与 raws 按 node_path 镜像、移动联动且原子（[PRIN-ARCH-25]）
-
-**元数据三层**：
-- [ ] 内容层 / 修订层 / 过程层各司其职，互不替代（[PRIN-ARCH-26]）
-- [ ] 过程层日志双路：per-wiki + global（[CONST-ARCH-6]）
-- [ ] 命令内**禁止**手动 append `audit.jsonl`——唯一来源是 CLI 入口自动埋点（[PRIN-ARCH-26]）
-
-**禁令**：
-- [ ] 不直写文件（[BAN-ARCH-1]）
-- [ ] UID 永不重用（[BAN-ARCH-2]）
-- [ ] L1 不改 Markdown（[BAN-ARCH-3]）
-- [ ] L2 不做评价（[BAN-ARCH-4]）
-- [ ] L3 不可凭空生成（[BAN-ARCH-5]）
-- [ ] 关系不无限增长（[BAN-ARCH-6]）
-- [ ] 路径不越界（[BAN-ARCH-7]）
-
----
-
-**作者注**：本模块的灵魂是 [PRIN-ARCH-2]（图书馆哲学）与 [PRIN-ARCH-7]（关系上限）。**前者保证「不生产伪事实」、后者保证「关系网不会爆炸」**——两者结合就是「底层确定性 + 上层灵活性」的架构闭环。
-
-LLM 写实现时先确认三层节点边界、再实现关系 LRU 链表——顺序反了会陷入「先建图后整理」的陷阱。**先有图书馆分区（Page/List/Report），再有借阅记录（关系）。**
+| 动作 | 命令 |
+|---|---|
+| 建 Page | `ingest-commit` |
+| 建 List | `list create` |
+| 建 Report | `report create` |
+| 读 Page | `read --uid` |
+| 删节点 | `delete-node` |
+| 建关系 | `query-relation add` |
+| 重建 | `rebuild --granularity keep-l1\|keep-l1-l2\|full` |

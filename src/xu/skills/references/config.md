@@ -1,201 +1,100 @@
-# config — manage wiki configuration & software lifecycle
+# config — wiki config & software lifecycle
 
-`/xu-wiki config` is the SOP for **everything that isn't wiki data**:
-registering / aliasing / unregistering wikis, managing the MinerU API key,
-inspecting the global state, and **uninstalling the xu-wiki package
-itself**. It does not touch Page/List/Report/Entity content.
-
-This file is **self-contained**. Cross-cutting rules
-(4-key JSON, missing-args) live in `SKILL.md`; the safety rules for
-register / unregister / uninstall are stated here.
+Everything that isn't wiki data: registry, aliases, MinerU key, uninstall.
 
 ## CLI palette
 
 ```bash
-# Inspect registered wikis (read-only)
+# Inspect
 xu wikis
+xu config show
+xu config path
 
-# Wiki registry: alias, register, unregister
-xu alias set     --wiki <w> --alias <new>     # set or change alias
-xu alias unset   --wiki <w>                   # remove alias
-xu alias show    --wiki <w>                   # show current alias
-xu register      --name <n> --path <abs> [--alias <a>]   # register EXISTING dir (no files written)
-xu unregister    --name <n>                   # remove from registry (wiki files NOT touched)
+# Registry
+xu alias set --wiki <w> --alias <new>
+xu alias unset --wiki <w>
+xu alias show --wiki <w>
+xu register --name <n> --path <abs> [--alias <a>]
+xu unregister --name <n>
 
-# Global config (MinerU key etc.)
-xu config set-mineru-key                       # reads from MINERU_API_KEY env (safer than --key)
-xu config show                                 # global config (secrets masked)
-xu config path                                 # global config file paths
+# MinerU key
+xu config set-mineru-key   # reads MINERU_API_KEY env (safer)
+xu config show             # secrets masked
 
-# Skill bundle source (for the agent's own skill manager to copy from)
-xu skills path                                 # print source dir of the xu-wiki skill bundle
-xu skills list                                 # list files in the xu-wiki skill bundle
+# Skill bundle
+xu skills path             # source dir of xu-wiki skill bundle
+xu skills list             # list files in bundle
 
-# Software lifecycle — uninstall xu-wiki itself
-xu uninstall                                          # DRY-RUN by default; --execute to apply
-xu uninstall --execute                               # remove pip package + skill bundles + ~/.xu-wiki/ config
-xu uninstall --execute --preserve-config             # keep ~/.xu-wiki/ config dir
-xu uninstall --execute --keep-pip                    # skip pip uninstall (test/dev escape hatch)
-xu uninstall --execute --keep-skill                 # keep all skill bundles
-xu uninstall --execute --target hermes --target trae # remove only specific skill bundles
+# Uninstall (dry-run first, then --execute)
+xu uninstall
+xu uninstall --execute [--preserve-config] [--keep-pip] [--keep-skill] [--target <agent>]
 ```
 
-| Command | Touches wiki data? | Touches pip pkg? | Touches ~/.xu-wiki/? | Reversible? |
+## Safety table
+
+| Command | Wiki data? | pip pkg? | ~/.xu-wiki/? | Reversible? |
 |---|---|---|---|---|
-| `wikis` | no (read-only) | no | no | n/a |
-| `alias set/unset/show` | no (registry only) | no | yes (registry) | yes |
-| `register` | no (registry only) | no | yes (registry) | yes (via `unregister`) |
-| `unregister` | no (registry only; wiki files preserved) | no | yes (registry) | yes (via `register`) |
-| `config set-mineru-key` | no | no | yes (config) | yes |
-| `config show` / `config path` | no (read-only) | no | no | n/a |
-| `skills path` / `skills list` | no (read-only) | no | no | n/a |
-| `uninstall` (dry-run) | **never** (always preserved) | no | no | n/a |
-| `uninstall --execute` | **never** (always preserved) | yes (unless `--keep-pip`) | only if `--preserve-config` is absent | **no — destructive** |
+| `wikis` / `config show` / `config path` | no | no | no | n/a |
+| `alias set/unset/show` | no | no | yes (registry) | yes |
+| `register` / `unregister` | no (registry only) | no | yes | yes |
+| `config set-mineru-key` | no | no | yes | yes |
+| `skills path` / `skills list` | no | no | no | n/a |
+| `uninstall` (dry-run) | never | no | no | n/a |
+| `uninstall --execute` | **never** | yes | only without `--preserve-config` | **no** |
 
-## Hard rule for this SOP
+## Unworkflow — uninstall
 
-> **Wiki configuration + software lifecycle. The 5 SOPs share the
-> same slash command entry; uninstall lives here because it's a
-> system-level action, not a wiki-data operation.**
-
-## Workflow — uninstall xu-wiki
-
-This is the **only** destructive flow in `/xu-wiki config`. The agent
-must always **dry-run first**, then confirm with the user, then re-run
-with `--execute` and the user's chosen flags. There is no shortcut.
-
-### Step 1 — dry-run
-
+**Step 1 — dry-run:**
 ```bash
 xu uninstall
-# → 4-key JSON: status=success, data.mode="dry-run", data.plan={wikis_found, global_dir_exists, ...}
 ```
+Read `data.plan`, present to user. **Wiki data is NEVER touched.**
 
-The agent reads `data.plan` and **presents it to the user in natural
-language**. The user picks a scope:
+**Step 2 — confirm:**
+User must explicitly confirm before `--execute`.
 
-| Scope | Flags | What gets removed |
-|---|---|---|
-| (a) Standard | `--execute` | pip package + skill bundles + `~/.xu-wiki/` config |
-| (b) Keep config | `--execute --preserve-config` | pip + skill bundles (keep `~/.xu-wiki/`) |
-| (c) Keep pip | `--execute --keep-pip` | skill bundles + `~/.xu-wiki/` (skip pip uninstall) |
-| (d) Keep skill | `--execute --keep-skill` | pip + `~/.xu-wiki/` (keep all skill bundles) |
-| (e) Target specific | `--execute --target <agent>` | only that agent's skill bundle |
-
-**Wiki data is NEVER touched, no matter which flags are used.** `--purge-wikis`
-is accepted but ignored — it is not possible to delete wiki data through uninstall.
-
-### Step 2 — confirm with the user
-
-The agent shows the dry-run plan and the scope options, then waits
-for explicit confirmation. **The user must type "yes"
-/ "确认" / "proceed" before any --execute runs.** This is non-negotiable.
-
-### Step 3 — execute
-
+**Step 3 — execute:**
 ```bash
-xu uninstall --execute [--preserve-config] [--keep-pip] [--keep-skill] [--target <agent>]
-# → 4-key JSON: status=success / warning / error
-#           data.result = { pip, wikis, config_dir }  with each step's outcome
+xu uninstall --execute [--flags]
 ```
 
-The agent translates `data.result` back to natural language and tells
-the user what happened. The JSON is NOT shown to the user.
+Scope options:
 
-### Critical rules for the agent
+| Scope | Flags |
+|---|---|
+| (a) Standard | `--execute` |
+| (b) Keep config | `--execute --preserve-config` |
+| (c) Keep pip | `--execute --keep-pip` (test escape hatch) |
+| (d) Keep skill | `--execute --keep-skill` |
+| (e) Target specific | `--execute --target <agent>` |
 
-1. **Never run `pip uninstall` directly via your bash tool.** Even
-   though it would technically work, it bypasses SKILL.md
-   discoverability and the dry-run safety contract. Always go through
-   `xu uninstall`.
-2. **Never invent `/xu-wiki uninstall` slash command.** It doesn't
-   exist — the slash command is `/xu-wiki config`, and within that
-   SOP the agent recognises uninstall intent and calls `xu uninstall`.
-3. **Always dry-run first.** `xu uninstall` without `--execute` is
-   the expected entry point. The user's first request → dry-run.
-   Confirmation → re-run with `--execute`.
-4. **Wiki data is NEVER removed, no exceptions.** `--purge-wikis` is accepted
-   but silently ignored — the flag has no effect. Do not propose it,
-   do not confirm it, do not explain it as a capability.
-5. **Translate JSON → natural language.** Never paste the raw 4-key
-   JSON at the user.
-6. **Default scope is (a) — standard uninstall.** Only deviate if the user
-   explicitly asks to keep config (`--preserve-config`) or keep pip (`--keep-pip`).
-7. **`xu uninstall --execute --keep-pip` is a test escape hatch.**
-   Agents must NEVER pass `--keep-pip` in normal flows — it's for the
-   test suite and developer debugging. If you see it
-   in a user-facing flow, treat it as a bug.
+**`--purge-wikis`** — accepted but ignored. Wiki data is never deletable via uninstall.
 
-### Install is NOT in this SOP
+## Setup workflow
 
-There is no `xu install` command, no `/xu-wiki install` slash command,
-and no `pip upgrade` wrapper.
-
-## Common pitfalls
-
-- **`create` to register an existing dir** — refused. Use
-  `register` instead.
-- **Hardcoding the MinerU key** — never write the key into the repo, the
-  SKILL.md, or any code. Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml`.
-- **`xu install`** — does not exist; returns `ArgParseError`. Install
-  is `pip install`. Uninstall is `xu uninstall`.
-- **Calling `xu uninstall` without `--execute`** — that's the dry-run
-  and is the right first step. Just don't forget to re-run with
-  `--execute` after the user confirms.
-
-## Cross-references
-
-- Cross-cutting rules (4-key JSON, paths, secrets) → `SKILL.md §Hard rules`
-- The `create` CLI (fresh empty wiki) → `SKILL.md §SOP map` (create SOP)
-- The `delete-node` CLI (to wipe wiki contents before removing the dir) →
-  `SKILL.md §SOP map` (doctor SOP)
-- The 3-layer metadata model (for what `register` accepts) →
-  `SKILL.md §Architecture in 30 seconds`
-
-## Workflow — first-time setup
-
-> This section covers runtime configuration only.
-
-1. **Set the MinerU API key** (optional — only needed if the offline
-   fallback chain hits a PDF and `markitdown` is not enough):
+1. **MinerU key** (optional):
    ```bash
-   export MINERU_API_KEY="..."   # safer than passing --key
+   export MINERU_API_KEY="..."
    xu config set-mineru-key
    ```
-   Or write it directly to `~/.xu-wiki/config.yaml` (outside this repo).
-2. **Inspect the global state**:
+2. **Verify state**:
    ```bash
-   xu config path    # show where config / global dir lives
-   xu wikis          # show registered wikis (empty at first install)
+   xu config path
+   xu wikis
    ```
 
-## Workflow — register an existing wiki directory
-
-Use `register` (NOT `create`) when the directory already exists with
-wiki data. `create` is only for fresh empty wikis (it refuses to
-overwrite a non-empty path).
+## Register existing wiki
 
 ```bash
 xu register --name legacy --path /abs/path/to/existing/wiki --alias lg
-# → {"status": "success", "data": {"name": "legacy", "path": "...", "alias": "lg"}, ...}
 ```
 
-## Workflow — change or remove an alias
+## Pitfalls
 
-```bash
-xu alias show --wiki research
-# → {"status": "success", "data": {"alias": "r"}, ...}
-xu alias set --wiki research --alias res
-# → {"status": "success", ...}
-xu alias unset --wiki research
-# → {"status": "warning", "data": {"removed_alias": "res"}, ...}
-```
-
-## Workflow — unregister a wiki (does NOT delete wiki files)
-
-```bash
-xu unregister --name legacy
-# → {"status": "success", "data": {"name": "legacy", "registry_removed": true, "wiki_files_intact": true}, ...}
-```
-
-The wiki directory is **untouched**. To bring it back: `register` again.
+| Pitfall | Fix |
+|---|---|
+| `create` for existing dir | Use `register` instead |
+| Hardcoding MinerU key | Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml` |
+| `xu install` | Doesn't exist — use `pip install` |
+| `--keep-pip` in user flow | Test escape hatch — never in normal flows |
+| `--purge-wikis` | Accepted but ignored — no effect |
