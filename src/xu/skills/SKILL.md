@@ -30,7 +30,7 @@ DB, no lock, git-friendly.
 
 **分离关注点**：语义判断（哪些关键词、要不要创建 List）由 Agent 负责；存储和检索由 xu 负责。
 
-**节点不可变**：Page 写入后不修改内容，编辑通过 `patches` 表做增量。Report 必须有证据链，防止空对空推理。
+**节点不可变**：Page 写入后不修改内容；增量通过 frontmatter 中的 `patches` 字段实现（`{version, op, delta, author, created_at}` 列表）。Report 必须有证据链，防止空对空推理。
 
 **不对称创建偏好**：ingest 后倾向于扩展 List，query 后倾向于生成 Report。Agent 自主决定，不需用户确认。创建前先 query 是否已有相似的，有则扩展，无则新建。
 
