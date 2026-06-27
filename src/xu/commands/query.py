@@ -18,7 +18,7 @@ from ..query.slicing import make_slice, merge_slices
 from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
-from ..utils.wiki import find_node_md, resolve_wiki
+from ..utils.wiki import find_node_md, resolve_wiki, write_node_frontmatter
 
 
 
@@ -247,7 +247,7 @@ def cmd_expand(args) -> dict:
                     all_rels = all_rels[:limit]
                 for r in all_rels:
                     touch_relation(fd, uid, r["to_uid"])
-                _write_node_fm(ctx, uid, fd)
+                write_node_frontmatter(ctx, uid, fd)
                 result[uid] = {
                     "uid": uid,
                     "title": fd.get("title", ""),
@@ -284,22 +284,6 @@ def _line_col_to_offset(text: str, line: int, col: int) -> int | None:
         offset += len(ln)
         cur_line += 1
     return None
-
-
-def _write_node_fm(ctx, uid: str, fm_node: dict) -> None:
-    """Find node .md by uid and rewrite its frontmatter, preserving body."""
-    nodes_root = ctx.nodes_dir
-    if not nodes_root.is_dir():
-        return
-    for p in nodes_root.rglob("*.md"):
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-            parsed, body = fm.parse(text)
-            if parsed.get("uid") == uid:
-                p.write_text(fm.render(fm_node, body), encoding="utf-8")
-                return
-        except Exception:
-            continue
 
 
 def cmd_read(args) -> dict:

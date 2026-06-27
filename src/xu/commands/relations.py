@@ -6,10 +6,9 @@ No SQLite; frontmatter is the sole store.
 from __future__ import annotations
 
 from ..ingest.relations_lru import add_relation, list_relations
-from ..utils import frontmatter as _fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
-from ..utils.wiki import resolve_wiki, find_node_md
+from ..utils.wiki import resolve_wiki, find_node_md, write_node_frontmatter
 
 
 def cmd_query_relation(args) -> dict:
@@ -39,10 +38,7 @@ def _rel_add(args) -> dict:
     result = add_relation(from_fm, args.from_uid, args.to_uid,
                           args.relation_name, args.comment, max_edges)
 
-    # Write back updated frontmatter
-    from_path = _node_path_to_file(ctx, args.from_uid)
-    if from_path:
-        _write_frontmatter(from_path, from_fm)
+    write_node_frontmatter(ctx, args.from_uid, from_fm)
 
     rels = list_relations(from_fm, args.from_uid)
     data = {
@@ -81,31 +77,3 @@ def _rel_list(args) -> dict:
         {"from_uid": args.from_uid, "relations": rels, "edge_count": len(rels)},
         f"{len(rels)} edge(s) in LRU order (head = most recently touched)",
     )
-
-
-def _node_path_to_file(ctx, uid: str):
-    """Find the .md path for a uid."""
-    nodes_root = ctx.nodes_dir
-    if not nodes_root.is_dir():
-        return None
-    for p in nodes_root.rglob("*.md"):
-        try:
-            text = p.read_text(encoding="utf-8")
-            import frontmatter
-            fm_dict, _ = frontmatter.parse(text)
-            if fm_dict.get("uid") == uid:
-                return p
-        except Exception:
-            continue
-    return None
-
-
-def _write_frontmatter(path, fm: dict) -> None:
-    """Rewrite a .md file with updated frontmatter, preserving body."""
-    try:
-        text = path.read_text(encoding="utf-8")
-        _, body = _fm.parse(text)
-        new_text = _fm.render(fm, body)
-        path.write_text(new_text, encoding="utf-8")
-    except Exception:
-        pass

@@ -71,6 +71,22 @@ def resolve_wiki(name_or_path: str) -> WikiContext | None:
     return None
 
 
+def write_node_frontmatter(ctx: WikiContext, uid: str, fm_node: dict) -> None:
+    """Find node .md by uid and rewrite its frontmatter, preserving body."""
+    nodes_root = ctx.nodes_dir
+    if not nodes_root.is_dir():
+        return
+    for p in nodes_root.rglob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            parsed, body = _fm.parse(text)
+            if parsed.get("uid") == uid:
+                p.write_text(_fm.render(fm_node, body), encoding="utf-8")
+                return
+        except Exception:
+            continue
+
+
 def find_node_md(ctx: WikiContext, uid: str) -> tuple[dict, str] | None:
     """Find a node .md file by UID via fs walk. Returns (frontmatter, body) or None."""
     nodes_root = ctx.nodes_dir

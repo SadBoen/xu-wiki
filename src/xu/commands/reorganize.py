@@ -16,7 +16,7 @@ from pathlib import Path
 from ..utils.frontmatter import parse as fm_parse, render as fm_render
 from ..utils.paths import atomic_write_text, safe_node_path
 from ..utils.response import error, success, warning
-from ..utils.wiki import resolve_wiki, find_node_md
+from ..utils.wiki import resolve_wiki, find_node_md, write_node_frontmatter
 
 
 def cmd_reorganize(args) -> dict:
@@ -50,7 +50,7 @@ def cmd_reorganize(args) -> dict:
         else f"nodes/page/{slug}.md"
     new_md_path = ctx.root / new_rel_md
 
-    old_md_path = _find_node_file(ctx, args.uid)
+    old_md_path = _find_node_path(ctx, args.uid)
     if not old_md_path or not old_md_path.exists():
         return error(f"node file missing", "FileNotFound")
 
@@ -91,7 +91,7 @@ def cmd_reorganize(args) -> dict:
     )
 
 
-def _find_node_file(ctx, uid: str) -> Path | None:
+def _find_node_path(ctx, uid: str) -> Path | None:
     """Find the .md path for a uid."""
     nodes_root = ctx.nodes_dir
     if not nodes_root.is_dir():
