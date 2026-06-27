@@ -9,7 +9,6 @@ from xu.ingest.splitter import split_pages, extract_nouns  # noqa: E402
 from xu.query.slicing import make_slice, merge_slices  # noqa: E402
 from xu.utils import frontmatter as fm  # noqa: E402
 from xu.utils.paths import gen_uid, is_valid_uid, sha256_text  # noqa: E402
-from xu.utils import db  # noqa: E402
 from xu.ingest.relations_lru import add_relation, list_relations, touch_relation  # noqa: E402
 from xu.commands.doctor import _summarize  # noqa: E402
 

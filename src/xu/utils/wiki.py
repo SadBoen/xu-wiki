@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import db
 from . import frontmatter as _fm
 from .config import load_wiki_config, registry_find
 
@@ -42,28 +41,20 @@ class WikiContext:
         return self.root / ".xu"
 
     @property
-    def db_path(self) -> Path:
-        return self.root / ".xu" / "wiki.db"
-
-    @property
     def log_path(self) -> Path:
         return self.root / ".xu" / "audit.jsonl"
-
-    def connect(self):
-        return db.connect(self.db_path)
 
     def is_valid(self) -> bool:
         return (
             self.raws_dir.is_dir()
             and self.nodes_dir.is_dir()
             and self.xu_dir.is_dir()
-            and self.db_path.exists()
         )
 
 
 def is_wiki_root(path: str | Path) -> bool:
     p = Path(path)
-    return (p / ".xu" / "config.yaml").exists() and (p / ".xu" / "wiki.db").exists()
+    return (p / ".xu" / "config.yaml").exists()
 
 
 def resolve_wiki(name_or_path: str) -> WikiContext | None:

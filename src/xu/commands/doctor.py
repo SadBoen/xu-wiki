@@ -76,62 +76,55 @@ def cmd_doctor(args) -> dict:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
     kind = args.doctor_kind
     fix = args.fix
-    conn = ctx.connect()
-    try:
-        checks = {
-            "doctor-fields": _check_fields,
-            "doctor-files": _check_files,
-            "doctor-relations": _check_relations,
-            "doctor-l1-immutable": _check_l1_immutable,
-            "doctor-report-evidence": _check_report_evidence,
-            "doctor-node-path-organization": _check_node_path_organization,
-        }
-        if kind in ("doctor", "doctor-all"):
-            report = {}
-            for fn_name, fn in checks.items():
-                report[fn_name] = fn(ctx, conn, fix)
-            conn.commit()
-            summary = _summarize(report)
-            data = {"checks": report, "fix_applied": fix, **summary}
-            # re-check after fix to verify repairs actually worked (CONST-DOC-8)
-            if fix:
-                recheck = {}
-                for fn_name, fn in checks.items():
-                    recheck[fn_name] = fn(ctx, conn, False)
-                post = _summarize(recheck)
-                data["post_fix"] = {"residual_issues": post["total_issues"],
-                                    "by_layer": post["by_layer"]}
-            status = success if summary["total_issues"] == 0 else warning
-            hints = [] if summary["total_issues"] == 0 else \
-                ([f"re-run with --fix to repair {summary['auto_fixable']} auto-fixable issue(s)"]
-                 if not fix else [])
-            return status(data,
-                          f"doctor-all: {summary['total_issues']} issue(s) "
-                          f"(Page={summary['by_layer']['Page']} List={summary['by_layer']['List']} "
-                          f"Report={summary['by_layer']['Report']} Entity={summary['by_layer']['Entity']} "
-                          f"cross={summary['by_layer']['cross']})",
-                          hints=hints)
-        fn = checks.get(kind)
-        if not fn:
-            return error(f"unknown doctor check: {kind}", "UnknownCheck")
-        r = fn(ctx, conn, fix)
-        conn.commit()
-        summary = _summarize({kind: r})
-        data = {kind: r, "fix_applied": fix, **summary}
+    checks = {
+        "doctor-fields": _check_fields,
+        "doctor-files": _check_files,
+        "doctor-relations": _check_relations,
+        "doctor-l1-immutable": _check_l1_immutable,
+        "doctor-report-evidence": _check_report_evidence,
+        "doctor-node-path-organization": _check_node_path_organization,
+    }
+    if kind in ("doctor", "doctor-all"):
+        report = {}
+        for fn_name, fn in checks.items():
+            report[fn_name] = fn(ctx, fix)
+        summary = _summarize(report)
+        data = {"checks": report, "fix_applied": fix, **summary}
         if fix:
-            post_r = fn(ctx, conn, False)
-            post = _summarize({kind: post_r})
+            recheck = {}
+            for fn_name, fn in checks.items():
+                recheck[fn_name] = fn(ctx, False)
+            post = _summarize(recheck)
             data["post_fix"] = {"residual_issues": post["total_issues"],
                                 "by_layer": post["by_layer"]}
         status = success if summary["total_issues"] == 0 else warning
-        hints = [] if (summary["total_issues"] == 0 or fix) else \
-            [f"re-run with --fix to repair {summary['auto_fixable']} auto-fixable issue(s)"]
-        return status(data, f"{kind}: {summary['total_issues']} issue(s)", hints=hints)
-    finally:
-        conn.close()
+        hints = [] if summary["total_issues"] == 0 else \
+            ([f"re-run with --fix to repair {summary['auto_fixable']} auto-fixable issue(s)"]
+             if not fix else [])
+        return status(data,
+                      f"doctor-all: {summary['total_issues']} issue(s) "
+                      f"(Page={summary['by_layer']['Page']} List={summary['by_layer']['List']} "
+                      f"Report={summary['by_layer']['Report']} Entity={summary['by_layer']['Entity']} "
+                      f"cross={summary['by_layer']['cross']})",
+                      hints=hints)
+    fn = checks.get(kind)
+    if not fn:
+        return error(f"unknown doctor check: {kind}", "UnknownCheck")
+    r = fn(ctx, fix)
+    summary = _summarize({kind: r})
+    data = {kind: r, "fix_applied": fix, **summary}
+    if fix:
+        post_r = fn(ctx, False)
+        post = _summarize({kind: post_r})
+        data["post_fix"] = {"residual_issues": post["total_issues"],
+                            "by_layer": post["by_layer"]}
+    status = success if summary["total_issues"] == 0 else warning
+    hints = [] if (summary["total_issues"] == 0 or fix) else \
+        [f"re-run with --fix to repair {summary['auto_fixable']} auto-fixable issue(s)"]
+    return status(data, f"{kind}: {summary['total_issues']} issue(s)", hints=hints)
 
 
-def _check_fields(ctx, conn, fix) -> dict:
+def _check_fields(ctx, fix) -> dict:
     """Frontmatter completeness + file existence (CONST-DOC-1)."""
     issues = []
     fixed = []
@@ -146,7 +139,7 @@ def _check_fields(ctx, conn, fix) -> dict:
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
-def _check_files(ctx, conn, fix) -> dict:
+def _check_files(ctx, fix) -> dict:
     """Orphan files (on disk, not in DB) and dangling DB rows (CONST-DOC-2)."""
     issues = []
     fixed = []
@@ -161,7 +154,7 @@ def _check_files(ctx, conn, fix) -> dict:
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
-def _check_relations(ctx, conn, fix) -> dict:
+def _check_relations(ctx, fix) -> dict:
     """LRU integrity: cap, contiguous positions, dangling targets (CONST-DOC-4)."""
     issues = []
     fixed = []
@@ -189,7 +182,7 @@ def _check_relations(ctx, conn, fix) -> dict:
     return {"issue_count": len(issues), "issues": issues, "fixed": fixed}
 
 
-def _check_l1_immutable(ctx, conn, fix) -> dict:
+def _check_l1_immutable(ctx, fix) -> dict:
     """Page body must match its recorded content_hash (PRIN-ARCH-3, never auto-fix)."""
     issues = []
     for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
@@ -276,7 +269,7 @@ def _suggest_node_path(title: str) -> str:
         return "uncategorized"
 
 
-def _check_node_path_organization(ctx, conn, fix) -> dict:
+def _check_node_path_organization(ctx, fix) -> dict:
     """Detect pages at nodes/page/ root with no logical partition (PRIN-ARCH-24).
 
     Suggests target node_path per page by extracting dominant noun from title.

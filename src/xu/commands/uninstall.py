@@ -117,7 +117,7 @@ def _purge_wikis(strict_wiki_check: bool = True) -> dict:
     """Actually remove every registered wiki dir + drop them from registry.
 
     `strict_wiki_check` (default True): refuse to rmtree any path that
-    doesn't look like a wiki (`.xu/config.yaml` + `.xu/wiki.db`).
+    doesn't look like a wiki (`.xu/config.yaml`).
     Such entries are still dropped from the registry, but the directory
     is left intact and reported under `refused`. This prevents the
     "I registered ~/projects/notebook as a wiki and uninstall nuked
@@ -161,7 +161,7 @@ def _purge_wikis(strict_wiki_check: bool = True) -> dict:
                 refused.append({
                     "name": name,
                     "path": p,
-                    "reason": "path is not a wiki (missing .xu/config.yaml or .xu/wiki.db); "
+                    "reason": "path is not a wiki (missing .xu/config.yaml); "
                               "leaving directory intact",
                 })
                 reg["wikis"].pop(name, None)

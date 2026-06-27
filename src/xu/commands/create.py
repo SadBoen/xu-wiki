@@ -1,8 +1,7 @@
 """create — initialize a new wiki instance (02-create.md).
 
-Builds the three-piece layout (raws/nodes/.xu), DB schema with all three
-layers + patches derived table, wiki-internal config, and a registry entry.
-Builds in a temp dir then atomically renames (CONST-CRT-2).
+Builds the three-piece layout (raws/nodes/.xu), wiki-internal config,
+and a registry entry. Builds in a temp dir then atomically renames (CONST-CRT-2).
 """
 from __future__ import annotations
 
@@ -12,7 +11,6 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from ..utils import db
 from ..utils.config import (
     load_registry,
     registry_find,
@@ -100,9 +98,6 @@ def _build_skeleton(target: Path, name: str) -> None:
         '{"version": "%s", "created_at": %d}\n' % (WIKI_FORMAT_VERSION, now_ts()),
         encoding="utf-8",
     )
-
-    # DB schema with all three layers + patches (CONST-CRT-6, PRIN-CRT-4/6)
-    db.init_schema(target / ".xu" / "wiki.db")
 
 
 def cmd_create(args) -> dict:

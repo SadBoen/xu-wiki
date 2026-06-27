@@ -66,7 +66,7 @@ def _seed_wiki(xu_home, name, *, alias=None, path=None):
 
     Wiki data goes to /tmp/test_wikis/<name> — OUTSIDE xu_home (GLOBAL_DIR).
     This mirrors real life: ~/.xu/ is a peer of wiki dirs, not a parent.
-    `is_wiki_root()` requires `.xu/config.yaml` + `.xu/wiki.db` to exist.
+    `is_wiki_root()` requires `.xu/config.yaml` to exist.
     """
     import tempfile
     if path is None:
@@ -76,7 +76,6 @@ def _seed_wiki(xu_home, name, *, alias=None, path=None):
     os.makedirs(path, exist_ok=True)
     xu_subdir = os.path.join(path, ".xu")
     os.makedirs(xu_subdir, exist_ok=True)
-    open(os.path.join(xu_subdir, "wiki.db"), "wb").close()
     with open(os.path.join(xu_subdir, "config.yaml"), "w", encoding="utf-8") as f:
         f.write("# synthetic seed for test\n")
     reg = cfg_mod.load_registry()
@@ -177,7 +176,6 @@ def test_execute_purge_wikis_never_deletes_wiki(xu_home, monkeypatch):
                                     purge_wikis=True, purge_config=True))
     # wiki data preserved (NEVER deleted) — verify marker file still exists
     assert _last_wiki_path.exists()
-    assert (_last_wiki_path / ".xu" / "wiki.db").exists()
     # wikis reported as skipped (purge_wikis is always False)
     assert r["data"]["result"]["wikis"]["skipped"] is True
     # config was deleted via rmtree(xu_home)
@@ -209,7 +207,6 @@ def test_execute_default_removes_config_preserves_wikis(xu_home, monkeypatch):
     assert r["status"] == "success"
     # wikis untouched (NEVER deleted) — verify marker file exists
     assert _last_wiki_path.exists()
-    assert (_last_wiki_path / ".xu" / "wiki.db").exists()
     # rmtree was called with xu_home (config dir)
     assert any(p == xu_home for p in deleted), f"Expected rmtree({xu_home}), got {deleted}"
     # pip ran
@@ -236,7 +233,6 @@ def test_execute_keep_pip_removes_config_preserves_wikis(xu_home, monkeypatch):
                                     purge_wikis=True, purge_config=True))
     assert r["status"] == "success"
     assert _last_wiki_path.exists()
-    assert (_last_wiki_path / ".xu" / "wiki.db").exists()
     assert r["data"]["result"]["pip"]["skipped"] is True
     assert any(p == xu_home for p in deleted), f"Expected rmtree({xu_home}), got {deleted}"
 
@@ -286,8 +282,6 @@ def test_purge_wikis_flag_is_ignored(xu_home, monkeypatch):
     # wikis preserved (NEVER deleted)
     assert wiki_a.exists()
     assert wiki_b.exists()
-    assert (wiki_a / ".xu" / "wiki.db").exists()
-    assert (wiki_b / ".xu" / "wiki.db").exists()
     # config was deleted; verify rmtree was called with xu_home
     assert any(p == xu_home for p in deleted), f"Expected rmtree({xu_home}), got {deleted}"
 
