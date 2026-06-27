@@ -49,6 +49,47 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 
 **时机关键**：Level-2 dedup（SHA256）在 Phase 1 最早检查，在 parser 调用之前。这样同一个文件第二次 ingest 时不会浪费 MinerU 等付费 parser 的调用费用。
 
+### [PRIN-ING-3a] SHA256 对齐全貌——三路哈希，各司其职
+
+ingest 流程中共有三路独立的 SHA256 哈希，分别用于不同的校验目的：
+
+#### 普通文件（`ingest-file` → `ingest-commit`）
+
+| 哈希字段 | 计算方式 | 检查时机 | 作用域 | 写入位置 |
+|---|---|---|---|---|
+| `source_hash` | `sha256_file(src)` | Phase 1，parser 调用前 | 源文件级（所有 split 页共享） | frontmatter 顶层 + pending 文件头 |
+| `content_hash` | `sha256_text(page_body)` | Phase 2，每 split 页独立 | 每页独立 | frontmatter + patches[0].delta |
+
+Level-1 dedup（Phase 2）：`content_hash` 查 `content_index`（所有 Page 的 content_hash 集合）  
+Level-2 dedup（Phase 1）：`source_hash` 查 `source_index`（所有 Page 的 source_hash 集合）
+
+#### 相册（`ingest-album`，单次写入）
+
+| 哈希字段 | 计算方式 | 检查时机 | 作用域 | 写入位置 |
+|---|---|---|---|---|
+| `source_hashes[i]` | `sha256_file(图片i)` | 写入前，逐图检查 | 每张图片独立 | frontmatter 顶层数组 |
+| `content_hash` | `sha256_text(body)` | 写入前 | 整页（body = 所有新图的 YAML 列表） | frontmatter + patches[0].delta |
+
+- **重复图片**：命中 `source_index` → 该图跳过（不写入 body），其余正常写入；全部重复 → warning + 整本拒绝
+- `attrs.album.sources[i].source_hash` 与 `source_hashes[i]` 一一对应，保留完整元数据
+
+#### verify（`ingest-verify`，读盘校验）
+
+| 哈希字段 | 计算方式 | 检查时机 | 作用域 | 写入位置 |
+|---|---|---|---|---|
+| `content_hash` | `sha256_text(body)` | verify 时实时计算 | 每页独立 | 与 frontmatter 中已存值比对 |
+
+---
+
+**三路哈希的扫描入口**（`_scan_fm_index`）：
+
+```
+source_map 索引三路：
+  1. frontmatter.source_hash        — 单值，兼容旧本（普通文件）
+  2. frontmatter.source_hashes[]    — 数组（相册）
+  3. frontmatter.attrs.album.sources[i].source_hash — 相册每图的真实 hash
+```
+
 ### [PRIN-ING-4] Page 切分粒度 = 300 行（正文,按余数)——可定位原则
 
 如果 RAW 文件很大(PDF 转出几千行),Phase 1 应**按 300 行(正文内容,不含 frontmatter)切分**为多个 Node_Page。
