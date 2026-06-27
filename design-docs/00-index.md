@@ -10,7 +10,7 @@
 | 02 | [02-create.md](02-create.md) | 建空库骨架 |
 | 03 | [03-install.md](03-install.md) | 装能力不装数据 |
 | 04 | [04-uninstall.md](04-uninstall.md) | 卸载软件不动知识 |
-| 05 | [05-ingest.md](05-ingest.md) | L1 不可变 + 两阶段入库 |
+| 05 | [05-ingest.md](05-ingest.md) | Page 不可变 + 两阶段入库 |
 | 06 | [06-query.md](06-query.md) | 三层介入检索 |
 | 07 | [07-doctor.md](07-doctor.md) | 三层不变量检查 |
 | 08 | [08-sop-architecture.md](08-sop-architecture.md) | 意图→CLI 编排 |
@@ -24,15 +24,15 @@
 
 | 层 | 职责 | 可变性 |
 |---|---|---|
-| **L1 Page** | 物理事实切片 | 不可变（修订走 patches） |
-| **L2 List** | 横向聚合 | 可改 |
-| **L3 Report** | 逻辑推演 | 可改、可重建 |
+| **Page** | 物理事实切片 | 不可变（修订走 patches） |
+| **List** | 横向聚合 | 可改 |
+| **Report** | 逻辑推演 | 可改、可重建 |
 
-L1 不评价，L2 不推演，L3 不生产原始事实。
+Page 不评价，List 不推演，Report 不生产原始事实。
 
 ## 50 条关系上限
 
-LRU 链表：建立进队首 → 命中前挪 → 满 50 弹队尾。无分类、无打分。要固化走 L2。
+LRU 链表：建立进队首 → 命中前挪 → 满 50 弹队尾。无分类、无打分。要固化走 List。
 
 ## 4 键 JSON 协议
 
@@ -41,7 +41,7 @@ LRU 链表：建立进队首 → 命中前挪 → 满 50 弹队尾。无分类�
 ## 跨文档核心原则（摘要）
 
 1. **图书馆哲学** — 收集但不写书
-2. **L1 不可变** — 修订走 patches 表
+2. **Page 不可变** — 修订走 patches 表
 3. **Agent 不直写文件** — 所有写走 CLI
 4. **CLI 不调 LLM** — 确定性到底
 5. **歧义即停** — 宁可问不要猜
@@ -57,9 +57,9 @@ LRU 链表：建立进队首 → 命中前挪 → 满 50 弹队尾。无分类�
 | 阶段 | 内容 |
 |---|---|
 | M1 | install + create（能装能建空库） |
-| M2 | ingest + query + read（L1 闭环）⭐ |
+| M2 | ingest + query + read（Page 闭环）⭐ |
 | M3 | query-relation（50 LRU） |
-| M4 | list + report（L2/L3） |
+| M4 | list + report（List/Report） |
 | M5 | doctor + delete-node + rebuild + uninstall |
 
-**顺序铁律**：M2 之前不碰 L2/L3。
+**顺序铁律**：M2 之前不碰 List/Report。

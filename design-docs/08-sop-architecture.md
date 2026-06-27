@@ -300,11 +300,11 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
    - 必问 2:主题 title / node-path / layout (table 默认)
    - 一次调用:`xu-wiki ingest-album --wiki <w> --title T --files abs1,abs2,... --node-path P --layout table`
 6. （可选）建关系：`xu-wiki query-relation add --wiki <w> --from-uid ... --to-uid ...`
-7. （可选）建 L2 / L3：`xu-wiki list create` / `xu-wiki report create`
+7. （可选）建 List / Report：`xu-wiki list create` / `xu-wiki report create`
 8. （可选）调用 `xu-wiki nodes --wiki <w> --layer Page` 验证写入
 
 **失败模式**：
-- Phase 1 失败 → 文件解析失败，不创建 L1 节点
+- Phase 1 失败 → 文件解析失败，不创建 Page 节点
 - Phase 2 失败 → temp 文件保留（不删），Agent 报告用户决定
 - Album 任一 source_hash 命中已存在 → 重复图片跳过，其余正常写入；全部命中才拒绝（[BAN-ING-4] / [CONST-ING-3]）
 - Album 缺 title / files / node-path → 必问用户，不许猜（[PRIN-ING-11]）
@@ -322,8 +322,8 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 2. `xu-wiki query --wiki <w> --keywords <kw,kw,kw> [--top-k N]`
 3. 命中后按用户意图调：
    - 读单节点 → `xu-wiki read --wiki <w> --uid <uid>`
-   - 看 L2 对比 → `xu-wiki list show --wiki <w> --uid <uid>`
-   - 看 L3 结论 → `xu-wiki report show --wiki <w> --uid <uid>`
+   - 看 List 对比 → `xu-wiki list show --wiki <w> --uid <uid>`
+   - 看 Report 结论 → `xu-wiki report show --wiki <w> --uid <uid>`
 4. （可选）查节点是否存在 → `xu-wiki nodes --wiki <w>`
 
 **失败模式**：
@@ -344,9 +344,9 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | 「全面检查」「健康检查」 | `doctor-all --wiki <w>` |
 | 「检查 fields / files / relations / l1-immutable / report-evidence」 | 对应 `doctor-{xxx} --wiki <w>` |
 | 「修了再告诉我」（自动修） | `doctor-all --wiki <w> --fix`（先告诉用户再应用） |
-| 「删节点 X」 | `delete-node --wiki <w> --uid X`（若被 L2/L3 引用则先确认 `--force`） |
+| 「删节点 X」 | `delete-node --wiki <w> --uid X`（若被 List/Report 引用则先确认 `--force`） |
 | 「移位 / 移动 节点 X 到 Y」 | **当前无对应 CLI** → SOP 拒绝并解释（见下） |
-| 「重衍生层」「重建 LRU」 | `rebuild --wiki <w> --granularity keep-l1`（默认不动 L1） |
+| 「重衍生层」「重建 LRU」 | `rebuild --wiki <w> --granularity keep-page`（默认不动 Page） |
 
 **意图不可达的显式拒绝**（[PRIN-SOP-7]）：
 
@@ -374,13 +374,13 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **调用步骤**（按典型路径）：
 1. Agent 解析用户意图 → 选 CLI（按上表）
 2. 编排时遇 `--fix`：先告诉用户会改什么，再应用
-3. 遇 `delete-node`：先 `doctor-all` 或 `nodes` 检查 L2/L3 引用，按需 `--force`
+3. 遇 `delete-node`：先 `doctor-all` 或 `nodes` 检查 List/Report 引用，按需 `--force`
 4. 遇 `rebuild`：必须先确认 `--granularity`（[PRIN-ARCH-6]）
 
 **失败模式**：
 - `--fix` 失败 → 不自动重试，告知用户
 - 任何 doctor 报错 → 不许跳过；列出全部 issue
-- `delete-node` 被 L2/L3 引用且无 `--force` → `NodeReferenced`
+- `delete-node` 被 List/Report 引用且无 `--force` → `NodeReferenced`
 - `rebuild` 必须先确认粒度（[PRIN-ARCH-6]）
 - **意图无对应 CLI** → SOP 拒绝并给 hints（[PRIN-SOP-7]）
 
@@ -424,13 +424,13 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | | `ingest-commit` | Phase 2（含 `--native` 走代码块形态） |
 | | **`ingest-album`** | **相册子流 (PRIN-ING-14, 表格形态, 单次写入)** |
 | | `query-relation add` | 建关系（可选） |
-| | `list create` | 建 L2（可选） |
-| | `report create` | 建 L3（可选） |
+| | `list create` | 建 List（可选） |
+| | `report create` | 建 Report（可选） |
 | | `nodes` | 验证 |
 | **query** | `query` | 主命令 |
 | | `read` | 读单节点 |
-| | `list show` | 读 L2 对比 |
-| | `report show` | 读 L3 结论 |
+| | `list show` | 读 List 对比 |
+| | `report show` | 读 Report 结论 |
 | | `nodes` | 元数据查询 |
 | **doctor** | `doctor-all` | 全部检查 |
 | | `doctor-fields / files / relations / l1-immutable / report-evidence` | 细分 |

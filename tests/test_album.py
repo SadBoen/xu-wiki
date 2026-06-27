@@ -117,7 +117,7 @@ def test_album_happy_table(wiki, tmp_path):
     assert raws_dir.is_dir()
     assert sorted(p.name for p in raws_dir.iterdir()) == ["001.jpeg", "002.jpeg", "003.jpeg"]
 
-    # L1 page written
+    # Page written
     md = root / data["md_path"]
     assert md.is_file()
     front, body = fm.parse(md.read_text(encoding="utf-8"))
@@ -391,7 +391,7 @@ def test_album_sources_copied_to_raws(wiki, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_resolve_wiki_after_album_creation(wiki, tmp_path):
-    """Created L1 is queryable via resolve_wiki after commit."""
+    """Created Page is queryable via resolve_wiki after commit."""
     name, root = wiki
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)

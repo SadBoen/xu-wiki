@@ -3,7 +3,7 @@
 doctor checks are READ-ONLY by default; --fix applies only mechanical,
 non-destructive repairs (PRIN-DOC). Never touches Page source-of-truth content.
 delete-node checks derived-layer references before physical deletion.
-rebuild reconstructs derived layers from Page (never regenerates Page, PRIN-ARCH-3).
+rebuild reconstructs derived layers from Page (never regenerates Page layer, PRIN-ARCH-3).
 """
 from __future__ import annotations
 
@@ -446,9 +446,9 @@ def cmd_rebuild(args) -> dict:
     """Rebuild derived layers from Page. NEVER regenerates Page content (PRIN-ARCH-3).
 
     granularity:
-      keep-l1     : renumber relation positions from frontmatter (default)
-      keep-l1-l2  : also leave List intact, renumber relations
-      full        : same as keep-l1 (frontmatter is source of truth)
+      keep-page     : renumber relation positions from frontmatter (default)
+      keep-page-list  : also leave List intact, renumber relations
+      full        : same as keep-page (frontmatter is source of truth)
     """
     ctx = resolve_wiki(args.wiki)
     if not ctx:

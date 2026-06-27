@@ -14,32 +14,32 @@
 ## 三层节点架构
 
 ```
-L3 Report — 主观智能（为什么/怎么办/如果…）
-L2 List  — 严谨对比（同属于/同类设备）
-L1 Page  — 冷冰冰客观（这页说了什么）
+Report — 主观智能（为什么/怎么办/如果…）
+List  — 严谨对比（同属于/同类设备）
+Page  — 冷冰冰客观（这页说了什么）
 ```
 
 ### [PRIN-ARCH-1] 三层各司其职
 
 | 层 | 做 | 不做 |
 |---|---|---|
-| L1 Page | 物理事实切片、原文留痕 | 不评价、不对比、不推演 |
-| L2 List | 横向聚合、YAML 成员 | 不评价、不推演 |
-| L3 Report | 逻辑推演、因果总结 | 不生产原始事实 |
+| Page | 物理事实切片、原文留痕 | 不评价、不对比、不推演 |
+| List | 横向聚合、YAML 成员 | 不评价、不推演 |
+| Report | 逻辑推演、因果总结 | 不生产原始事实 |
 
 ### [PRIN-ARCH-2] 图书馆哲学
 
-Page = 书，List = 索引，Report = 导读，SQLite = 借阅记录。L1 永远是 ground truth；L2/L3 可重建。
+Page = 书，List = 索引，Report = 导读，SQLite = 借阅记录。Page 永远是 ground truth；List/Report 可重建。
 
-### [PRIN-ARCH-3] L1 不可变 + 修订表
+### [PRIN-ARCH-3] Page 不可变 + 修订表
 
 Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 
-### [PRIN-ARCH-4] L2 只对比不评价
+### [PRIN-ARCH-4] List 只对比不评价
 
-### [PRIN-ARCH-5] L3 承载 LLM 推理，必须有证据链
+### [PRIN-ARCH-5] Report 承载 LLM 推理，必须有证据链
 
-### [PRIN-ARCH-6] [PRIN-ARCH-6a] Rebuild 粒度可调，L1 永远不动
+### [PRIN-ARCH-6] [PRIN-ARCH-6a] Rebuild 粒度可调，Page 永远不动
 
 ## 关系管理
 
@@ -53,7 +53,7 @@ Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 
 ## 检索工作流
 
-### [PRIN-ARCH-11] 三层介入：L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
+### [PRIN-ARCH-11] 三层介入：Page 物理定位 → List 结构对齐 → Report 逻辑提炼
 
 ### [PRIN-ARCH-12] 关键词由 Agent 生成（含中英文），CLI 不做语义判断
 
@@ -89,15 +89,15 @@ Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 
 ## 设计取舍
 
-### [DESIGN-ARCH-1] L2/L3 只存 .md，不存 SQLite
+### [DESIGN-ARCH-1] List/Report 只存 .md，不存 SQLite
 
-### [DESIGN-ARCH-2] L1 切分粒度 = 300 行正文（按余数）
+### [DESIGN-ARCH-2] Page 切分粒度 = 300 行正文（按余数）
 
 ### [DESIGN-ARCH-3] ripgrep 是检索底层引擎
 
-### [DESIGN-ARCH-4] LLM 介入点：检索前生成关键词 / L2 抽取维度 / L3 生成推理
+### [DESIGN-ARCH-4] LLM 介入点：检索前生成关键词 / List 抽取维度 / Report 生成推理
 
-### [DESIGN-ARCH-5] 删除是物理删除 + 审计 + 引用检查（删前查 L2/L3 引用）
+### [DESIGN-ARCH-5] 删除是物理删除 + 审计 + 引用检查（删前查 List/Report 引用）
 
 ### [DESIGN-ARCH-6] 切片窗口：前后第一个标点，或 50 字符上限
 
@@ -109,11 +109,11 @@ Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 
 ### [BAN-ARCH-2] UID 永不重用
 
-### [BAN-ARCH-3] L1 不改 Markdown
+### [BAN-ARCH-3] Page 不改 Markdown
 
-### [BAN-ARCH-4] L2 不做评价
+### [BAN-ARCH-4] List 不做评价
 
-### [BAN-ARCH-5] L3 不可凭空生成
+### [BAN-ARCH-5] Report 不可凭空生成
 
 ### [BAN-ARCH-6] 关系不无限增长
 
@@ -145,4 +145,4 @@ Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 | 读 Page | `read --uid` |
 | 删节点 | `delete-node` |
 | 建关系 | `query-relation add` |
-| 重建 | `rebuild --granularity keep-l1\|keep-l1-l2\|full` |
+| 重建 | `rebuild --granularity keep-page\|keep-page-list\|full` |

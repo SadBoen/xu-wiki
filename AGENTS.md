@@ -28,7 +28,7 @@ bash tests/e2e_verify.sh
 - Package: `src/xu/`
 - Entry point: `xu` command (via `xu.cli:main`)
 - 4-key JSON envelope on every command: `{status, data, message, hints}`
-- L1 nodes are **immutable** — revisions go through `patches` table
+- Page nodes are **immutable** — revisions go through `patches` table
 - Ingest is **two-phase**: `ingest-file` (parse → system temp dir) → `ingest-commit` (atomic write, only write entry)
 
 ## Node Types

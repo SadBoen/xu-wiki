@@ -2,7 +2,7 @@
 
 ## 定位
 
-「找知识」的入口。三层介入检索：L1 物理定位 → L2 结构对齐 → L3 逻辑提炼。CLI 跑机械搜索；Agent 做关键词分级和决策。
+「找知识」的入口。三层介入检索：Page 物理定位 → List 结构对齐 → Report 逻辑提炼。CLI 跑机械搜索；Agent 做关键词分级和决策。
 
 ## 原则
 
@@ -36,8 +36,8 @@
 |---|---|
 | `query` | 三层介入检索 |
 | `query-relation` | 直接管关系表 |
-| `list` | 读/建 L2 |
-| `report` | 读/建 L3 |
+| `list` | 读/建 List |
+| `report` | 读/建 Report |
 | `nodes` | DB 元数据查询 |
 | `read` | 单节点全 body |
 

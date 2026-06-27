@@ -12,7 +12,7 @@ Wiki 体检医生：扫描实例、发现一致性问题、可选修复。**默�
 
 ### [PRIN-DOC-2] doctor 检查 = 三层架构不变量
 
-L1 不可变 / L3 Report 证据链 / 50 条关系上限 / 三层引用一致性。
+Page 不可变 / Report 证据链 / 50 条关系上限 / 三层引用一致性。
 
 ### [PRIN-DOC-3] --fix 是 ingest 的逆操作
 
@@ -23,8 +23,8 @@ L1 不可变 / L3 Report 证据链 / 50 条关系上限 / 三层引用一致性�
 | `doctor-fields` | frontmatter 必填/类型/格式 |
 | `doctor-files` | raws/ 与 nodes/ 文件系统一致性 |
 | `doctor-relations` | 50 条上限 + 无重复边/悬挂边 |
-| `doctor-l1-immutable` | L1 Markdown 未被外部修改 |
-| `doctor-report-evidence` | L3 证据链完整 |
+| `doctor-l1-immutable` | Page Markdown 未被外部修改 |
+| `doctor-report-evidence` | Report 证据链完整 |
 | `doctor-node-path-organization` | 根级堆积 + 建议路径 |
 | `doctor-all` | 串行上述所有 |
 
@@ -32,9 +32,9 @@ L1 不可变 / L3 Report 证据链 / 50 条关系上限 / 三层引用一致性�
 
 ### [PRIN-DOC-6] --fix 边界
 
-- `doctor-l1-immutable`：检测到外部修改 → 报警，不修复（L1 不可变）
+- `doctor-l1-immutable`：检测到外部修改 → 报警，不修复（Page 不可变）
 - `doctor-report-evidence`：悬挂引用可 auto-fix；Report 无任何引用 → 只读
-- L3 Report 不自动删
+- Report 不自动删
 
 ## 禁令
 
@@ -48,9 +48,9 @@ L1 不可变 / L3 Report 证据链 / 50 条关系上限 / 三层引用一致性�
 
 ### [BAN-DOC-4] 不调 LLM
 
-### [BAN-DOC-5] L1 不可变性绝不让 --fix 覆盖
+### [BAN-DOC-5] Page 不可变性绝不让 --fix 覆盖
 
-### [BAN-DOC-6] L3 Report 本身不自动删
+### [BAN-DOC-6] Report 本身不自动删
 
 ## 约束
 
@@ -58,11 +58,11 @@ L1 不可变 / L3 Report 证据链 / 50 条关系上限 / 三层引用一致性�
 
 DB 记录 ↔ 文件存在 ↔ raw_path 存在。
 
-### [CONST-DOC-2] L1 不变性检查
+### [CONST-DOC-2] Page 不变性检查
 
 patches v1 存在 + SHA256 匹配。
 
-### [CONST-DOC-3] L3 证据链检查
+### [CONST-DOC-3] Report 证据链检查
 
 每个 reference UID 存在且 active。
 
@@ -74,7 +74,7 @@ patches v1 存在 + SHA256 匹配。
 
 ### [CONST-DOC-6] 4 键 JSON
 
-按 L1/L2/L3 分层汇总。
+按 Page/List/Report 分层汇总。
 
 ### [CONST-DOC-8] 修复后立即重新检查
 

@@ -1,4 +1,4 @@
-"""Unit tests for L2 List and L3 Report layer commands."""
+"""Unit tests for List and Report layer commands."""
 import os
 import sys
 from types import SimpleNamespace

@@ -36,7 +36,7 @@ install 写进系统的东西，uninstall 必须能反向拆除。
 
 ### [BAN-UNINST-3] 不自动做超出「卸载」的事
 
-### [BAN-UNINST-4] 不动 L1 修订历史
+### [BAN-UNINST-4] 不动 Page 修订历史
 
 patches 是 frontmatter 内嵌字段，是 wiki 自己状态。
 

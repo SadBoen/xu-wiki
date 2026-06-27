@@ -26,7 +26,7 @@ install = 雇图书馆管理员；create = 建一座新图书馆；register = �
 
 ### [PRIN-CRT-5] 为弹性 Rebuild 预留粒度开关
 
-### [PRIN-CRT-6] 为 L1 不可变建 patches 字段空间
+### [PRIN-CRT-6] 为 Page 不可变建 patches 字段空间
 
 patches 是 frontmatter 内嵌字段，不是独立表。
 

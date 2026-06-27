@@ -2,7 +2,7 @@
 
 ## 定位
 
-把外部信息变成 Node_Page（L1）。**两阶段流程**：Phase 1 解析暂存 → Phase 2 提交落库。
+把外部信息变成 Node_Page（Page）。**两阶段流程**：Phase 1 解析暂存 → Phase 2 提交落库。
 
 ## 原则
 
@@ -63,7 +63,7 @@ ingest-commit 成功后写 version=1 的 create 记录。
 
 压缩前 SHA256 用于查重，压缩后 SHA256 用于完整性校验。
 
-### [PRIN-ING-13] L1 body 样式与内容类型匹配
+### [PRIN-ING-13] Page body 样式与内容类型匹配
 
 | 内容类型 | body 样式 | CLI |
 |---|---|---|
@@ -75,7 +75,7 @@ Agent 第一步问用户内容形态。
 
 ### [PRIN-ING-14] ingest-album 是单次写入，不走两阶段
 
-一次调用直接产出 1 个 L1 Page + N 个源文件 copy + 1 条 patches v1。
+一次调用直接产出 1 个 Page + N 个源文件 copy + 1 条 patches v1。
 
 ### [PRIN-ING-15] 业务变更追溯走 frontmatter，不走过程层日志
 
