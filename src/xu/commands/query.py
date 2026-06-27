@@ -252,6 +252,7 @@ def cmd_expand(args) -> dict:
                     "uid": uid,
                     "title": fd.get("title", ""),
                     "layer": fd.get("layer", "Page"),
+                    "content_type": fd.get("content_type", "article"),
                     "body": body,
                     "relations": all_rels,
                 }
