@@ -1,149 +1,47 @@
 ---
 name: "xu-wiki"
-description: "Operate xu-wiki knowledge base via 5 SOPs (create/ingest/query/doctor/config) on a deterministic CLI. Manage 50-edge LRU, Node_List, Node_Report."
+description: "Manage a relation-driven wiki via 5 SOPs. Deterministic CLI, no LLM calls."
 ---
 
 # xu-wiki
 
-xu-wiki is a **relation-driven knowledge base** designed for AI agents. It
-exposes a deterministic offline-first CLI; this skill is the authoritative
-invocation guide for the agent side.
+Relation-driven wiki for AI agents. All content is `.md` files on disk — no
+DB, no lock, git-friendly.
 
-## Naming conventions
+## 核心概念
 
-Three distinct names — DO NOT mix them up:
+**Wiki 是节点的集合，每节点是一个 `.md` 文件。**
 
-| Name | What it is | Where you see it |
+| 类型 | 存储位置 | 说明 |
 |---|---|---|
-| `xu-wiki` | The skill bundle / project name | Skill frontmatter |
-| `/xu-wiki` | Slash command | Enters the matching SOP |
-| `xu` | The CLI binary | All `xu <verb>` shell invocations |
+| Page | `nodes/page/` | 原始知识切片，immutable，SHA256 去重 |
+| List | `nodes/list/` | 对 Page 的比较 / 聚合，frontmatter 含成员 UID |
+| Report | `nodes/report/` | 推理 + 结论，必须附 ≥1 证据 Page |
+| Entity | `nodes/entity/` | 实体描述符，一等公民节点 |
 
-The slash command `/xu-wiki` is the agent's UX entry into a SOP and is
-not a CLI invocation.
+**关系**：每个节点有最多 50 条出边（LRU），`query-relation` 管理。
 
-## SOP map
+**CLI 设计原则**：
+- 全离线，不调用 LLM
+- 每次调用返回 `{status, data, message, hints}` — `hints` 供 Agent 后续步骤参考，不是给用户看的
+- 你（Agent）是 `xu` 的唯一调用者，用户不直接操作 CLI
 
-A slash command `/xu-wiki <verb>` enters a SOP — **not** a CLI subcommand.
-Each SOP is self-contained in its own file (`*.md` below); the agent says
-"see SKILL.md §SOP map" rather than linking directly.
+## 哲学
 
-| SOP | Intent | CLI commands it calls | File |
-|---|---|---|---|
-| `/xu-wiki create` | build a new empty wiki at a path (raws/, nodes/{page,entity,list,report}/, .xu/) | `create` (+ optional `wikis` to verify) | `create.md` |
-| `/xu-wiki ingest` | add content (PDF / DOCX / PPTX / MD / image / album) as immutable Page. Two-phase prose/doc flow (`ingest-file` → `ingest-commit`); single-shot album flow (`ingest-album`). Body style must match content type. **Post-commit reflection**: query for similar List → extend or create new; LLM decides autonomously | `ingest-file` → `ingest-commit`; `ingest-album`; `ingest-verify`; `reorganize` (if user不满意路径); optional `query-relation add` | `ingest.md` |
-| `/xu-wiki query` | find knowledge with elastic slicing; multi-round: Path A (new keywords) or Path B (expand UIDs). **Post-query reflection**: query for similar Report → extend or create new; LLM decides autonomously | `query`; then `expand`, `read`, `list show`, or `report show` per hint | `query.md` |
-| `/xu-wiki doctor` | read-only consistency checks on fields / files / relations / Page immutability / Report evidence; apply `--fix` for safe repairs; rebuild derived layers | `doctor-all`; per-check subcommands; `--fix`; `delete-node`; `rebuild`; `nodes` (dangling lookup) | `doctor.md` |
-| `/xu-wiki config` | manage wiki aliases, register/unregister directories, set MinerU API key, inspect wikis, **and uninstall xu-wiki** | `wikis`; `alias set/unset/show`; `register` / `unregister`; `config set-mineru-key / show / path`; `skills path / list`; **`uninstall`** (always dry-run first, then `--execute` after user confirms) | `config.md` |
+**分离关注点**：语义判断（哪些关键词、要不要创建 List）由 Agent 负责；存储和检索由 xu 负责。
 
-## Architecture in 30 seconds
+**节点不可变**：Page 写入后不修改内容，编辑通过 `patches` 表做增量。Report 必须有证据链，防止空对空推理。
 
-- **Page** — immutable markdown facts in `nodes/page/`. SHA256-dedup. UID never reused.
-- **List** — `.md` comparison/aggregation in `nodes/list/`. Members in frontmatter.
-- **Report** — `.md` reasoning in `nodes/report/`. **Requires ≥ 1 evidence ref** (else rejected).
-- **Entity** — first-class node at `nodes/entity/`, same level as Page/List/Report. Stores entity descriptors.
-- **Relations** — exactly **50 edges per node** (LRU, head=touch, tail=evict). No category, no score.
-- **FS** holds raw material pool (`raws/`), Page markdown (`nodes/page/`), Entity (`nodes/entity/`), List (`nodes/list/`), Report (`nodes/report/`).
-- **CLI is offline-first.** MinerU is an optional parser in the fallback chain.
+**不对称创建偏好**：ingest 后倾向于扩展 List，query 后倾向于生成 Report。Agent 自主决定，不需用户确认。创建前先 query 是否已有相似的，有则扩展，无则新建。
 
-## Hard rules the agent MUST respect
+## SOP 入口
 
-0. **You are the only legitimate caller of `xu`.** User never touches CLI directly.
-   Translate intent → CLI calls. Parse 4-key JSON → natural language reply. On pushback: re-interpret via SOP, don't ask user to retype.
+| 命令 | 职责 | 详情 |
+|---|---|---|
+| `/xu-wiki create` | 创建空 wiki | `create.md` |
+| `/xu-wiki ingest` | 导入内容（PDF/DOCX/图片/相册） | `ingest.md` |
+| `/xu-wiki query` | 搜索 + 多轮展开 + 反射 | `query.md` |
+| `/xu-wiki doctor` | 一致性检查 / 修复 / 重建 | `doctor.md` |
+| `/xu-wiki config` | 别名 / 注册表 / 卸载 | `config.md` |
 
-0a. **Uninstall = 2 surfaces.** Skill bundle → agent removes its skill dir. Program + config → `xu uninstall --execute`. **Wiki data NEVER deleted** (no flag, no option, no branch). See doctor.md §Uninstall.
-
-0b. **No install step in this bundle.** xu-wiki is pre-installed when this skill loads. No `xu install` or `/xu-wiki install` command.
-
-1. **Never edit Page markdown body** — immutable. UIDs retired on delete, never reused.
-2. **Report needs ≥1 evidence ref** at create-time. Empty evidence rejected.
-3. **50 edges max per node** (LRU: 51st evicts tail). Do not re-add evicted edge unless needed.
-4. **Offline-first** — only MinerU parse hits network. On failure: markitdown → text → image silently.
-5. **No secret in code or git** — MinerU key in `~/.xu-wiki/config.yaml` or `MINERU_API_KEY` env.
-6. **All commands return 4-key JSON** — `{status, data, message, hints}`. `hints` is for agent, not user.
-7. **Deterministic output** — no timestamps, random IDs, or locale in response. Use `--wiki`.
-8. **Missing required args: ask, don't guess.** Never auto-pick names or paths.
-9. **Absolute paths only** (`~` is fine). Never `./foo` (breaks idempotency + symlink guard).
-10. **Slash command = SOP entry, not CLI subcommand.** `/xu-wiki <verb>` → enter SOP → pick CLI(s). See SOP map above.
-11. **Within a SOP: match intent to CLI.** Do NOT coerce to an unrelated CLI.
-    - doctor + "move X to Y" → `xu reorganize --wiki W --uid X --new-node-path Y` (atomic; never delete+re-ingest)
-12. **Asymmetric creation bias:** After ingest → bias List; after query → bias Report. LLM decides autonomously, no user approval needed. Before creating: query to find similar existing List/Report. If similar found → extend the existing one instead of creating a new one.
-13. **Phase 1 temp file:** Written to system temp, deleted on success, retained on failure. No `nodes/pending/`.
-14. **Forbidden: `execute_code` for xu CLI.** stderr corrupts JSON output. Use bash/terminal tool.
-
-## Quick safety checklist
-
-Before declaring an ingest done, run through this every time:
-
-1. **`raws/<node_path>/` has the source file copy?** — if empty but `nodes/page/`
-   has content, the copy was bypassed. Stop and re-investigate.
-2. **Phase 1 temp file was deleted on success?** — if `ingest-commit` succeeded but
-   the temp file still exists, that is a bug. Re-run `ingest-commit` (it will
-   reject a duplicate commit) to confirm deletion.
-3. **`data.created[].raw_path` is non-null?** — if null, explains why raws/ is
-   empty. Null is expected only for `--native` (agent-synthesized text).
-4. **`xu doctor-all --wiki W` returns zero issues?** — do not proceed to the next
-   batch if doctor reports temp file leftovers or other ingest anomalies.
-
-**Any NO answer means: stop, investigate, fix before continuing.**
-
-## Reading the response
-
-Every command prints one JSON object to stdout. Read `data.*` for facts and
-`hints` for the next step. Examples:
-
-```json
-{"status": "success", "data": {"uid": "ABCD1234", "title": "BERT"},
- "message": "read complete", "hints": ["query-relation list --from-uid ..."]}
-```
-
-On a `list_hint` / `report_hint` field, the agent runs the post-query
-reflection (see hard rule 12): query for similar List/Report first;
-extend existing if found; otherwise LLM decides autonomously (no user approval needed).
-Hints are starting points, not mandates.
-
-## Quick start for the agent
-
-```bash
-# 1. create a wiki
-xu create --name research --path /abs/path/to/wiki
-
-# 2. ingest Page — two phases; verify raws/ has copy after
-xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → {"data":{"temp":"/tmp/...-pre.md",...}}
-# Agent reviews the temp file content, then:
-xu ingest-commit --wiki research --temp /tmp/...-pre.md --title "BERT" --content-type article # → Page entry
-
-# 3. query (Agent grades keywords before calling)
-xu query --wiki research --keywords "transformer,attention,self-attention,encoder" --top-k 5
-
-# 4. wire relations
-xu query-relation add --wiki research \
-  --from-uid <uid-A> --to-uid <uid-B> --relation-name cites --comment "section 3.2"
-
-# 5. List / Report
-xu list   create --wiki research --title "top 10 models" \
-  --members <uid1>,<uid2>,... --dimension "by-parameter-count"
-xu report create --wiki research --title "transformer survey" \
-  --references <uid1>,<uid2>,<uid3> --body "## findings ..."
-
-# 6. health
-xu doctor-all --wiki research
-xu rebuild    --wiki research --granularity keep-l1
-```
-
-## Error catalog
-
-Every `error_class` the CLI may return. The canonical reference is
-`references/error-catalog.md`, which follows the format below and grows
-over time.
-
-```
-## <error_class>
-- Trigger: <what user/system action causes it>
-- Where: <which CLI subcommand / SOP>
-- Response shape: <what `data` keys accompany it>
-- Fix: <how the user / agent should respond>
-```
-
-Cross-reference: JSON response shape (`status` / `data` / `message` / `hints`) → `SKILL.md §Reading the response`
-
+每个 SOP 的详细步骤、flag 说明、常见陷阱均在对应的 `references/*.md` 中。
