@@ -21,7 +21,7 @@ xu ingest-verify --wiki <w> --uid <uid>
 
 # Destructive (explicit, never auto)
 xu delete-node --wiki <w> --uid <uid> [--force]
-xu rebuild --wiki <w> --granularity keep-l1|keep-l1-l2|full
+xu rebuild --wiki <w> --granularity keep-page|keep-page-list|full
 
 # Discovery
 xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
@@ -52,14 +52,14 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 
 1. **Verify intent explicitly** — state wiki + UIDs, ask confirmation
 2. **`delete-node`**: run without `--force` first (refuses if referenced); if user accepts orphans → `--force`
-3. **`rebuild`**: `keep-l1` safest (rebuilds List/Report from Page only); `full` is destructive for derived layers
+3. **`rebuild`**: `keep-page` safest (rebuilds List/Report from Page only); `full` is destructive for derived layers
 
 ## Granularity
 
 | Value | Destroys |
 |---|---|
-| `keep-l1` | List/Report rebuilt from Page (safe) |
-| `keep-l1-l2` | Report only rebuilt |
+| `keep-page` | List/Report rebuilt from Page (safe) |
+| `keep-page-list` | Report only rebuilt |
 | `full` | Everything from raw markdown — destructive |
 
 ## Example
@@ -81,5 +81,5 @@ xu delete-node --wiki research --uid WXYZ5678 --force
 |---|---|
 | `--fix` on `doctor-l1-immutable` | Not supported — Page is immutable; restore from backup or rebuild |
 | Auto-running destructive ops | Never invoke without explicit user confirmation |
-| `rebuild --granularity full` | Destructive for List/Report edits; default is `keep-l1` |
+| `rebuild --granularity full` | Destructive for List/Report edits; default is `keep-page` |
 | `ingest` temp file not deleted | Re-run `ingest-commit` with same temp → triggers deletion |

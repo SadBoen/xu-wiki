@@ -25,11 +25,16 @@ xu query-relation list --wiki <w> --from-uid <uid>
 xu query-relation add --wiki <w> --from-uid <uid> --to-uid <uid> \
   --relation-name <r> [--comment <c>]
 
-# List / Report
+# List / Report / Entity
 xu list show --wiki <w> --uid <uid>
 xu list create --wiki <w> --title <t> --members <uid,uid,...> [--dimension <d>] [--node-path <p>]
+xu list modify --wiki <w> --uid <uid> [--title <t>] [--members <uids>] [--dimension <d>]
 xu report show --wiki <w> --uid <uid>
 xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [--node-path <p>]
+xu report modify --wiki <w> --uid <uid> [--title <t>] [--body <md>] [--references <uids>]
+xu entity show --wiki <w> --uid <uid>
+xu entity create --wiki <w> --title <t> [--source-page <uid>] [--body <md>] [--node-path <p>]
+xu entity modify --wiki <w> --uid <uid> [--title <t>] [--body <md>]
 ```
 
 ## Multi-round workflow
@@ -51,7 +56,7 @@ Always add English forms. Example: `"现在库里面收录了几条船？"` → 
 
 ## Post-query reflection
 
-1. Query for similar existing Entity/List/Report
+1. Inspect `data.reflection` — it scans existing Entity/List/Report for keyword matches and suggests whether to create new ones
 2. Extend existing if found; else LLM decides to create
 3. Wire relations with `query-relation add`
 

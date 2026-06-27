@@ -66,7 +66,7 @@ def _build_reflection(ctx, keywords: list[str], top_blocks: list[dict]) -> dict:
     has_pages = any(b["layer"] == "Page" for b in top_blocks)
 
     if has_pages and not existing_entities:
-        hint = f"{len(top_blocks)} page(s) found – consider extracting entities with: xu entity-create --wiki <w> --title <name> --source-page <uid>"
+        hint = f"{len(top_blocks)} page(s) found – consider extracting entities with: xu entity create --wiki <w> --title <name> --source-page <uid>"
     elif len(top_blocks) >= 2 and not existing_lists:
         hint = "multiple results share a theme – consider: xu list-create"
     else:
