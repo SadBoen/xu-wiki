@@ -6,7 +6,6 @@ Tests cover:
 - --execute + --keep-pip removes wikis + ~/.xu/ but skips pip
 - --execute without --keep-pip invokes pip uninstall (mocked)
 - --execute with no flags only touches pip (wiki data + ~/.xu/ preserved)
-- --purge-wikis drops registry entries too
 - --purge-config removes the global dir
 - argparse wires up the new subcommand (cli.dispatch smoke)
 """
@@ -46,13 +45,9 @@ def xu_home(monkeypatch, tmp_path):
 
 
 def _args(**kw):
-    # New semantics:
-    # - purge_wikis is always False (wiki data NEVER deleted)
-    # - purge_config is True unless preserve_config=True
     defaults = dict(execute=False, keep_pip=False,
-                    purge_wikis=False, preserve_config=False)
+                    preserve_config=False)
     defaults.update(kw)
-    # Map purge_config (old test callers) → preserve_config (new code)
     if "purge_config" in kw:
         defaults["preserve_config"] = not kw["purge_config"]
     return SimpleNamespace(**defaults)
@@ -89,11 +84,7 @@ def _seed_wiki(xu_home, name, *, alias=None, path=None):
 
 
 def _seed_nonwiki(xu_home, name, *, path=None):
-    """Seed an entry in the registry whose path is NOT a wiki marker.
-
-    Used to verify that `_purge_wikis` refuses to rmtree non-wiki
-    paths (3.1 fix).
-    """
+    """Seed an entry in the registry whose path is NOT a wiki marker."""
     if path is None:
         path = str(xu_home / "not-a-wiki" / name)
     os.makedirs(path, exist_ok=True)
@@ -112,7 +103,7 @@ def test_uninstall_dry_run_is_default(xu_home):
     """No --execute → must report dry-run and touch NOTHING."""
     _seed_wiki(xu_home, "A")
     r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                    purge_wikis=False, purge_config=False))
+                                    purge_config=False))
     assert r["status"] == "success"
     assert r["data"]["mode"] == "dry-run"
     assert "A" in cfg_mod.load_registry()["wikis"]
@@ -121,33 +112,30 @@ def test_uninstall_dry_run_is_default(xu_home):
 
 
 def test_dry_run_lists_wikis_and_marks_flags(xu_home):
-    """Dry-run surfaces wikis_found; purge_wikis is always False; purge_config reflects --preserve-config."""
+    """Dry-run surfaces wikis_found; purge_config reflects --preserve-config."""
     _seed_wiki(xu_home, "A")
     _seed_wiki(xu_home, "B")
     r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                    purge_wikis=True, preserve_config=True))
+                                    preserve_config=True))
     plan = r["data"]
     assert plan["mode"] == "dry-run"
     assert plan["execute"] is False
     assert plan["pip_uninstall"] is True
-    assert plan["purge_wikis"] is False  # always False: wiki data NEVER deleted
     assert plan["purge_config"] is False  # preserve_config=True → config preserved
     names = sorted(w["name"] for w in plan["wikis_found"])
     assert names == ["A", "B"]
 
 
 def test_dry_run_annotates_is_wiki_root(xu_home):
-    """Dry-run annotates each entry with is_wiki_root boolean; purge_wikis is always False."""
+    """Dry-run annotates each entry with is_wiki_root boolean."""
     _seed_wiki(xu_home, "real")
     _seed_nonwiki(xu_home, "fake")
     r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                    purge_wikis=True, preserve_config=True))
+                                    preserve_config=True))
     plan = r["data"]
     by_name = {w["name"]: w for w in plan["wikis_found"]}
     assert by_name["real"]["is_wiki_root"] is True
     assert by_name["fake"]["is_wiki_root"] is False
-    # purge_wikis is always False in plan
-    assert plan["purge_wikis"] is False
     assert plan["purge_config"] is False  # preserve_config=True → purge_config=False
     # non_wiki_paths_detected surfaces the warning at plan level
     detected = plan.get("non_wiki_paths_detected")
@@ -155,28 +143,26 @@ def test_dry_run_annotates_is_wiki_root(xu_home):
     assert any(d["name"] == "fake" for d in detected)
 
 
-def test_execute_purge_wikis_never_deletes_wiki(xu_home, monkeypatch):
-    """Wiki data is NEVER deleted — even if --purge-wikis is passed."""
+def test_execute_never_deletes_wiki_data(xu_home, monkeypatch):
+    """Wiki data is NEVER deleted."""
     _seed_wiki(xu_home, "A")
     monkeypatch.setattr(cmd_mod, "_pip_uninstall",
                         lambda: {"ok": True, "returncode": 0,
                                  "stdout_tail": "", "stderr_tail": ""})
-    # Mock shutil.rmtree to verify it is called with xu_home
     import shutil as shutil_mod
     deleted_paths = []
     original_rmtree = shutil_mod.rmtree
 
     def track_rmtree(path, **kwargs):
         deleted_paths.append(Path(path))
-        # Actually delete to mimic real behavior
         original_rmtree(path, **kwargs)
 
     monkeypatch.setattr(shutil_mod, "rmtree", track_rmtree)
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=True, purge_config=True))
-    # wiki data preserved (NEVER deleted) — verify marker file still exists
+                                    purge_config=True))
+    # wiki data preserved — verify marker file still exists
     assert _last_wiki_path.exists()
-    # wikis reported as skipped (purge_wikis is always False)
+    # wikis always skipped
     assert r["data"]["result"]["wikis"]["skipped"] is True
     # config was deleted via rmtree(xu_home)
     assert any(p == xu_home for p in deleted_paths), f"Expected rmtree({xu_home}), got {deleted_paths}"
@@ -203,7 +189,7 @@ def test_execute_default_removes_config_preserves_wikis(xu_home, monkeypatch):
 
     monkeypatch.setattr(shutil_mod, "rmtree", tracker)
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=False, purge_config=True))
+                                    purge_config=True))
     assert r["status"] == "success"
     # wikis untouched (NEVER deleted) — verify marker file exists
     assert _last_wiki_path.exists()
@@ -230,7 +216,7 @@ def test_execute_keep_pip_removes_config_preserves_wikis(xu_home, monkeypatch):
 
     _seed_wiki(xu_home, "A")
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=True,
-                                    purge_wikis=True, purge_config=True))
+                                    purge_config=True))
     assert r["status"] == "success"
     assert _last_wiki_path.exists()
     assert r["data"]["result"]["pip"]["skipped"] is True
@@ -257,36 +243,6 @@ def test_execute_preserve_config_keeps_xu_dir(xu_home, monkeypatch):
 
 
 # ----------------------------------------------------------------------
-# 5. --purge-wikis is ignored: wiki data NEVER deleted regardless of flag
-# ----------------------------------------------------------------------
-
-def test_purge_wikis_flag_is_ignored(xu_home, monkeypatch):
-    """--purge-wikis is a no-op; wiki data is NEVER deleted."""
-    wiki_a = _seed_wiki(xu_home, "A")
-    wiki_b = _seed_wiki(xu_home, "B")
-    monkeypatch.setattr(cmd_mod, "_pip_uninstall",
-                        lambda: {"ok": True, "returncode": 0,
-                                 "stdout_tail": "", "stderr_tail": ""})
-    import shutil as shutil_mod
-    deleted = []
-    orig = shutil_mod.rmtree
-
-    def tracker(path, **kw):
-        deleted.append(Path(path))
-        orig(path, **kw)
-    monkeypatch.setattr(shutil_mod, "rmtree", tracker)
-
-    r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=True, purge_config=True))
-    assert r["status"] == "success"
-    # wikis preserved (NEVER deleted)
-    assert wiki_a.exists()
-    assert wiki_b.exists()
-    # config was deleted; verify rmtree was called with xu_home
-    assert any(p == xu_home for p in deleted), f"Expected rmtree({xu_home}), got {deleted}"
-
-
-# ----------------------------------------------------------------------
 # 5. pip uninstall failure → warning (partial uninstall)
 # ----------------------------------------------------------------------
 
@@ -294,7 +250,7 @@ def test_pip_uninstall_invokes_pip_correctly(xu_home):
     """Even if pip fails, the command shape is correct (we don't mock pip here)."""
     _seed_wiki(xu_home, "A")
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=False, purge_config=False))
+                                    purge_config=False))
     pip = r["data"]["result"]["pip"]
     assert pip["command"].endswith("pip uninstall xu-wiki -y")
     # pip returncode is reported either way
@@ -314,12 +270,11 @@ def test_cli_palette_includes_uninstall_under_config():
     assert args.execute is None
     assert args.dry_run is None
     assert args.keep_pip is False
-    assert args.purge_wikis is False  # flag still accepted but ignored
     assert args.preserve_config is False  # default: remove ~/.xu/
 
 
 def test_cli_palette_exec_flags_parse():
-    """New flags: --preserve-config (inverts config removal); --purge-wikis is ignored."""
+    """New flags: --preserve-config (inverts config removal)."""
     from xu.cli import build_parser
     p = build_parser()
     args = p.parse_args(["uninstall", "--execute",
@@ -358,7 +313,7 @@ def test_uninstall_help_does_not_raise():
 def test_dry_run_response_shape_matches_protocol():
     """Dry-run response must be the standard 4-key JSON envelope."""
     r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                    purge_wikis=False, purge_config=False))
+                                    purge_config=False))
     assert set(r.keys()) >= {"status", "data", "message", "hints"}
     assert r["status"] in ("success", "warning", "error")
 
@@ -366,7 +321,7 @@ def test_dry_run_response_shape_matches_protocol():
 def test_execute_response_shape_matches_protocol(xu_home):
     """--execute response must also be the standard 4-key JSON envelope."""
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=True,
-                                    purge_wikis=True, purge_config=True))
+                                    purge_config=True))
     assert set(r.keys()) >= {"status", "data", "message", "hints"}
     assert r["status"] in ("success", "warning", "error")
 
@@ -391,11 +346,11 @@ def test_plan_mode_consistent_with_execute_flag(xu_home, monkeypatch):
                                  "command_full": "/usr/bin/python3 -m pip uninstall xu-wiki -y"})
     # dry-run path
     r_dry = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                        purge_wikis=False, purge_config=False))
+                                        purge_config=False))
     assert r_dry["data"]["mode"] == "dry-run"
     # execute path — data has {plan, result}
     r_exec = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                         purge_wikis=False, purge_config=False))
+                                         purge_config=False))
     assert r_exec["data"]["plan"]["mode"] == "execute"
     assert r_exec["data"]["plan"]["execute"] is True
     # No contradiction: mode == execute AND execute == True
@@ -459,47 +414,6 @@ def test_purge_global_dir_empty_dir_reports_zero_files(xu_home):
     assert res["ok"] is True
 
 
-def test_purge_wikis_schema_returns_three_lists(xu_home):
-    """P1 schema: removed / refused / failures must be present as lists."""
-    _seed_wiki(xu_home, "real")
-    _seed_nonwiki(xu_home, "fake")
-    res = cmd_mod._purge_wikis()
-    assert set(res.keys()) == {"removed", "refused", "failures"}
-    assert isinstance(res["removed"], list)
-    assert isinstance(res["refused"], list)
-    assert isinstance(res["failures"], list)
-    # The real one was rmtree'd; the fake one was refused
-    assert any(r["name"] == "real" for r in res["removed"])
-    assert any(r["name"] == "fake" for r in res["refused"])
-    assert res["failures"] == []
-
-
-def test_purge_wikis_refused_has_reason_field(xu_home):
-    """P1 schema: refused entries must include a 'reason' string explaining
-    why rmtree was blocked (vs 'failures' which is rmtree-raised-exception)."""
-    _seed_nonwiki(xu_home, "fake")
-    res = cmd_mod._purge_wikis()
-    assert len(res["refused"]) == 1
-    entry = res["refused"][0]
-    assert "reason" in entry
-    assert isinstance(entry["reason"], str)
-    assert "wiki" in entry["reason"].lower()
-
-
-def test_purge_wikis_failures_has_error_field(xu_home, monkeypatch):
-    """P1 schema: failures entries must include an 'error' string from
-    the underlying exception (vs refused which has 'reason')."""
-    _seed_wiki(xu_home, "real")
-    monkeypatch.setattr("shutil.rmtree",
-                        lambda p, **kw: (_ for _ in ()).throw(PermissionError("denied")))
-    res = cmd_mod._purge_wikis()
-    assert len(res["failures"]) == 1
-    entry = res["failures"][0]
-    assert "error" in entry
-    assert isinstance(entry["error"], str)
-    assert "denied" in entry["error"]
-
-
 # ----------------------------------------------------------------------
 # 9. Installer detection + pipx-aware uninstall (case study v2)
 # ----------------------------------------------------------------------
@@ -547,7 +461,7 @@ def test_uninstall_in_pipx_runs_pipx_uninstall(monkeypatch, xu_home):
                                  {"ok": True, "returncode": 0,
                                   "stdout_tail": "", "stderr_tail": ""}))
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=False, purge_config=False))
+                                    purge_config=False))
     assert pipx_called != [], "pipx uninstall should have been called"
     assert r["data"]["plan"]["installer"] == "pipx"
 
@@ -562,7 +476,7 @@ def test_uninstall_in_pip_venv_still_runs_pip_uninstall(monkeypatch, xu_home):
                                  "command_full": "/usr/bin/python3 -m pip uninstall xu-wiki -y",
                                  "stdout_tail": "", "stderr_tail": ""})
     r = cmd_mod.cmd_uninstall(_args(execute=True, keep_pip=False,
-                                    purge_wikis=False, purge_config=False))
+                                    purge_config=False))
     assert r["data"]["result"]["pip"]["ok"] is True
     assert r["data"]["plan"]["installer"] == "pip"
 
@@ -572,6 +486,6 @@ def test_dry_run_reports_installer(monkeypatch, xu_home):
     knows upfront which installer owns the program body)."""
     monkeypatch.setattr(cmd_mod, "_detect_installer", lambda: "pipx")
     r = cmd_mod.cmd_uninstall(_args(execute=False, keep_pip=False,
-                                    purge_wikis=False, purge_config=False))
+                                    purge_config=False))
     # dry-run → data IS the plan
     assert r["data"]["installer"] == "pipx"

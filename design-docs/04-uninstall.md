@@ -30,7 +30,7 @@ install 写进系统的东西，uninstall 必须能反向拆除。
 
 ### [BAN-UNINST-1] 绝不删除知识库本体
 
-任何情况下都不动知识库。`--purge-wikis` 被接受但无效。
+任何情况下都不动知识库。
 
 ### [BAN-UNINST-2] 不直删 Agent 管的资源
 

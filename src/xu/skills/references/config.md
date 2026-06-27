@@ -68,8 +68,6 @@ Scope options:
 | (d) Keep skill | `--execute --keep-skill` |
 | (e) Target specific | `--execute --target <agent>` |
 
-**`--purge-wikis`** — accepted but ignored. Wiki data is never deletable via uninstall.
-
 ## Setup workflow
 
 1. **MinerU key** (optional):
@@ -97,4 +95,4 @@ xu register --name legacy --path /abs/path/to/existing/wiki --alias lg
 | Hardcoding MinerU key | Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml` |
 | `xu install` | Doesn't exist — use `pip install` |
 | `--keep-pip` in user flow | Test escape hatch — never in normal flows |
-| `--purge-wikis` | Accepted but ignored — no effect |
+

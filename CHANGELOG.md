@@ -31,11 +31,10 @@
   installed. No silent fall-back to empty parse result.
 
 - **Uninstall CLI flags**: Added `--target` (multi, agent harness), `--keep-skill`.
-  `--preserve-config` and `--keep-pip` retained. `--purge-wikis` accepted but
-  ignored — wiki data is never deleted regardless.
+  `--preserve-config` and `--keep-pip` retained.
 
 - **Dry-run plan is human-readable**: `xu uninstall` (dry-run) now prints a
   formatted plan to stdout before returning the JSON envelope.
 
 - **Wiki data is a hard invariant**: Wiki data (registered wiki directories) is
-  never deleted under any combination of flags. `--purge-wikis` is a no-op.
+  never deleted under any combination of flags.

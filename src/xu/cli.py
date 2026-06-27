@@ -224,8 +224,6 @@ def build_parser() -> argparse.ArgumentParser:
                        help="actually perform the uninstall")
     sp.add_argument("--preserve-config", action="store_true",
                     help="keep ~/.xu-wiki/ config dir after uninstall (default: remove it)")
-    sp.add_argument("--purge-wikis", action="store_true",
-                    help="[DEPRECATED/IGNORED] wiki data is NEVER deleted")
     sp.add_argument("--keep-pip", action="store_true",
                     help="do NOT call pip uninstall (test / dev escape hatch)")
     sp.add_argument("--keep-skill", action="store_true",

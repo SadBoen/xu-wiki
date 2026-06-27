@@ -7,12 +7,21 @@ Relation-driven three-layer wiki engine for AI agents. Python CLI, fully determi
 ## Developer Commands
 
 ```bash
-# Unit tests (pyenv 3.14.5)
+# Lint / typecheck / test (CI order: lint -> typecheck -> test)
+ruff check src/
+mypy src/
 python3 -m pytest tests/
 
-# End-to-end M1->M5 run (uses .venv/bin/xu)
+# Unit tests only
+python3 -m pytest tests/ -q
+
+# End-to-end M1->M6 run (requires .venv; sample files at design-docs/测试用样例文件/)
+.venv/bin/xu create ...     # bootstrap .venv first: pip install -e ".[pdf,parse,nlp,vision]"
+# or run via the wrapper script that manages .venv internally:
 bash tests/e2e_verify.sh
 ```
+
+**CI pipeline**: `ruff check` → `mypy` → `pytest` on Python 3.10–3.13.
 
 ## Architecture
 
@@ -58,7 +67,7 @@ Skill files are in `src/xu/skills/` (SKILL.md + references/).
 **Forbidden**:
 - ❌ Running `pipx uninstall xu-wiki` as a separate step
 - ❌ Manually deleting skill bundle directories
-- ❌ Any flow that deletes wiki data, even with `--purge-wikis`
+- ❌ Any flow that deletes wiki data
 
 ## Design Docs
 

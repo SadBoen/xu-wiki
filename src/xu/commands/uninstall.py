@@ -21,16 +21,14 @@ always running dry-run first, asking the user, then re-running with
 Side effects (only when --execute is set):
 
  1. `--preserve-config` skips removal of `~/.xu-wiki/` (default: remove it).
-2. `--purge-wikis` is ignored — wiki data is NEVER deleted.
-3. `--keep-pip` skips the `pip uninstall xu-wiki -y` step (test escape
-   hatch — the test suite uses this to verify the CLI without actually
-   removing itself).
-4. Default (no flags except --execute): removes pip package + `~/.xu-wiki/`
-   config. Wiki data is preserved — always.
+ 2. `--keep-pip` skips the `pip uninstall xu-wiki -y` step (test escape
+    hatch — the test suite uses this to verify the CLI without actually
+    removing itself).
+ 3. Default (no flags except --execute): removes pip package + `~/.xu-wiki/`
+    config. Wiki data is preserved — always (BAN-UNINST-1).
 
 Audit: the uninstall itself is logged to the GLOBAL audit log (no wiki
-context). Wiki removals (under --purge-wikis) ALSO log to each wiki's
-own audit.jsonl before the wiki dir is deleted.
+context).
 """
 from __future__ import annotations
 
@@ -84,7 +82,6 @@ def _plan(args, *, mode: str | None = None) -> dict:
         "execute": execute,
         "pip_uninstall": not bool(getattr(args, "keep_pip", False)),
         "purge_skill": not keep_skill,
-        "purge_wikis": False,
         "purge_config": not bool(getattr(args, "preserve_config", False)),
         "targets": targets or [d["agent"] for d in skill_deployments],
         "skill_deployments": skill_deployments,
@@ -96,11 +93,6 @@ def _plan(args, *, mode: str | None = None) -> dict:
         "package": "xu-wiki",
         "installer": _detect_installer(),
     }
-    non_wiki = [w for w in annotated if not w["is_wiki_root"]]
-    if non_wiki:
-        plan["non_wiki_paths_detected"] = [
-            {"name": w["name"], "path": w["path"]} for w in non_wiki
-        ]
     return plan
 
 
@@ -112,73 +104,6 @@ def _read_manifest() -> dict | None:
     except Exception:
         return None
 
-
-def _purge_wikis(strict_wiki_check: bool = True) -> dict:
-    """Actually remove every registered wiki dir + drop them from registry.
-
-    `strict_wiki_check` (default True): refuse to rmtree any path that
-    doesn't look like a wiki (`.xu/config.yaml`).
-    Such entries are still dropped from the registry, but the directory
-    is left intact and reported under `refused`. This prevents the
-    "I registered ~/projects/notebook as a wiki and uninstall nuked
-    my whole project" failure mode (3.1).
-
-    Returns a dict with three lists (P1 schema, machine-readable):
-
-    - `removed`  : entries that were ACTUALLY rmtree'd
-                   (or whose path didn't exist on disk — entry
-                   still dropped from registry as no-op).
-                   Each item: {name, path[, note]}.
-    - `refused`  : entries where strict_wiki_check blocked rmtree
-                   because the path is not a wiki marker. Directory
-                   left intact, registry entry still dropped.
-                   Each item: {name, path, reason}.
-    - `failures` : entries where shutil.rmtree raised. Directory MAY
-                   be partially deleted; registry entry KEPT (might
-                   be transient permission/mount issue — operator
-                   should investigate).
-                   Each item: {name, path, error}.
-
-    The three lists are disjoint and exhaustive over the registry.
-    Agents parsing this response should treat `removed` as success,
-    `refused` as "user probably registered wrong path", `failures`
-    as "investigate, possibly retry".
-    """
-    removed = []
-    refused = []
-    failures = []
-    reg = load_registry()
-    for name in list(reg.get("wikis", {}).keys()):
-        entry = reg.get("wikis", {}).get(name) or {}
-        p = entry.get("path")
-        if not p:
-            failures.append({"name": name, "error": "no path in registry entry"})
-            reg["wikis"].pop(name, None)
-            continue
-        wiki_path = Path(p)
-        if wiki_path.exists():
-            if strict_wiki_check and not is_wiki_root(wiki_path):
-                refused.append({
-                    "name": name,
-                    "path": p,
-                    "reason": "path is not a wiki (missing .xu/config.yaml); "
-                              "leaving directory intact",
-                })
-                reg["wikis"].pop(name, None)
-                continue
-            try:
-                shutil.rmtree(wiki_path)
-                removed.append({"name": name, "path": p})
-            except Exception as e:
-                failures.append({"name": name, "path": p, "error": str(e)})
-                # keep registry entry on failure (might be transient)
-                continue
-        else:
-            # Path already gone — still drop from registry
-            removed.append({"name": name, "path": p, "note": "path did not exist"})
-        reg["wikis"].pop(name, None)
-    save_registry(reg)
-    return {"removed": removed, "refused": refused, "failures": failures}
 
 
 def _purge_global_dir() -> dict:
@@ -414,12 +339,9 @@ def cmd_uninstall(args) -> dict:
     # here so the pipx guard is a single local reference.
     installer = plan["installer"]
 
-    # 1) wikis (wiki data NEVER deleted regardless of any flag)
-    if plan["purge_wikis"]:
-        result["wikis"] = _purge_wikis()
-    else:
-        result["wikis"] = {"skipped": True,
-                            "reason": "--purge-wikis not set; wiki data preserved"}
+    # 1) wikis — never deleted (BAN-UNINST-1)
+    result["wikis"] = {"skipped": True,
+                       "reason": "wiki data is NEVER deleted"}
 
     # 2) skill bundles (only if --purge-skill, default: remove)
     if plan["purge_skill"]:
@@ -446,17 +368,10 @@ def cmd_uninstall(args) -> dict:
         result["pip"] = {"skipped": True,
                          "reason": "--keep-pip set; pip uninstall not run"}
 
-    # Compose status: warning if pip failed (data on disk may still exist);
-    # error only if EVERYTHING failed.
-    # (P0 audit fix): config_dir now uses `ok`/`existed_before`/`files_removed_count`
-    # instead of just an `error` string. The agent can cross-check by
-    # independently stat-ing the path.
     pip_ok = (result["pip"] or {}).get("ok", True)
-    wiki_failures = (result["wikis"] or {}).get("failures") or []
-    wiki_refused = (result["wikis"] or {}).get("refused") or []
     cfg_ok = (result["config_dir"] or {}).get("ok", True)
-    all_ok = pip_ok and not wiki_failures and not wiki_refused and cfg_ok
-    partial = pip_ok and (wiki_failures or wiki_refused or not cfg_ok)
+    all_ok = pip_ok and cfg_ok
+    partial = pip_ok and not cfg_ok
 
     if all_ok:
         return success(
