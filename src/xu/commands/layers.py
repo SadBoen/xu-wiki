@@ -1,9 +1,10 @@
-"""Node_List + Node_Report — file-based upper layers (01-wiki-architecture.md).
+"""Node_List + Node_Report + Node_Entity — file-based upper layers (01-wiki-architecture.md).
 
 List: comparison/aggregation over existing nodes. Stored as .md in nodes/list/.
 Report: reasoning + conclusion + MANDATORY evidence chain (BAN-ARCH-5).
-A Report with zero references is rejected (CONST-DOC-3).
-Both are .md-only: body + frontmatter in nodes/list/|nodes/report/ (DESIGN-ARCH-1).
+Entity: first-class named concept extracted from Page content. Body is the Agent's
+  notes on the entity; source_page links back to the originating Page.
+All three are .md-only (DESIGN-ARCH-1).
 """
 from __future__ import annotations
 
@@ -126,6 +127,97 @@ def cmd_report(args) -> dict:
     if args.report_action == "show":
         return _report_show(args)
     return error(f"unknown report action: {args.report_action}", "UnknownAction")
+
+
+# ---------------------------------------------------------------------------
+# Entity
+# ---------------------------------------------------------------------------
+
+def cmd_entity(args) -> dict:
+    if args.entity_action == "create":
+        return _entity_create(args)
+    if args.entity_action == "show":
+        return _entity_show(args)
+    return error(f"unknown entity action: {args.entity_action}", "UnknownAction")
+
+
+def _entity_create(args) -> dict:
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+    if not args.title:
+        return error("Entity needs a --title", "MissingTitle")
+
+    source_page_uid = None
+    if getattr(args, "source_page", None):
+        found = find_node_md(ctx, args.source_page)
+        if not found:
+            return error(f"source_page node not found: {args.source_page}", "MemberNotFound",
+                         data={"missing": [args.source_page]})
+        source_page_uid = args.source_page
+
+    uid = gen_uid()
+    ts = now_ts()
+
+    try:
+        if getattr(args, "node_path", ""):
+            node_path = safe_node_path(args.node_path)
+        else:
+            node_path = safe_slug(args.title)
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
+
+    frontmatter = {
+        "uid": uid,
+        "title": args.title,
+        "layer": "Entity",
+        "node_path": node_path,
+        "source_page": source_page_uid,
+        "split_index": 1,
+        "parent_uid": uid,
+        "created_at": ts,
+        "updated_at": ts,
+    }
+
+    md_path = ctx.entity_dir / f"{node_path}.md"
+    atomic_write_text(md_path, fm.render(frontmatter, args.body or ""))
+
+    hints = [f"read --uid {uid} to view"]
+    if source_page_uid:
+        hints.append(f"expand --wiki {args.wiki} --uids {source_page_uid} to review source")
+    return success(
+        {"uid": uid, "layer": "Entity", "source_page": source_page_uid,
+         "node_path": node_path},
+        f"created Node_Entity {uid}",
+        hints=hints,
+    )
+
+
+def _entity_show(args) -> dict:
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    frontmatter, body = None, ""
+    for p in ctx.entity_dir.glob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, bd = fm.parse(text)
+            if fm_dict.get("uid") == args.uid:
+                frontmatter, body = fm_dict, bd
+                break
+        except Exception:
+            continue
+    if frontmatter is None:
+        return error(f"Entity not found: {args.uid}", "EntityNotFound")
+
+    return success(
+        {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),
+         "source_page": frontmatter.get("source_page"),
+         "node_path": frontmatter.get("node_path", ""),
+         "body": body},
+        f"Entity {args.uid}",
+    )
 
 
 def _report_create(args) -> dict:

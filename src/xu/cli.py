@@ -152,6 +152,20 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--uid", required=True)
     sp.set_defaults(func="report_cmd")
 
+    sp = sub.add_parser("entity", help="Node_Entity create/show")
+    espec = sp.add_subparsers(dest="entity_action", required=True)
+    ec = espec.add_parser("create")
+    ec.add_argument("--wiki", required=True)
+    ec.add_argument("--title", required=True)
+    ec.add_argument("--source-page", dest="source_page", default=None,
+                   help="UID of the Page this entity was extracted from")
+    ec.add_argument("--body", default="", help="entity notes (markdown)")
+    ec.add_argument("--node-path", default="")
+    es = espec.add_parser("show")
+    es.add_argument("--wiki", required=True)
+    es.add_argument("--uid", required=True)
+    sp.set_defaults(func="entity_cmd")
+
     # ---- M5: doctor / delete-node / rebuild ----
     for name in [
         "doctor", "doctor-fields", "doctor-files", "doctor-relations",
@@ -274,6 +288,7 @@ _DISPATCH_TABLE: dict[str, tuple[str, str]] = {
     "query_relation": ("commands.relations", "cmd_query_relation"),
     "list_cmd": ("commands.layers", "cmd_list"),
     "report_cmd": ("commands.layers", "cmd_report"),
+    "entity_cmd": ("commands.layers", "cmd_entity"),
     "doctor": ("commands.doctor", "cmd_doctor"),
     "delete_node": ("commands.doctor", "cmd_delete_node"),
     "rebuild": ("commands.doctor", "cmd_rebuild"),
