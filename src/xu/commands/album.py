@@ -2,7 +2,7 @@
 
 Gallery ingestion now goes through:
   Phase 1: ingest-file --files img1,img2,... --title T --node-path P
-  Phase 2: ingest-commit --pending <path> --title T --content-type gallery
+  Phase 2: ingest-commit --temp <path> --title T --content-type gallery
 
 This module is kept for backwards compatibility and will be removed in a
 future version.
@@ -18,7 +18,7 @@ def cmd_ingest_album(args) -> dict:
     Gallery ingestion now goes through:
       Phase 1: ingest-file --files img1,img2,... --title T --node-path P \\
                    --layout table --vision --captions C
-      Phase 2: ingest-commit --pending <path> --title T --content-type gallery \\
+      Phase 2: ingest-commit --temp <path> --title T --content-type gallery \\
                    --author <A>
     """
     return error(

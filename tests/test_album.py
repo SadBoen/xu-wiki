@@ -3,7 +3,7 @@
 Covers PRIN-ING-13 (body-form), PRIN-ING-14 (merged into two-phase),
 PRIN-ING-3a (SHA256 three-way). The gallery flow goes:
   Phase 1: ingest-file --files img1,img2,... --title T --node-path P
-  Phase 2: ingest-commit --pending <path> --title T --content-type gallery
+  Phase 2: ingest-commit --temp <path> --title T --content-type gallery
 
 Tests: Phase 1, Phase 2, dedup, captions, vision, Pillow degradation,
 raws/ copy, and integration (resolve_wiki round-trip).
@@ -73,10 +73,10 @@ def _phase1(wiki_name, title, files, node_path="", layout="table",
     return r1
 
 
-def _phase2(wiki_name, pending, title, content_type="gallery", author="agent"):
-    """Run Phase 2: ingest-commit with pending."""
+def _phase2(wiki_name, temp, title, content_type="gallery", author="agent"):
+    """Run Phase 2: ingest-commit with temp file."""
     r2 = ingest_mod.cmd_ingest_commit(_args(
-        wiki=wiki_name, pending=pending, title=title,
+        wiki=wiki_name, temp=temp, title=title,
         content_type=content_type, author=author,
         native=None, source=None, node_path="", relations="",
     ))
@@ -89,8 +89,8 @@ def _two_phase(wiki_name, title, files, node_path="", layout="table",
     r1 = _phase1(wiki_name, title, files, node_path, layout, vision, captions, author)
     if r1["status"] != "success":
         return r1
-    pending = r1["data"]["pending"]
-    r2 = _phase2(wiki_name, pending, title, "gallery", author)
+    temp = r1["data"]["temp"]
+    r2 = _phase2(wiki_name, temp, title, "gallery", author)
     return r2
 
 
@@ -222,15 +222,15 @@ def test_album_phase1_invalid_layout(wiki, tmp_path):
 # Phase 2 validation
 # ---------------------------------------------------------------------------
 
-def test_album_phase2_pending_not_found(wiki, tmp_path):
+def test_album_phase2_temp_not_found(wiki, tmp_path):
     name, _ = wiki
     r = ingest_mod.cmd_ingest_commit(_args(
-        wiki=name, pending=str(tmp_path / "nonexistent.pending"),
+        wiki=name, temp=str(tmp_path / "nonexistent.pending"),
         title="t", content_type="gallery", author="agent",
         native=None, source=None, node_path="", relations="",
     ))
     assert r["status"] == "error"
-    assert r["data"]["error_class"] == "PendingNotFound"
+    assert r["data"]["error_class"] == "TempNotFound"
 
 
 def test_album_phase2_invalid_content_type(wiki, tmp_path):
@@ -240,7 +240,7 @@ def test_album_phase2_invalid_content_type(wiki, tmp_path):
     r1 = _phase1(name, "t", str(p))
     assert r1["status"] == "success"
     r2 = ingest_mod.cmd_ingest_commit(_args(
-        wiki=name, pending=r1["data"]["pending"],
+        wiki=name, temp=r1["data"]["temp"],
         title="t", content_type="invalid_type", author="agent",
         native=None, source=None, node_path="", relations="",
     ))
@@ -408,20 +408,20 @@ def test_resolve_wiki_after_album_creation(wiki, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# pending file deleted after success (PRIN-ING-7)
+# temp file deleted after success (PRIN-ING-7)
 # ---------------------------------------------------------------------------
 
-def test_album_pending_deleted_after_commit(wiki, tmp_path):
-    """Pending temp file is deleted after Phase 2 success."""
+def test_album_temp_deleted_after_commit(wiki, tmp_path):
+    """Temp file is deleted after Phase 2 success."""
     name, _ = wiki
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)
 
-    r1 = _phase1(name, "pending delete test", str(p))
+    r1 = _phase1(name, "temp delete test", str(p))
     assert r1["status"] == "success", r1
-    pending_path = Path(r1["data"]["pending"])
-    assert pending_path.exists(), "Phase 1 pending should exist before Phase 2"
+    temp_path = Path(r1["data"]["temp"])
+    assert temp_path.exists(), "Phase 1 temp file should exist before Phase 2"
 
-    r2 = _phase2(name, str(pending_path), "pending delete test")
+    r2 = _phase2(name, str(temp_path), "temp delete test")
     assert r2["status"] == "success", r2
-    assert not pending_path.exists(), "Pending should be deleted after Phase 2 success"
+    assert not temp_path.exists(), "Temp file should be deleted after Phase 2 success"

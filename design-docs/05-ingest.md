@@ -57,7 +57,7 @@ ingest 流程中共有三路独立的 SHA256 哈希，分别用于不同的校�
 
 | 哈希字段 | 计算方式 | 检查时机 | 作用域 | 写入位置 |
 |---|---|---|---|---|
-| `source_hash` | `sha256_file(src)` | Phase 1，parser 调用前 | 源文件级（所有 split 页共享） | frontmatter 顶层 + pending 文件头 |
+| `source_hash` | `sha256_file(src)` | Phase 1，parser 调用前 | 源文件级（所有 split 页共享） | frontmatter 顶层 + temp 文件头 |
 | `content_hash` | `sha256_text(page_body)` | Phase 2，每 split 页独立 | 每页独立 | frontmatter + patches[0].delta |
 
 Level-1 dedup（Phase 2）：`content_hash` 查 `content_index`（所有 Page 的 content_hash 集合）  
@@ -148,6 +148,8 @@ source_map 索引三路：
 
 **暂存文件位置是实现细节**，`nodes/pending/` 不是设计要求。实现使用系统临时目录（`tempfile.gettempdir()`），由 CLI 内部管理路径，Agent 通过返回的路径使用，不涉及路径构造逻辑。
 
+> 注意：「暂存文件」即 Phase 1 输出的临时文件（Phase 2 读取后删除），不是 `nodes/pending/` 目录。
+
 规则：commit 成功的 wiki **不应有 Phase 1 临时文件残留**。任何残留 = 必有 ingest 半途崩了 → 用户可用 doctor 检测。
 
 ### [PRIN-ING-8] 不并发 ingest——并发安全原则
@@ -200,13 +202,13 @@ Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Ag
 `ingest-album` 是 ingest SOP 的**子流(sub-flow)**,用于"多张图 → 1 个 L1 相册"场景。它**不**走 `ingest-file` → `ingest-commit` 两阶段:
 
 - **单次写入**:一次调用直接产出 1 个 L1 Page + N 个源文件 copy + 1 条 patches v1 + 对每张图做 source_hash dedup（重复图片自动跳过，不导致整本 reject）
-- **不写 pending**:相册没有"先看再 commit"的需要——body 是程序生成的,Agent 看不到中间态有意义
+- **不写 temp**:相册没有"先看再 commit"的需要——body 是程序生成的,Agent 看不到中间态有意义
 - **不强求两阶段校验**:相册内容的元数据(分辨率、GPS、DateTime)是**程序可决定的**,不需要 Agent 审阅;Agent 唯一要决定的只有 title / node-path / layout / vision 意图——这些都在调用前问清
 
 理由:
 
 - 两阶段的设计初衷是**让 Agent 在两阶段之间做语义判断**([PRIN-ING-2])。相册的 body 是机器生成的,Agent 在两阶段之间没东西可判断
-- 强塞两阶段 = 多一次 IO + 多一次 pending 文件清理,无收益
+- 强塞两阶段 = 多一次 IO + 多一次 temp 文件清理,无收益
 - 但**单次不意味着无校验**:dedup (CONST-ING-3)、frontmatter (CONST-ING-4)、patches v1 (PRIN-ING-10)、 入库 (PRIN-ING-9) 全部照跑
 
 #### 与 PRIN-ING-1 的关系
@@ -220,7 +222,7 @@ Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Ag
 
 **C 类 (软件生命周期)**:`ingest-album` **不**属于——它动的是 wiki 数据,不是软件本体
 
-**D 类 (可争议)**:`ingest-album` 是不是应该拆成"先创建 L1 → 再循环 ingest-file 引用"?答案:**不**。因为 L1 的 body 是程序生成的,无法用 `ingest-file` 链式表达(每个 `ingest-file` 产生的是单源的 pending,不是相册的多源表格)
+**D 类 (可争议)**:`ingest-album` 是不是应该拆成"先创建 L1 → 再循环 ingest-file 引用"?答案:**不**。因为 L1 的 body 是程序生成的,无法用 `ingest-file` 链式表达(每个 `ingest-file` 产生的是单源的 temp,不是相册的多源表格)
 
 **A 类 (明确归 SOP-ingest)**:`ingest-album` 是 ingest SOP 的子流,在 08-sop-architecture.md §5.2 SOP-ingest 的「典型用户意图 → CLI 编排」表里有专行
 
@@ -384,7 +386,7 @@ ingest-commit 是纯确定性逻辑：
 > **警告**：`--native` 模式**不满足 PRIN-ING-6**（无源文件可 copy 进 raws/）。
 > 设计用途：Agent 合成的代码片段、终端输出等**无外部源**的纯文本。
 > **禁止**用 `--native` 摄取外部 `.md / .pdf / .docx / .pptx` 文档——会静默绕过取证副本。
-> 必须使用 Phase 1 + Phase 2 流程（`ingest-file` → `ingest-commit --pending`）。
+> 必须使用 Phase 1 + Phase 2 流程（`ingest-file` → `ingest-commit --temp`）。
 
 **不允许**「Agent 在 Phase 2 之前直接拼好 frontmatter 然后调用 ingest-commit 跳校验」——校验是 commit 的**入口**。
 

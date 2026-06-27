@@ -126,7 +126,7 @@ xu delete-node --wiki research --uid WXYZ5678 --force
   `rebuild` without explicit user confirmation, even if the doctor report
   lists them as candidates.
 - **Phase 1 temp file not deleted after commit** — if `ingest-commit` succeeded
-  but the temp file at `data.pending` still exists on disk, that is a bug.
+  but the temp file at `data.temp` still exists on disk, that is a bug.
   Re-running `ingest-commit` with the same temp file (it will be rejected as
   duplicate by Level-2 dedup) will trigger the deletion. There is no `nodes/pending/`
   directory.

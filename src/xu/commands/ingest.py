@@ -132,8 +132,8 @@ def _render_body(rows: list[dict[str, Any]], layout: str = "table") -> str:
 def cmd_ingest_file(args) -> dict:
     """Phase 1: parse source (single file or gallery) → write temp file. No node created.
 
-    Gallery mode (--files): N images → pending file with YAML body.
-    Single-file mode (--file): 1 file → parsed markdown pending file.
+    Gallery mode (--files): N images → temp file with YAML body.
+    Single-file mode (--file): 1 file → parsed markdown temp file.
 
     Dedup is checked BEFORE calling the parser (especially expensive MinerU)
     to avoid wasting API calls on already-ingested sources (PRIN-ING-3).
@@ -201,7 +201,7 @@ def cmd_ingest_file(args) -> dict:
     ) as f:
         text = _strip_frontmatter(res.text)
         meta_header = (
-            f"<!-- xu-pending source={src} parser={res.parser} "
+            f"<!-- xu-temp source={src} parser={res.parser} "
             f"source_hash={source_hash} -->\n\n"
         )
         f.write(meta_header + text)
@@ -209,15 +209,15 @@ def cmd_ingest_file(args) -> dict:
 
     return success(
         {
-            "pending": str(temp_path),
+            "temp": str(temp_path),
             "parser": res.parser,
             "source": str(src),
             "source_hash": source_hash,
             "chars": len(text),
         },
-        f"parsed via {res.parser} → pending temp file (Phase 1). No node created yet.",
+        f"parsed via {res.parser} → temp file (Phase 1). No node created yet.",
         hints=[
-            "review pending content, then run ingest-commit with --pending and --title",
+            "review temp content, then run ingest-commit with --temp and --title",
             "Agent decides title/node_path/relations between phases (PRIN-ING-2)",
             "if node_path is empty, all pages land at nodes/page/ root — consider passing --node-path to organize by category (e.g. certificates/qsa, contracts/ta)",
         ],
@@ -225,7 +225,7 @@ def cmd_ingest_file(args) -> dict:
 
 
 def _cmd_ingest_file_album(ctx, args) -> dict:
-    """Phase 1 for gallery mode: copy raws + extract meta + write pending."""
+    """Phase 1 for gallery mode: copy raws + extract meta + write temp file."""
     layout = (args.layout or "table").lower()
     if layout not in ALBUM_LAYOUTS:
         return error(f"invalid layout: {args.layout!r}; must be one of {ALBUM_LAYOUTS}",
@@ -300,39 +300,39 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         "vision": vision,
     }
     yaml_header = yaml.dump(frontmatter_dict, allow_unicode=True, default_flow_style=False)
-    pending_content = f"---\n{yaml_header}---\n{body}"
+    temp_content = f"---\n{yaml_header}---\n{body}"
 
     stem = safe_slug(title)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix="-pre.md", prefix=f"{stem}-",
         dir=tempfile.gettempdir(), delete=False, encoding="utf-8"
     ) as f:
-        f.write(pending_content)
+        f.write(temp_content)
         temp_path = Path(f.name)
 
     return success(
         {
-            "pending": str(temp_path),
+            "temp": str(temp_path),
             "parser": "album",
             "source": ", ".join(str(f) for f in files),
             "source_hash": rows[0]["sha256"] if rows else None,
             "chars": len(body),
             "images": len(rows),
         },
-        f"album Phase 1: {len(rows)} images → pending temp file. No node created yet.",
+        f"album Phase 1: {len(rows)} images → temp file. No node created yet.",
         hints=[
-            "review pending content, then run ingest-commit with --pending --title --content-type gallery",
-            "Agent can edit the YAML body in pending file before Phase 2",
+            "review temp content, then run ingest-commit with --temp --title --content-type gallery",
+            "Agent can edit the YAML body in temp file before Phase 2",
             "if node_path is empty, all pages land at nodes/page/ root",
         ],
     )
 
 
-def _parse_pending_header(text: str) -> tuple[dict, str]:
-    """Parse pending file: supports both HTML-comment style and YAML-frontmatter style.
+def _parse_temp_header(text: str) -> tuple[dict, str]:
+    """Parse temp file: supports both HTML-comment style and YAML-frontmatter style.
 
     HTML-comment style (legacy single-file):
-        <!-- xu-pending source=/path parser=text source_hash=abc -->
+        <!-- xu-temp source=/path parser=text source_hash=abc -->
 
     YAML frontmatter style (gallery/album):
         ---
@@ -358,10 +358,10 @@ def _parse_pending_header(text: str) -> tuple[dict, str]:
     meta: dict = {}
 
     # HTML-comment style (single-file / legacy)
-    if text.startswith("<!-- xu-pending"):
+    if text.startswith("<!-- xu-temp"):
         end = text.find("-->")
         if end != -1:
-            header = text[len("<!-- xu-pending"):end].strip()
+            header = text[len("<!-- xu-temp"):end].strip()
             for tok in header.split():
                 if "=" in tok:
                     k, v = tok.split("=", 1)
@@ -430,10 +430,10 @@ def _strip_frontmatter(text: str) -> str:
 def cmd_ingest_commit(args) -> dict:
     """Phase 2: validate + atomic write Page(s) + raws copy + patches v1 + relations.
 
-    --pending: path to Phase 1 temp file (required for normal flow).
+    --temp: path to Phase 1 temp file (required for normal flow).
     --native: deprecated, bypasses Phase 1 (no temp file, no source copy to raws/).
 
-    Gallery mode (mode=album in pending): dedup by per-image source_hash,
+    Gallery mode (mode=album in temp meta): dedup by per-image source_hash,
     skip duplicate images, render attrs.album.sources.
     """
     ctx = resolve_wiki(args.wiki)
@@ -444,7 +444,7 @@ def cmd_ingest_commit(args) -> dict:
     source_hash = None
     raw_src_path = None
     parser_used = "native"
-    pending_meta: dict = {}
+    temp_meta: dict = {}
     if args.native:
         if not args.source:
             return error(
@@ -459,18 +459,18 @@ def cmd_ingest_commit(args) -> dict:
         raw_src_path = str(src_path)
         source_hash = sha256_text(args.native)
         node_path_arg = args.node_path
-    elif args.pending:
-        pending_path = Path(args.pending).expanduser()
-        if not pending_path.is_file():
-            return error(f"pending temp file not found: {pending_path}", "PendingNotFound")
-        raw_text = pending_path.read_text(encoding="utf-8")
-        pending_meta, content = _parse_pending_header(raw_text)
-        source_hash = pending_meta.get("source_hash")
-        parser_used = pending_meta.get("parser", "unknown")
-        raw_src_path = pending_meta.get("source")
+    elif args.temp:
+        temp_file_path = Path(args.temp).expanduser()
+        if not temp_file_path.is_file():
+            return error(f"temp file not found: {temp_file_path}", "TempNotFound")
+        raw_text = temp_file_path.read_text(encoding="utf-8")
+        temp_meta, content = _parse_temp_header(raw_text)
+        source_hash = temp_meta.get("source_hash")
+        parser_used = temp_meta.get("parser", "unknown")
+        raw_src_path = temp_meta.get("source")
         node_path_arg = args.node_path
     else:
-        return error("ingest-commit requires --pending or --native", "MissingInput")
+        return error("ingest-commit requires --temp or --native", "MissingInput")
 
     try:
         node_path = safe_node_path(node_path_arg or "")
@@ -484,8 +484,8 @@ def cmd_ingest_commit(args) -> dict:
         return error(f"invalid content-type: {args.content_type}", "InvalidContentType")
 
     # ---- Gallery mode (mode=album): delegate to dedicated handler ----
-    if pending_meta.get("mode") == "album":
-        return _cmd_ingest_commit_album(ctx, args, pending_meta, content)
+    if temp_meta.get("mode") == "album":
+        return _cmd_ingest_commit_album(ctx, args, temp_meta, content)
 
     # split into pages (PRIN-ING-4)
     max_lines = cfg_get(ctx.config, "ingest.page_split_lines", 300)
@@ -590,9 +590,9 @@ def cmd_ingest_commit(args) -> dict:
             hints=["fix the failed checks and re-run ingest-commit"]
         )
 
-    if args.pending:
+    if args.temp:
         try:
-            Path(args.pending).expanduser().resolve().unlink()
+            Path(args.temp).expanduser().resolve().unlink()
         except OSError:
             pass
 
@@ -602,7 +602,7 @@ def cmd_ingest_commit(args) -> dict:
         return warning(data, "all pages were content-duplicates; nothing created (BAN-ING-4)")
     hints = ["query to retrieve; read --uid for full body"]
     if parser_used == "native":
-        hints.insert(0, "DEPRECATED: --native is deprecated; use --pending for external documents (PRIN-ING-6)")
+        hints.insert(0, "DEPRECATED: --native is deprecated; use --temp for external documents (PRIN-ING-6)")
     if created and created[0]["md_path"].startswith("nodes/page/"):
         bare = created[0]["md_path"][len("nodes/page/"):]
         if "/" not in bare:
@@ -611,7 +611,7 @@ def cmd_ingest_commit(args) -> dict:
 
 
 def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
-    """Phase 2 commit handler for gallery mode (mode=album in pending meta).
+    """Phase 2 commit handler for gallery mode (mode=album in temp meta).
 
     Phase 1 already:
     - copied all images to raws/
@@ -706,10 +706,10 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
     md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, body))
 
-    # Delete pending
-    if getattr(args, "pending", None):
+    # Delete temp file
+    if getattr(args, "temp", None):
         try:
-            Path(args.pending).expanduser().resolve().unlink()
+            Path(args.temp).expanduser().resolve().unlink()
         except OSError:
             pass
 

@@ -51,11 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func="wikis")
 
     # ---- M2: ingest / query / read ----
-    sp = sub.add_parser("ingest-file", help="Phase 1: parse a file (or images) into pending (no node created)")
+    sp = sub.add_parser("ingest-file", help="Phase 1: parse a file (or images) into temp file (no node created)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--file", help="single source file (for article/table content)")
     sp.add_argument("--files", help="comma-separated absolute image paths (for gallery/album content)")
-    sp.add_argument("--title", required=True, help="title for the pending node")
+    sp.add_argument("--title", required=True, help="title for the node")
     sp.add_argument("--node-path", default="", help="logical partition path")
     sp.add_argument("--layout", default="table", choices=["table", "list"],
                     help="body layout for gallery content (default table)")
@@ -66,9 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_file")
 
-    sp = sub.add_parser("ingest-commit", help="Phase 2: commit pending pages into wiki (only write entry)")
+    sp = sub.add_parser("ingest-commit", help="Phase 2: commit temp file into wiki (only write entry)")
     sp.add_argument("--wiki", required=True)
-    sp.add_argument("--pending", required=False, help="Phase 1 temp file to commit")
+    sp.add_argument("--temp", required=False, help="Phase 1 temp file to commit")
     sp.add_argument("--title", required=False, help="title (required unless --native with frontmatter)")
     sp.add_argument("--node-path", default="")
     sp.add_argument("--content-type", default="article", choices=["article", "table", "gallery"],

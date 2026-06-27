@@ -40,8 +40,8 @@ to ingest.
 
 ```bash
 # Three-phase prose flow
-xu ingest-file   --wiki <w> --file <abs>   # Phase 1: dedup check → parse → pending temp file
-xu ingest-commit --wiki <w> --pending <f> --title <t> \
+xu ingest-file   --wiki <w> --file <abs>   # Phase 1: dedup check → parse → temp file
+xu ingest-commit --wiki <w> --temp <f> --title <t> \
                       [--content-type article|table|gallery] \
                       [--node-path <p>] \
                       [--native '<md>'] --source <abs-path> [--author <a>]
@@ -80,13 +80,13 @@ xu report create --wiki <w> --title <t> --body <md> \
    before calling any parser) → if duplicate, returns `DuplicateSource` error
    immediately (no parser called, no money spent). If unique: parses via MinerU →
    markitdown chain → writes a temp file to the system temp directory.
-   Returns the temp file path in `data.pending`. No node is created at this stage.
+   Returns the temp file path in `data.temp`. No node is created at this stage.
 3. **Agent decides metadata — query wiki first**: before synthesizing node_path,
    agent calls `xu query --wiki <w> --keywords <theme>` to see the existing
    node tree and find candidate related UIDs. Then synthesizes:
    title, node_path, content_type — all LLM-generated, never asked of the user.
    `--title` is required by CLI but the value comes from the LLM.
-4. **Phase 2 — `ingest-commit --pending <f> --title <t>`**: promotes temp file
+4. **Phase 2 — `ingest-commit --temp <f> --title <t>`**: promotes temp file
    to L1. Intermediate values (content_type, node_path, author) are LLM-generated.
    **Commit includes internal verify + atomic rollback on failure** — if verify fails,
    all written files are deleted; the response returns `VerifyFailed`
@@ -98,11 +98,11 @@ xu report create --wiki <w> --title <t> --body <md> \
    be non-null. If it is null, the copy step was bypassed — stop and investigate.
    > **Exception**: `--native` mode has no source file (agent-synthesized text),
    > so `raw_path` is null by design. But `--native` still requires `--source`
-   > (a reference path) for dedup. Use `--pending` for any external document.
+    > (a reference path) for dedup. Use `--temp` for any external document.
 6. **Phase 3 — `ingest-verify --wiki <w> --uid <uid>`**: explicit verification
    after commit succeeds. **Must be run after every commit** before declaring
    the task done. Re-runnable at any time (read-only). On failure: LLM fixes
-   the issue and re-runs `ingest-commit` (pending file was deleted on success;
+    the issue and re-runs `ingest-commit` (temp file was deleted on success;
    start from Phase 1 again if needed).
    > Commit succeeded + verify failed = files were rolled back; start fresh.
 7. **Page splitting notice**: if `data.page_count > 1`, tell the user
@@ -139,12 +139,12 @@ xu report create --wiki <w> --title <t> --body <md> \
    > (it is agent-synthesized text), so `raw_path` in the response is null by
    > design. **Do NOT use `--native` for external `.md / .pdf / .docx / .pptx`
    > ingestion** — that silently skips the raws/ forensic copy. Use the
-   > `--pending` path (Phase 1 + Phase 2) for any external document.
+    > `--temp` path (Phase 1 + Phase 2) for any external document.
 
 ## Phase 1 temp file lifecycle
 
 Phase 1 writes to a **system temp file** (not `nodes/pending/`). The temp file
-path is returned in `data.pending` of the `ingest-file` response. Its lifecycle:
+path is returned in `data.temp` of the `ingest-file` response. Its lifecycle:
 
 | Event | What happens |
 |---|---|
@@ -205,10 +205,10 @@ ingest, Report primary after query), opposite default type.
 
 ```bash
 xu ingest-file   --wiki research --file ~/Downloads/bert.pdf
-# → {"status": "success", "data": {"pending": "/tmp/bert-pre.md", "parser": "pdf", ...}, ...}
+# → {"status": "success", "data": {"temp": "/tmp/bert-pre.md", "parser": "pdf", ...}, ...}
 # Agent reviews /tmp/bert-pre.md, then:
 xu ingest-commit --wiki research \
-  --pending /tmp/bert-pre.md \
+  --temp /tmp/bert-pre.md \
   --title "BERT: Pre-training of Deep Bidirectional Transformers"
 # → {"status": "success", "data": {"uid": "WXYZ5678", "title": "BERT: ..."}, ...}
 ```
@@ -243,14 +243,14 @@ When ingesting N files, repeat the three-phase cycle **per file** — serial, no
 # File 1
 xu ingest-file --wiki <w> --file /abs/path/to/a.pdf
 # Agent reads temp file, decides title/node_path/relations, then:
-xu ingest-commit --wiki <w> --pending <temp_a.md> --title a ...
+xu ingest-commit --wiki <w> --temp <temp_a.md> --title a ...
 # (verify + rollback happen inside commit; if VerifyFailed → start Phase 1 over)
 xu ingest-verify --wiki <w> --uid <uid_from_commit_a>
 # Only proceed if ingest-verify passes
 
 # File 2
 xu ingest-file --wiki <w> --file /abs/path/to/b.pdf
-xu ingest-commit --wiki <w> --pending <temp_b.md> --title b ...
+xu ingest-commit --wiki <w> --temp <temp_b.md> --title b ...
 xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
 
 # ... repeat for each file
@@ -275,12 +275,12 @@ xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
 - **Empty raws/ despite L1 pages** — if `nodes/page/` has content but
    `raws/` is empty, the copy step was bypassed (usually from using `--native`
   on a document). `data.created[].raw_path` in the response would be null.
-  Fix: delete the L1 and re-ingest via `--pending` path.
+  Fix: delete the L1 and re-ingest via `--temp` path.
 - **Skip ingest-verify after commit** — run `xu ingest-verify <wiki> <uid>` to
   confirm DB / nodes/ / content_hash / raw file / body format are all consistent;
   do not treat `ingest-commit` returning success as sufficient proof of integrity.
 - **Phase 1 temp file not deleted after commit** — if `ingest-commit` succeeded
-   but the temp file at `data.pending` still exists on disk, that is a bug.
+   but the temp file at `data.temp` still exists on disk, that is a bug.
    Re-running `ingest-commit` with the same temp file will reject as duplicate
    (Level-2 dedup), but will confirm the file is deleted.
 

@@ -319,7 +319,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 **失败模式**：
 - Phase 1 失败 → 文件解析失败，不创建 L1 节点
-- Phase 2 失败 → pending 文件保留（不删），Agent 报告用户决定
+- Phase 2 失败 → temp 文件保留（不删），Agent 报告用户决定
 - Album 任一 source_hash 命中已存在 → 重复图片跳过，其余正常写入；全部命中才拒绝（[BAN-ING-4] / [CONST-ING-3]）
 - Album 缺 title / files / node-path → 必问用户，不许猜（[PRIN-ING-11]）
 - 关系数 > 50 → 自动 LRU 淘汰队尾（[PRIN-ARCH-7~10]）

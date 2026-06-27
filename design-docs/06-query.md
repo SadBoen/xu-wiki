@@ -187,7 +187,7 @@ Round 1 只返回 snippet map（path/line/col/match/context），**不**返回�
 - snippet 已经足够 Agent 决定是否要读 body
 - Agent 二次请求的「round-trip」是设计意图
 
-### [BAN-QRY-4] 不索引 inactive 和 pending
+### [BAN-QRY-4] 不索引 inactive 和 temp-file nodes
 
 不写索引层、不在搜索时跳过——直接**根本不搜**这些文件。
 

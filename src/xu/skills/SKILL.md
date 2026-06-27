@@ -83,7 +83,7 @@ Before declaring an ingest done, run through this every time:
 3. **`data.created[].raw_path` is non-null?** — if null, explains why raws/ is
    empty. Null is expected only for `--native` (agent-synthesized text).
 4. **`xu doctor-all --wiki W` returns zero issues?** — do not proceed to the next
-   batch if doctor reports pending leftovers or other ingest anomalies.
+   batch if doctor reports temp file leftovers or other ingest anomalies.
 
 **Any NO answer means: stop, investigate, fix before continuing.**
 
@@ -109,9 +109,9 @@ Hints are starting points, not mandates.
 xu create --name research --path /abs/path/to/wiki
 
 # 2. ingest L1 — two phases; verify raws/ has copy after
-xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → {"data":{"pending":"/tmp/...-pre.md",...}}
+xu ingest-file   --wiki research --file /abs/path/to/source.pdf   # → {"data":{"temp":"/tmp/...-pre.md",...}}
 # Agent reviews the temp file content, then:
-xu ingest-commit --wiki research --pending /tmp/...-pre.md --title "BERT" --content-type article # → L1 entry
+xu ingest-commit --wiki research --temp /tmp/...-pre.md --title "BERT" --content-type article # → L1 entry
 
 # 3. query (Agent grades keywords before calling)
 xu query --wiki research --keywords "transformer,attention,self-attention,encoder" --top-k 5
