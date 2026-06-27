@@ -51,6 +51,9 @@ query:
     density_bonus: 1.5     # 密度奖励系数（>1，高密度切片权重上浮）
 
   top_k: 10               # query 默认返回条数（--top-k 覆盖）
+  uid_batch: 30            # 每轮建议选取的最大 UID 数
+  query_max_expand: 10    # expand 单次最多取的 UID 数
+  max_rounds: 5           # 多轮查询最大轮数
   timeout_seconds: 10      # query 超时（秒），超时则返回已有结果
 
 # --- 关系管理 ---

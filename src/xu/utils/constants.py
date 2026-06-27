@@ -58,6 +58,8 @@ TOP_K = 10                    # CONST-QRY-7
 # Multi-round query (PRIN-QRY-14, CONST-QRY-12)
 QUERY_BLOCKS = 50             # top N blocks returned per round
 QUERY_BATCH = 30             # top N UIDs after LLM filtering
+QUERY_MAX_ROUNDS = 5         # max rounds per query session
+QUERY_MAX_EXPAND = 10        # max UIDs per expand call
 
 # Relations (PRIN-ARCH-7)
 MAX_EDGES = 50
@@ -95,8 +97,9 @@ def default_wiki_config(name: str) -> dict:
             "top_k": TOP_K,
             "blocks": QUERY_BLOCKS,
             "uid_batch": QUERY_BATCH,
+            "query_max_expand": QUERY_MAX_EXPAND,
             "timeout_seconds": QUERY_TIMEOUT_SECONDS,
-            "max_rounds": 5,
+            "max_rounds": QUERY_MAX_ROUNDS,
         },
         "relation": {
             "max_edges": MAX_EDGES,

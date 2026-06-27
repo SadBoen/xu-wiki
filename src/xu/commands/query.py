@@ -102,6 +102,7 @@ def cmd_query(args) -> dict:
     top_blocks = cfg_get(qcfg, "blocks", 50)
     uid_batch = cfg_get(qcfg, "uid_batch", 30)
     max_rounds = cfg_get(qcfg, "max_rounds", 5)
+    query_max_expand = cfg_get(qcfg, "query_max_expand", 10)
     timeout = cfg_get(qcfg, "timeout_seconds", 10)
 
     raw_hits = scan(ctx.nodes_dir, keywords, timeout=timeout)
@@ -193,11 +194,12 @@ def cmd_query(args) -> dict:
             "block_count": len(top),
             "uid_batch": uid_batch,
             "max_rounds": max_rounds,
+            "query_max_expand": query_max_expand,
             "reflection": reflection,
         },
         f"{len(scored_blocks)} block(s); returning top {len(top)}",
         hints=[
-            f"pick up to {uid_batch} UIDs from blocks, call xu expand --wiki {args.wiki} --uids <uids> to get full bodies + relations",
+            f"pick up to {uid_batch} UIDs from blocks, call xu expand --wiki {args.wiki} --uids <uids> (max {query_max_expand} per call)",
             "Path A: re-call xu query with new keywords",
             "Path B: expand UIDs to traverse relation edges",
         ],
@@ -217,6 +219,11 @@ def cmd_expand(args) -> dict:
     uids = _split_kw(args.uids)
     if not uids:
         return error("provide --uids", "NoUIDs")
+
+    qcfg = ctx.config.get("query", {})
+    query_max_expand = cfg_get(qcfg, "query_max_expand", 10)
+    if len(uids) > query_max_expand:
+        uids = uids[:query_max_expand]
 
     rel_names_filter = None
     if getattr(args, "relation_names", None):
@@ -255,10 +262,11 @@ def cmd_expand(args) -> dict:
             result[uid] = {"uid": uid, "error": "not found"}
 
     found = {u: v for u, v in result.items() if "error" not in v}
+    max_rounds = cfg_get(qcfg, "max_rounds", 5)
     return success(
         {"nodes": result, "found": len(found), "requested": len(uids)},
-        f"expanded {len(found)}/{len(uids)} UID(s)",
-        hints=["pick up to 5 UIDs from these bodies and call expand again to traverse further"],
+        f"expanded {len(found)}/{len(uids)} UID(s) (max {query_max_expand} per call, max {max_rounds} rounds total)",
+        hints=[f"pick UIDs from these bodies and expand again (max {query_max_expand} per call); Path B: use --relation-names to narrow direction"],
     )
 
 
