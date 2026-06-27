@@ -25,6 +25,8 @@ def cmd_list(args) -> dict:
         return _list_create(args)
     if args.list_action == "show":
         return _list_show(args)
+    if args.list_action == "modify":
+        return _list_modify(args)
     return error(f"unknown list action: {args.list_action}", "UnknownAction")
 
 
@@ -121,11 +123,67 @@ def _list_show(args) -> dict:
     )
 
 
+def _list_modify(args) -> dict:
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    md_path = None
+    frontmatter, body = None, ""
+    for p in ctx.list_dir.glob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, bd = fm.parse(text)
+            if fm_dict.get("uid") == args.uid:
+                frontmatter, body = fm_dict, bd
+                md_path = p
+                break
+        except Exception:
+            continue
+    if frontmatter is None:
+        return error(f"List not found: {args.uid}", "ListNotFound")
+
+    if args.title:
+        frontmatter["title"] = args.title
+    if getattr(args, "dimension", None):
+        frontmatter["dimension"] = args.dimension
+    if getattr(args, "members", None):
+        member_uids = _split_uids(args.members)
+        member_items = []
+        missing = []
+        for m_uid in member_uids:
+            found = find_node_md(ctx, m_uid)
+            if not found:
+                missing.append(m_uid)
+            else:
+                mf, _ = found
+                member_items.append({
+                    "uid": m_uid,
+                    "title": mf.get("title", ""),
+                    "layer": mf.get("layer", ""),
+                    "note": "",
+                })
+        if missing:
+            return error(f"member node(s) not found: {missing}", "MemberNotFound",
+                         data={"missing": missing})
+        frontmatter["members"] = member_items
+        body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    frontmatter["updated_at"] = now_ts()
+
+    atomic_write_text(md_path, fm.render(frontmatter, body))
+    return success(
+        {"uid": args.uid, "layer": "List"},
+        f"modified List {args.uid}",
+    )
+
+
 def cmd_report(args) -> dict:
     if args.report_action == "create":
         return _report_create(args)
     if args.report_action == "show":
         return _report_show(args)
+    if args.report_action == "modify":
+        return _report_modify(args)
     return error(f"unknown report action: {args.report_action}", "UnknownAction")
 
 
@@ -138,6 +196,8 @@ def cmd_entity(args) -> dict:
         return _entity_create(args)
     if args.entity_action == "show":
         return _entity_show(args)
+    if args.entity_action == "modify":
+        return _entity_modify(args)
     return error(f"unknown entity action: {args.entity_action}", "UnknownAction")
 
 
@@ -217,6 +277,39 @@ def _entity_show(args) -> dict:
          "node_path": frontmatter.get("node_path", ""),
          "body": body},
         f"Entity {args.uid}",
+    )
+
+
+def _entity_modify(args) -> dict:
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    md_path = None
+    frontmatter, body = None, ""
+    for p in ctx.entity_dir.glob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, bd = fm.parse(text)
+            if fm_dict.get("uid") == args.uid:
+                frontmatter, body = fm_dict, bd
+                md_path = p
+                break
+        except Exception:
+            continue
+    if frontmatter is None:
+        return error(f"Entity not found: {args.uid}", "EntityNotFound")
+
+    if args.title:
+        frontmatter["title"] = args.title
+    if getattr(args, "body", None) is not None:
+        body = args.body
+    frontmatter["updated_at"] = now_ts()
+
+    atomic_write_text(md_path, fm.render(frontmatter, body))
+    return success(
+        {"uid": args.uid, "layer": "Entity"},
+        f"modified Entity {args.uid}",
     )
 
 
@@ -311,3 +404,59 @@ def _report_show(args) -> dict:
         return warning(data, f"Report shown; {len(dangling)} dangling evidence ref(s)",
                        hints=[f"run doctor-report-evidence; dangling: {dangling}"])
     return success(data, f"Report {args.uid}: {len(references)} evidence link(s)")
+
+
+def _report_modify(args) -> dict:
+    ctx = resolve_wiki(args.wiki)
+    if not ctx:
+        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
+
+    md_path = None
+    frontmatter, body = None, ""
+    for p in ctx.report_dir.glob("*.md"):
+        try:
+            text = p.read_text(encoding="utf-8")
+            fm_dict, bd = fm.parse(text)
+            if fm_dict.get("uid") == args.uid:
+                frontmatter, body = fm_dict, bd
+                md_path = p
+                break
+        except Exception:
+            continue
+    if frontmatter is None:
+        return error(f"Report not found: {args.uid}", "ReportNotFound")
+
+    if args.title:
+        frontmatter["title"] = args.title
+    if getattr(args, "body", None) is not None:
+        body = args.body
+    if getattr(args, "references", None):
+        ref_uids = _split_uids(args.references)
+        if not ref_uids:
+            return error("Report needs at least one evidence node", "EmptyEvidence",
+                         hints=["Report conclusions require an evidence chain; no naked reports"])
+        ref_meta = []
+        missing = []
+        for r_uid in ref_uids:
+            found = find_node_md(ctx, r_uid)
+            if not found:
+                missing.append(r_uid)
+            else:
+                rf, _ = found
+                ref_meta.append({
+                    "uid": r_uid,
+                    "title": rf.get("title", ""),
+                    "layer": rf.get("layer", ""),
+                    "note": "",
+                })
+        if missing:
+            return error(f"evidence node(s) not found: {missing}", "EvidenceNotFound",
+                         data={"missing": missing})
+        frontmatter["references"] = ref_meta
+
+    frontmatter["updated_at"] = now_ts()
+    atomic_write_text(md_path, fm.render(frontmatter, body))
+    return success(
+        {"uid": args.uid, "layer": "Report"},
+        f"modified Report {args.uid}",
+    )

@@ -137,6 +137,12 @@ def build_parser() -> argparse.ArgumentParser:
     ls = lsub.add_parser("show")
     ls.add_argument("--wiki", required=True)
     ls.add_argument("--uid", required=True)
+    lm = lsub.add_parser("modify")
+    lm.add_argument("--wiki", required=True)
+    lm.add_argument("--uid", required=True)
+    lm.add_argument("--title", default=None)
+    lm.add_argument("--members", default=None, help="comma-separated member UIDs")
+    lm.add_argument("--dimension", default=None)
     sp.set_defaults(func="list_cmd")
 
     sp = sub.add_parser("report", help="Node_Report create/show (evidence chain required)")
@@ -150,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     rs = rpsub.add_parser("show")
     rs.add_argument("--wiki", required=True)
     rs.add_argument("--uid", required=True)
+    rm = rpsub.add_parser("modify")
+    rm.add_argument("--wiki", required=True)
+    rm.add_argument("--uid", required=True)
+    rm.add_argument("--title", default=None)
+    rm.add_argument("--body", default=None, help="report body (markdown)")
+    rm.add_argument("--references", default=None, help="comma-separated evidence UIDs")
     sp.set_defaults(func="report_cmd")
 
     sp = sub.add_parser("entity", help="Node_Entity create/show")
@@ -164,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
     es = espec.add_parser("show")
     es.add_argument("--wiki", required=True)
     es.add_argument("--uid", required=True)
+    eem = espec.add_parser("modify")
+    eem.add_argument("--wiki", required=True)
+    eem.add_argument("--uid", required=True)
+    eem.add_argument("--title", default=None)
+    eem.add_argument("--body", default=None, help="entity notes (markdown)")
     sp.set_defaults(func="entity_cmd")
 
     # ---- M5: doctor / delete-node / rebuild ----
