@@ -117,9 +117,9 @@ Agent 第一步问用户内容形态。
 
 50 条上限，LRU 置换。
 
-### [CONST-ING-6] patches 表 schema
+### [CONST-ING-6] patches frontmatter 字段
 
-`{page_uid, version, op, delta, author, created_at}`，主键 (page_uid, version)。
+`patches: [{version, op, delta, author, created_at}]`，YAML 列表，写入 nodes/page/ .md 的 frontmatter。
 
 ### [CONST-ING-8] 4 键 JSON
 

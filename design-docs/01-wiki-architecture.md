@@ -29,11 +29,11 @@ Page  — 冷冰冰客观（这页说了什么）
 
 ### [PRIN-ARCH-2] 图书馆哲学
 
-Page = 书，List = 索引，Report = 导读，SQLite = 借阅记录。Page 永远是 ground truth；List/Report 可重建。
+Page = 书，List = 索引，Report = 导读。Page 永远是 ground truth；List/Report 可重建。
 
 ### [PRIN-ARCH-3] Page 不可变 + 修订表
 
-Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
+Page 生成后不直接修改 Markdown。修订走 frontmatter 内嵌 patches 字段（YAML 列表）叠加。
 
 ### [PRIN-ARCH-4] List 只对比不评价
 
@@ -63,7 +63,7 @@ Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 
 ### [PRIN-ARCH-15] Markdown + YAML Frontmatter — 可移植性，脱离 DB 知识完整
 
-### [PRIN-ARCH-16] SQLite + JSONB — 结构化字段 + 灵活扩展
+### [PRIN-ARCH-16] frontmatter + YAML — 结构化字段 + 灵活扩展
 
 ### [PRIN-ARCH-17] Markdown 是 ground truth，DB 可重建
 
@@ -133,7 +133,7 @@ Page 生成后不直接修改 Markdown。修订走 SQLite patches 表叠加。
 
 ### [CONST-ARCH-6] 每条 CLI 调用记一行 process-layer 日志（双路：per-wiki + global）
 
-### [CONST-ARCH-7] SQLite WAL 模式 + 外键约束 + busy timeout
+### [CONST-ARCH-7] frontmatter patches 字段（YAML list）
 
 ## 节点 CRUD
 
