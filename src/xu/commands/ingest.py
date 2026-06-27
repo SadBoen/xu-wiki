@@ -262,24 +262,19 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
 
     title = args.title or safe_slug(args.files.split(",")[0].strip())
 
-    # ---- Parallel: sha256 + meta + copy ----
-    album_raw_dir = ctx.raws_dir / (Path(node_path) if node_path else Path("."))
-    album_raw_dir.mkdir(parents=True, exist_ok=True)
+    # ---- Phase 1 dedup: build source_index before processing ----
+    source_index, _ = _scan_fm_index(ctx)
 
+    # ---- Parallel: sha256 + meta ----
     def process_one(src: Path) -> dict[str, Any]:
         sha = sha256_file(src)
         meta = read_image_meta(src)
-        rel_raw = (Path("raws") / Path(node_path) / src.name) if node_path \
-            else Path("raws") / src.name
-        dst = ctx.root / rel_raw
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if not dst.exists():
-            shutil.copy2(src, dst)
         return {
             "filename": src.name,
             "source_path": str(src),
             "sha256": sha,
-            "raw_rel_path": str(rel_raw).replace("\\", "/"),
+            "raw_rel_path": str(Path("raws") / Path(node_path) / src.name if node_path
+                           else Path("raws") / src.name).replace("\\", "/"),
             "width": meta.get("width"),
             "height": meta.get("height"),
             "gps": meta.get("gps"),
@@ -288,9 +283,42 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         }
 
     with ThreadPoolExecutor() as executor:
-        rows: list[dict[str, Any]] = list(executor.map(process_one, files))
+        all_rows: list[dict[str, Any]] = list(executor.map(process_one, files))
 
-    body = _render_body(rows, layout)
+    # ---- Split into new vs duplicate ----
+    new_rows: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for item in all_rows:
+        sh = item["sha256"]
+        if sh and sh in source_index:
+            existing_uid, existing_title, existing_active = source_index[sh]
+            skipped.append({
+                "filename": item["filename"],
+                "source_hash": sh,
+                "existing_uid": existing_uid,
+                "existing_title": existing_title,
+            })
+        else:
+            new_rows.append(item)
+
+    if not new_rows:
+        return warning(
+            {"skipped": skipped, "images": 0, "wiki": args.wiki},
+            "all images already ingested",
+            hints=["remove duplicates from --files and re-run Phase 1"],
+        )
+
+    # ---- Copy new images to raws/ ----
+    album_raw_dir = ctx.raws_dir / (Path(node_path) if node_path else Path("."))
+    album_raw_dir.mkdir(parents=True, exist_ok=True)
+    for item in new_rows:
+        src = Path(item["source_path"])
+        dst = ctx.root / item["raw_rel_path"]
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if not dst.exists():
+            shutil.copy2(src, dst)
+
+    body = _render_body(new_rows, layout)
 
     frontmatter_dict = {
         "mode": "album",
@@ -310,21 +338,24 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         f.write(temp_content)
         temp_path = Path(f.name)
 
+    hints = [
+        "review temp content, then run ingest-commit with --temp --title --content-type gallery",
+        "if node_path is empty, all pages land at nodes/page/ root",
+    ]
+    if skipped:
+        hints.insert(0, f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details")
     return success(
         {
             "temp": str(temp_path),
             "parser": "album",
             "source": ", ".join(str(f) for f in files),
-            "source_hash": rows[0]["sha256"] if rows else None,
+            "source_hash": new_rows[0]["sha256"] if new_rows else None,
             "chars": len(body),
-            "images": len(rows),
+            "images": len(new_rows),
+            "skipped": skipped,
         },
-        f"album Phase 1: {len(rows)} images → temp file. No node created yet.",
-        hints=[
-            "review temp content, then run ingest-commit with --temp --title --content-type gallery",
-            "Agent can edit the YAML body in temp file before Phase 2",
-            "if node_path is empty, all pages land at nodes/page/ root",
-        ],
+        f"album Phase 1: {len(new_rows)} new images → temp file ({len(skipped)} duplicates skipped).",
+        hints=hints,
     )
 
 
@@ -692,6 +723,7 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
                         "height": item.get("height"),
                         "gps": item.get("gps"),
                         "captured": item.get("captured"),
+                        "caption": item.get("caption", ""),
                     }
                     for item in new_body_items
                 ],
@@ -730,6 +762,7 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
                     "height": item.get("height"),
                     "gps": item.get("gps"),
                     "captured": item.get("captured"),
+                    "caption": item.get("caption", ""),
                 }
                 for item in new_body_items
             ],

@@ -253,7 +253,7 @@ def test_album_phase2_invalid_content_type(wiki, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_album_source_collision_skipped(wiki, tmp_path):
-    """If a source file's hash already exists, only that image is skipped."""
+    """If a source file's hash already exists, Phase 1 skips it (no I/O waste)."""
     name, root = wiki
     p1 = tmp_path / "first.jpeg"
     _write_fake_jpeg(p1, body=b"uniquely-stable-bytes-for-collision-test")
@@ -267,12 +267,19 @@ def test_album_source_collision_skipped(wiki, tmp_path):
     p2 = tmp_path / "second.jpeg"
     _write_fake_jpeg(p2, body=b"different-content-not-colliding")
 
-    r2 = _two_phase(name, "second album", f"{p1},{p2}")
-    assert r2["status"] == "success", r2   # succeeds, not rejected
-    assert r2["data"]["count"] == 1         # only new image written
-    assert len(r2["data"]["skipped"]) == 1   # first.jpeg skipped
-    assert r2["data"]["skipped"][0]["source_hash"] == first_hash
-    assert r2["data"]["skipped"][0]["filename"] == "first.jpeg"
+    # Phase 1 catches duplicate
+    r1b = _phase1(name, "second album", f"{p1},{p2}")
+    assert r1b["status"] == "success", r1b
+    assert r1b["data"]["images"] == 1               # only p2 is new
+    assert len(r1b["data"]["skipped"]) == 1        # p1 is duplicate
+    assert r1b["data"]["skipped"][0]["source_hash"] == first_hash
+    assert r1b["data"]["skipped"][0]["filename"] == "first.jpeg"
+
+    # Phase 2 sees only new image → no further dedup needed
+    r2 = _phase2(name, r1b["data"]["temp"], "second album", "gallery")
+    assert r2["status"] == "success", r2
+    assert r2["data"]["count"] == 1
+    assert len(r2["data"]["skipped"]) == 0          # Phase 1 already deduped
 
 
 # ---------------------------------------------------------------------------
