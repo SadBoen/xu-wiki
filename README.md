@@ -15,28 +15,77 @@ ranking and storage stay with the engine.
 | **Who reads it** | You (the agent) before install | The agent after install |
 | **What** | Install + Uninstall | Every command detail |
 
-## Concept
+## Architecture
 
-Knowledge is organized in three layers plus a relation graph:
+```
+┌─────────────────────────────────────────────────────────┐
+│                      AI Agent                           │
+│         (semantic judgement, multi-round decisions)     │
+└─────────────────┬───────────────────────────────────────┘
+                  │ JSON {status, data, message, hints}
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│                      xu CLI                             │
+│     query · expand · read · nodes · list · report     │
+│                                                         │
+│  L1 ──▶ Page (immutable .md + SHA256 dedup)           │
+│  L2 ──▶ List (YAML members in frontmatter)            │
+│  L3 ──▶ Report (evidence chain required)               │
+│  Ent ──▶ Entity (first-class node)                     │
+│                                                         │
+│  50-edge LRU relation graph per node                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Three layers:**
 
 | Layer | Name | Storage | Purpose |
 |---|---|---|---|
-| L1 | Node_Page | `.md` + SQLite index | Immutable fact slices (source of truth) |
-| L2 | Node_List | `.md` only | Comparison / aggregation over existing nodes |
-| L3 | Node_Report | `.md` only | Reasoning + conclusion with an evidence chain |
+| L1 | Node_Page | `.md` | Immutable fact slices — revisions via `patches` table |
+| L2 | Node_List | `.md` | Comparison / aggregation over existing nodes |
+| L3 | Node_Report | `.md` | Reasoning + conclusion — **≥1 evidence ref required** |
+| Ent | Entity | `.md` | First-class entity nodes |
 
-Every node carries an ordered, capped (50) **LRU relation list** — no categories,
-no scores. Every command returns a **4-key JSON envelope**: `{status, data, message, hints}`.
+**Key constraints:**
+- L1 is immutable — edits go through `patches` table, never rewrite the file
+- 50-edge LRU per node — no category, no score; hit → promote in list
+- CLI is fully offline — **never calls an LLM**
+- Every command returns **`{status, data, message, hints}`** (4-key JSON envelope)
+
+## Quickstart (5 minutes)
+
+```bash
+# 1. Install
+pipx install "xu-wiki[pdf,parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+
+# 2. Create a wiki
+xu create --name my-wiki --path ~/wikis/my-wiki --alias mine
+
+# 3. Ingest content
+xu ingest-commit --wiki mine --title "Python Intro" \
+  --native "Python is a high-level programming language." \
+  --source "https://python.org"
+
+# 4. Query (agent calls this — CLI never interprets free text)
+xu query --wiki mine --keywords "Python,programming,language"
+
+# 5. Expand selected UIDs to get full bodies + relations
+xu expand --wiki mine --uids <uid1>,<uid2>
+
+# 6. Deploy skill for your agent
+xu deploy skill --target claude
+xu selfcheck
+```
 
 ## Install (Linux / macOS)
 
-One command. Works on both Linux and macOS, PEP 668-safe:
+PEP 668-safe, one command:
 
 ```bash
 pipx install "xu-wiki[pdf,parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
 ```
 
-**What each extra provides** (install all four — all required for full SOP coverage):
+**Optional extras:**
 
 | Extra | Packages | Required for |
 |---|---|---|
@@ -54,14 +103,6 @@ xu deploy skill --target <agent>   # hermes, trae, claude, cursor, auto (default
 xu selfcheck                       # verify install is complete
 ```
 
-To deploy to multiple agents, call once per target:
-
-```bash
-xu deploy skill --target hermes
-xu deploy skill --target claude
-xu deploy skill --target cursor
-```
-
 ## Uninstall
 
 **Default scope — never touches wiki data or `~/.xu-wiki/` config.**
@@ -75,3 +116,15 @@ xu uninstall --target hermes --target claude --execute
 ```
 
 The uninstall plan is always shown first (dry-run). Pass `--execute` to apply.
+
+## Comparison
+
+| | xu-wiki | Notion | Obsidian | Logseq |
+|---|---|---|---|---|
+| **AI agent CLI** | ✅ Native JSON + SOP | ❌ | ❌ | ❌ |
+| **L1 immutable** | ✅ patches table | ❌ | ❌ (file-level only) | ❌ |
+| **50-edge LRU graph** | ✅ O(1), no explosion | ❌ | ❌ | ❌ |
+| **Offline / no LLM calls** | ✅ | ❌ | ✅ | ✅ |
+| **git-versioned wiki** | ✅ pure `.md` + frontmatter | ❌ | ✅ | ✅ |
+| **Three-layer (L1/L2/L3)** | ✅ | ❌ | ❌ | ❌ |
+| **DB lock-free** | ✅ | ❌ | N/A | N/A |
