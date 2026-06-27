@@ -292,14 +292,12 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
 
     body = _render_body(rows, layout)
 
-    # Write YAML frontmatter (body already has sha256, no need to duplicate sources[] in meta)
     frontmatter_dict = {
         "mode": "album",
         "title": title,
         "node_path": node_path,
         "layout": layout,
         "vision": vision,
-        "source_hashes": [r["sha256"] for r in rows],
     }
     yaml_header = yaml.dump(frontmatter_dict, allow_unicode=True, default_flow_style=False)
     pending_content = f"---\n{yaml_header}---\n{body}"
@@ -318,7 +316,6 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
             "parser": "album",
             "source": ", ".join(str(f) for f in files),
             "source_hash": rows[0]["sha256"] if rows else None,
-        "source_hashes": [r["sha256"] for r in rows],
             "chars": len(body),
             "images": len(rows),
         },
