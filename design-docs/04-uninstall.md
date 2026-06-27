@@ -89,14 +89,13 @@ uninstall 不应该：
 
 这些是用户后续自己决定的事。
 
-### [BAN-UNINST-4] 不动 L1 修订表与词频表
+### [BAN-UNINST-4] 不动 L1 修订历史
 
-即使 wiki 本体被 `delete-node` / `unregister` 操作影响，patches 表(L1 修订表)与 词频表也必须**按对应数据生命周期处理**——不能由 uninstall 顺手删。
+即使 wiki 本体被 `delete-node` / `unregister` 操作影响，patches（L1 修订历史）也必须**按对应数据生命周期处理**——不能由 uninstall 顺手删。
 
 理由：
-- 这些表是 wiki 自己的状态，不是软件配置
-- L1 不可变性要求修订历史可追溯——uninstall 删这些表 = 销毁知识库历史 = 违反 [PRIN-ARCH-3]
-- 词频表重建成本高（要重新扫所有节点）——不该由 uninstall 触发
+- patches 是 frontmatter 内嵌字段，是 wiki 自己的状态，不是软件配置
+- L1 不可变性要求修订历史可追溯——uninstall 删这些字段 = 销毁知识库历史 = 违反 [PRIN-ARCH-3]
 
 ## 四、约束
 

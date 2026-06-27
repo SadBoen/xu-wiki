@@ -10,7 +10,7 @@
 
 Ingest 把外部信息（文件/URL/文本）变成 wiki 里的 **Node_Page**。它是**两阶段流程**：
 - **Phase 1（解析 + 暂存）**：原始内容 → 解析为 markdown → 写到暂存区
-- **Phase 2（提交落库）**：CLI 校验 + 原子写入 Page + 写修订表初值 + 入  词频
+- **Phase 2（提交落库）**：CLI 校验 + 原子写入 Page + 写修订表初值
 
 **Agent 是语义判断者，CLI 是执行者**——这条边界绝不混淆。
 
@@ -34,7 +34,7 @@ Phase 1: 原始内容 → 解析为 markdown → 写暂存
    ↓
 Agent 读暂存、提取元数据（title / relations / node_path / content_type / 层级字段 等）
    ↓
-Phase 2: 元数据 + 暂存内容 → 校验 → 原子写 Page + 写 patches 表初值 + 入 
+Phase 2: 元数据 + 暂存内容 → 校验 → 原子写 Page + 写 patches 表初值
 ```
 
 Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方）。Phase 1 内部纯解析，Phase 2 内部纯校验+写盘。
@@ -114,18 +114,6 @@ Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方
 ingest 的暂存文件名 + DB locks 都是**单进程安全**的。并发 ingest 会让暂存文件冲突。
 
 Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Agent 自己排队。
-
-### [PRIN-ING-9] 入 词频表是 commit 的副产物
-
-`ingest-commit` 成功后，必须**用 jieba 提取 Page body 里的名词 + 计算库内频次**，写入 `词频表`。
-
-理由：检索时 `query` 会实时调取这些频次计算稀有度权重（[PRIN-ARCH-20] 的工程落地）。
-
-```
-稀有度权重 = 常量 / (库内频次 + 1)
-```
-
-稀有词（船名 LITA，库内频次低）→ 权重高（稀有 → 权重大）；通用词（项目，库内频次高）→ 权重低（常见 → 权重小）。
 
 ### [PRIN-ING-10] patches 表初值是 commit 的副产物
 
@@ -287,19 +275,19 @@ xu-wiki ingest-album \
 
 **与 image-parser 解析器的关系**:`parsers/registry.py` 的 `ImageParser` 仍然负责**单图走散文**场景 (PRIN-ING-13 散文形态);`parsers/image_meta.read_image_meta` 专门服务**相册**场景。两者不重复——一个管 prose 形态,一个管 table 形态。
 
-### [PRIN-ING-15] 业务变更追溯走 DB——不走过程层日志
+### [PRIN-ING-15] 业务变更追溯走 frontmatter——不走过程层日志
 
-业务侧的「这张照片是哪次加的」「这个 Page 是什么时候 commit 的」**不是**过程层的事——是**业务数据**。由 DB 自己的机制承担:
+业务侧的「这张照片是哪次加的」「这个 Page 是什么时候 commit 的」**不是**过程层的事——是**业务数据**。由 frontmatter 字段与文件系统承担:
 
-- `nodes.created_at` / `nodes.updated_at` —— 节点生命周期
-- `patches 表` —— L1 修订历史（[PRIN-ING-10]）
-- `nodes.attrs` 里的领域字段（如 `album.sources[i].captured`）—— 业务元数据
+- `created_at` / frontmatter `updated_at` —— 节点生命周期
+- `patches` frontmatter list —— L1 修订历史（[PRIN-ING-10]）
+- frontmatter 里的领域字段（如 `album.sources[i].captured`）—— 业务元数据
 
-**审计 vs 业务变更的边界**：过程层 `audit.jsonl` 只记「谁跑了什么 CLI、跑没跑成」（[CONST-ARCH-6] / [PRIN-ARCH-26]）；业务变更历史由 DB 表与 frontmatter 字段承担。两者不重叠。
+**审计 vs 业务变更的边界**：过程层 `audit.jsonl` 只记「谁跑了什么 CLI、跑没跑成」（[CONST-ARCH-6] / [PRIN-ARCH-26]）；业务变更历史由 frontmatter 字段与 .md 文件承担。两者不重叠。
 
 理由:
 - 审计日志是「程序行为记录」,丢了可重建（process-layer 无原始数据依赖）
-- 业务变更历史是「数据本身的一部分」,丢了**不可重建**——必须存在 DB 与 Markdown 里
+- 业务变更历史是「数据本身的一部分」,丢了**不可重建**——必须存在 frontmatter 与 .md 里
 - 把业务变更塞进过程层 = 模糊边界 + 制造耦合,违反 [PRIN-ARCH-26] 的「各层不互替」精神
 
 ## 三、禁令
@@ -309,7 +297,7 @@ xu-wiki ingest-album \
 Agent 不能绕过 commit 直接把内容写进正式 Page 文件。**必须**走 `ingest-commit`。
 
 理由：
-- ingest-commit 会校验 frontmatter、写 DB、写 patches 表、入 ——Agent 直写会绕过这一切
+- ingest-commit 会校验 frontmatter、写 .md 文件、写 patches 表——Agent 直写会绕过这一切
 - Agent 写错了 Page = L1 客观层腐化 = 整层知识失真
 
 ### [BAN-ING-2] Phase 2 不调 LLM
@@ -317,10 +305,7 @@ Agent 不能绕过 commit 直接把内容写进正式 Page 文件。**必须**�
 ingest-commit 是纯确定性逻辑：
 - 校验 frontmatter（必填字段、类型、正则）
 - 写 .md 文件（原子）
-- 写 DB 行（事务）
-- 建关系（如果 Agent 在 Phase 2 调用时给了 relations 参数）
 - 写 patches 表初值
-- 提取名词入词频表
 - 写审计日志
 
 **绝不**调 LLM 做内容生成、标题建议、关系推断——这些都是 Phase 1 和 Phase 2 之间的 Agent 责任。
@@ -330,7 +315,7 @@ ingest-commit 是纯确定性逻辑：
 `ingest-commit --native`（直接传 markdown 字符串）允许「绕过解析」，但仍要走：
 - 写暂存（即使是 markdown 原样）
 - 走 commit 流程
-- 写 DB / 关系 / patches
+- 走 commit 流程（写 .md / 写 patches）
 
 > **警告**：`--native` 模式**不满足 PRIN-ING-6**（无源文件可 copy 进 raws/）。
 > 设计用途：Agent 合成的代码片段、终端输出等**无外部源**的纯文本。
@@ -344,7 +329,7 @@ ingest-commit 是纯确定性逻辑：
 命中 SHA256 重复时：
 - ❌ 不删旧 Page 重建
 - ❌ 不覆盖旧 Page 的 frontmatter
-- ✅ 返回 warning + 旧 Page 信息
+- ✅ 返回 error（`DuplicateSource`）+ 旧 Page 信息（Phase 1 最早检查，不调用 parser，不花费用）
 
 用户用 `revise` 改旧 Page，不是用 ingest 覆盖。
 
@@ -414,27 +399,16 @@ Level-2 在 Phase 1 最早执行，在 parser 调用之前（即使 parser 是 M
 
 frontmatter 必填字段、类型、正则、必填 list 非空等——任何失败 → error 列出具体缺失项，**不**部分写入。
 
-### [CONST-ING-5] 关系处理
+### [CONST-ING-5] 关系处理（通过 `query-relation add`）
 
-- `--relations` 必为 JSON 数组（dict → error）
-- 每条 relation = `{to: <uid>, relation_name: <str>, [comment]}`——**不带分类、不带权重**（关系是无分类的 LRU 链表，见 [PRIN-ARCH-8]）
+关系不在 `ingest-commit` 时建立。Phase 3 由 LLM 先 query wiki 找相关 UID，再调 `query-relation add` 逐条建立。
+
+- 每条 relation = `{to_uid, relation_name, [comment]}`——**不带分类、不带权重**（关系是无分类的 LRU 链表，见 [PRIN-ARCH-8]）
 - `to_uid` 不存在 → `relations_warning`（累积，不 fatal）
 - `add` = 一次触碰 → 插入该节点出边链表的**队首**
 - **50 条上限约束**——满了弹出队尾最久未触碰的关系（[PRIN-ARCH-9] / [PRIN-ARCH-10]）
 
-### [CONST-ING-6]  入库 schema
-
-```
-词频表:
-  名词 主键（字符串类型）,    -- 名词
-  频次 整数字段 非空,   -- 库内出现次数
-  权重 浮点字段 非空      -- = 常量（具体数值由实现决定） / (频次 + 1)
-  updated_at 整数字段
-```
-
-ingest-commit 时增量更新（不是重建）。用户可在 `doctor` 检测异常。
-
-### [CONST-ING-7] patches 表 schema
+### [CONST-ING-6] patches 表 schema
 
 ```
 patches 表（字段命名由实现决定，这里描述角色）:
@@ -453,7 +427,7 @@ ingest-commit 时写 version=1 的 create 记录。
 
 返回 `status/data/message/hints`：
 - 成功 → success
-- SHA256 重复 → warning（带旧 Page uid/title）
+- SHA256 重复 → error（`DuplicateSource`，带旧 Page uid/title）
 - 校验失败 → error（data 含具体缺失字段）
 - 关系部分失败 → warning（data.invalid_relations）
 
@@ -494,7 +468,7 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 - [ ] 意图不明先问用户、绝不猜（[PRIN-ING-11]）
 - [ ] 图片压缩：双 SHA256 + 保 EXIF（[PRIN-ING-12]）
 - [ ] L1 body 样式与内容类型匹配（[PRIN-ING-13]——表格/散文/代码块三种形态，Agent 必须先问内容形态）
-- [ ] 业务变更追溯走 DB（`nodes.created_at` / `patches 表` / 业务字段），不走过程层日志（[PRIN-ING-15]）
+- [ ] 业务变更追溯走 frontmatter（`created_at` / `patches` / 业务字段），不走过程层日志（[PRIN-ING-15]）
 - [ ] ingest 后运行 `xu ingest-verify` 做只读完整性校验（[PRIN-ING-16]）
 
 **禁令**：
@@ -511,9 +485,9 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 - [ ] SHA256 两级去重（[CONST-ING-3]）
 - [ ] frontmatter 校验（[CONST-ING-4]）
 - [ ] 关系处理 + 50 条上限（无分类、LRU）（[CONST-ING-5]）
-- [ ] patches 表 schema（[CONST-ING-7]）
-- [ ] 4 键 JSON（[CONST-ING-8]）
-- [ ] 不并发（[CONST-ING-9]）
+- [ ] patches 表 schema（[CONST-ING-6]）
+- [ ] 4 键 JSON（[CONST-ING-7]）
+- [ ] 不并发（[CONST-ING-8]）
 
 ### [PRIN-ING-16] ingest 后用 `xu ingest-verify` 做只读完整性校验
 
@@ -521,9 +495,8 @@ commit 完成之后，用 `xu ingest-verify <wiki> <uid>` 验证节点完整性�
 
 | 检查项 | 内容 |
 |---|---|
-| DB 记录 | uid 在 `nodes` 表中 |
 | nodes 文件 | `nodes/page/<uid>.md` 存在 + frontmatter 字段齐全 |
-| content_hash | DB 存储值 = body 的 SHA256 |
+| frontmatter content_hash | frontmatter 存储值 = body 的 SHA256 |
 | source 文件 | `raw_path` 指向 `raws/` 下文件存在（非 --native 时） |
 | content_type | body 格式与 frontmatter `content_type` 匹配（article/table/gallery） |
 

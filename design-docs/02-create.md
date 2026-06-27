@@ -25,8 +25,7 @@ LLM 重写时务必区分：「软件」和「软件管理的对象」是两个�
 
 create 完成后，wiki 应该有：
 - 三个空目录（raws/nodes/.xu）
-- 一个可工作的 DB（schema 完整但无数据）
-- 一个库内 config（含版本号）
+- `.xu/config.yaml`（含版本号）
 - 一条全局注册表项
 
 create **不创建**任何节点页、任何原始文件、任何示例数据。**空就是空**——让用户决定装什么内容。
@@ -52,22 +51,15 @@ create 只动「软件本体」+「系统注册表」两层：
 
 create 时必须在库内 config / DB schema 里预留 **Rebuild 粒度开关**,支持后续按档位重建(只重建结构层 / 只清报告层 / 全量)。这是 [PRIN-ARCH-6]（弹性 Rebuild）的工程落地——create 必须为它铺好路。
 
-### [PRIN-CRT-6] 为 L1 不可变 /  词频建表——wiki 内部组件
+### [PRIN-CRT-6] 为 L1 不可变建表——wiki 内部组件
 
-create 时必须为 wiki 实例创建**两张衍生表**：
+create 时必须为 wiki 实例的 frontmatter `patches` 字段预留空间：
 
-```
-patches 表    —— L1 修订历史（每次 Page 创建/修订追加一条 patch）
-词频表    —— 名词库内频次（ingest-commit 时增量更新）
-```
+- `patches` frontmatter list —— L1 修订历史（每次 Page 创建/修订追加一条 patch）
 
-这两张表是 wiki 自己的状态，不是软件配置——create 必须为它们预留 schema 与索引。
+patches 是 frontmatter 内嵌字段，不是独立表。
 
-理由：
-- patches 表是 [PRIN-ARCH-3] L1 不可变原则的工程实现——没有它，L1 修改无法追溯
--词频表是 [PRIN-ARCH-20] 检索稀有度加成的数据源——没有它，query 的 B 稀有分拿不到数据
-
-推论：create 不能只建 Page / List / Report 三类节点表——必须**同时建这两张衍生表**。
+理由：patches 是 [PRIN-ARCH-3] L1 不可变原则的工程实现——没有它，L1 修改无法追溯。
 
 ## 三、禁令
 

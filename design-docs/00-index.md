@@ -93,9 +93,8 @@ L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
 
 | 阶段 | 工具 | 关键参数 |
 |---|---|---|
-| L1 | ripgrep + 弹性切片 | 切片窗口 **软上限 + 硬上限**（软优先寻标点，硬上限兜底）；合并半径 = 紧凑关联阈值（具体数值由实现决定） |
-| L1 评分 | 重平衡算法 | `(覆盖分 + 稀有分) × 密度奖励`，**核心词权重远大于扩展词**（防同义词噪音淹没实体），密度奖励 **密度奖励系数（> 1）** |
-| L1 稀有分 |词频表 | `稀有度权重 = 常量 / (库内频次 + 1)` |
+| L1 | ripgrep + 弹性切片 | 切片窗口前后第一个标点，或 50 字符上限（`slice.chars`）；合并半径 = 80 字符（`slice.merge_radius`） |
+| L1 评分 | 硬编码公式 | 标题命中×5 + body命中 + 层权重（Entity=2, Report=3, List=1, Page=0）；密度奖励配置存在但未实际参与计算 |
 | L2/L3 | Agent 决定 | CLI 只返 hint（list_hint / report_hint） |
 
 ---
@@ -142,11 +141,11 @@ CLI 全程确定性。**关键词分级是 LLM 的责任**——CLI 做基础分
 
 ### 10. install 装能力不装数据（[PRIN-INST-1]）
 
-install 装 CLI/venv/SKILL/配置 schema。**不**动用户已有的任何 wiki 实例（含 patches 表 /词频表）。
+install 装 CLI/venv/SKILL/配置 schema。**不**动用户已有的任何 wiki 实例（含 patches 表）。
 
 ### 11. uninstall 不动 L1 历史（[PRIN-UNINST-1] / [BAN-UNINST-4]）
 
-卸载 = 把 install 装进系统的东西原样拆出来。**永远不动**知识库本体、patches 表、词频表。
+卸载 = 把 install 装进系统的东西原样拆出来。**永远不动**知识库本体、patches 表。
 
 ### 12. doctor 默认只读（[PRIN-DOC-1]）
 
@@ -250,11 +249,9 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 │   ├── list/        # Node_List（.md: frontmatter + 对比表）
 │   └── report/      # Node_Report（.md: frontmatter + 正文）
 └── .xu/
-    ├── 主 SQLite DB           # SQLite（JSONB）
     ├── config.yaml
     ├── state.json
-    ├── patches 表      # L1 修订表
-    └── 词频表     # 词频表
+    └── patches 表      # L1 修订表
 ```
 
 ---
@@ -366,14 +363,11 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 
 | 原则编号 | 主题 | 经验参考值 |
 |---|---|---|
-| [PRIN-ARCH-13] / [PRIN-QRY-10] | 打分公式 | 总分 = (A 覆盖分 + B 稀有分) × C 密度奖励 |
-| 同上 · A 覆盖分 | 核心/扩展词权重 | 核心词命中数 × 2000 + 扩展词命中数 × 500 |
-| 同上 · C 密度奖励 | 多词共现系数 | 共现时 ×1.5（[CONST-QRY-5] 要求 > 1） |
-| [CONST-QRY-4] | 核心:扩展权重比 | 约 4 : 1（核心远大于扩展） |
-| [PRIN-ARCH-20] / [PRIN-QRY-11] |  稀有度常量 | 权重 = 10000 / (库内频次 + 1) |
-| [PRIN-QRY-8] / [DESIGN-ARCH-6] | 切片窗口软/硬上限 | 软上限 80 字符 / 硬上限 150 字符 |
-| [PRIN-QRY-9] / [DESIGN-ARCH-7] | 邻域合并半径 | 物理距离 < 80 字符（或边界重叠）则合并 |
-| [PRIN-ING-4] | Page 切分粒度 | 300 行正文（本套文档已定为硬默认，见 [PRIN-ING-4]） |
+| [PRIN-ARCH-13] / [PRIN-QRY-10] | 打分公式 | 总分 = 标题命中×5 + body命中 + 层权重（Entity=2, Report=3, List=1, Page=0） |
+| 同上 · 密度奖励 | 多词共现系数 | 配置存在但当前未参与计算（[CONST-QRY-5]） |
+| [PRIN-QRY-8] / [DESIGN-ARCH-6] | 切片窗口上限 | 50 字符（`slice.chars`，从库级 config 读） |
+| [PRIN-QRY-9] / [DESIGN-ARCH-7] | 邻域合并半径 | 物理距离 < 80 字符（或边界重叠）则合并（`slice.merge_radius`） |
+| [PRIN-ING-4] | Page 切分粒度 | 300 行正文（`page_split_lines`，从库级 config 读） |
 
 **用法**：这些是**起点不是契约**——实现者可按硬件、库规模、领域特性调整。它们是「作者跑过、能用」的经验值，不是「必须如此」的规范。**唯一例外**是 [PRIN-ING-4] 的 300 行——那是本套文档明确定下的默认值（可经库内 config 调），其余各项纯属参考。
 

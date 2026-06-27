@@ -13,17 +13,19 @@ specific to doctor are stated here.
 ## CLI palette
 
 ```bash
-# Run all 6 checks (default: report only)
+# Run all checks (default: report only)
 xu doctor-all --wiki <w> [--fix]
 
 # Per-check subcommands (each supports --fix for safe auto-repair)
-xu doctor-fields         --wiki <w> [--fix]   # DB / markdown frontmatter consistency
+xu doctor-fields         --wiki <w> [--fix]   # frontmatter completeness + file existence
 xu doctor-files          --wiki <w> [--fix]   # raws/ / nodes/ filesystem consistency
 xu doctor-relations      --wiki <w> [--fix]   # 50-edge LRU invariants
 xu doctor-l1-immutable   --wiki <w> [--fix]   # L1 markdown body never modified
 xu doctor-report-evidence --wiki <w> [--fix]  # L3 reports have ≥ 1 evidence ref
-
 xu doctor-node-path-organization --wiki <w> [--fix]  # root-level pages + suggested paths
+
+# Node integrity verification (ingest module)
+xu ingest-verify --wiki <w> --uid <uid>        # read-only post-commit integrity check
 
 # Destructive ops (NEVER auto-invoked — explicit command, not a flag)
 xu delete-node --wiki <w> --uid <uid> [--force]
@@ -36,7 +38,7 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 | Command | Default | With `--fix` | Truly destructive? |
 |---|---|---|---|
 | `doctor-all` | read-only report | safe auto-repair enabled | no |
-| `doctor-fields` | read-only | patch DB to match FS frontmatter | no |
+| `doctor-fields` | read-only | frontmatter completeness + file existence | no |
 | `doctor-files` | read-only | rename / link missing files | no |
 | `doctor-relations` | read-only | rebuild LRU table from edges | no |
 | `doctor-l1-immutable` | read-only | n/a (always refuses) | no |

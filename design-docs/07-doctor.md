@@ -31,7 +31,6 @@ LLM 重写时务必把 doctor 默认行为锁成只读。任何写操作必须�
 L1 Page 不变性  →  Markdown 不可被外部修改 / patches 表有 v1 初值
 L3 Report 证据  →  Report 必引用 L1/L2 证据链 / 无悬挂引用
 关系上限         →  每节点出边 ≤ 50 / LRU 链表无重复、无悬挂边
-词频表一致性     →  名词频次与 Page 实际一致 / 无悬挂词
 三层一致性       →  Page/List/Report 之间的引用无悬挂
 ```
 
@@ -82,7 +81,7 @@ LLM 重写时不要发明「万能 doctor」——每个专题独立可调用。
 - `doctor-files --fix`：物理 unlink（不软删）
 - `doctor-fields --fix`：upsert_node 补字段（不是删）
 - `doctor-l1-immutable --fix`：检测到外部修改时 → 报警告 + 提示走 patches 重写，**绝不自动覆盖**（L1 不可变）
-- `doctor --fix`：重建  词频（安全，可自动）
+- `doctor --fix`：不涉及（词频表已废除）
 - `doctor-report-evidence --fix`：列出悬挂 Report 由 Agent 决定**绝不自动删 Report**
 
 **强烈建议** LLM 重写时统一为「硬删 + 审计日志」——与 ingest / delete-node 的策略一致。**例外**：L1 不可变性绝不让 --fix 覆盖。
@@ -96,7 +95,7 @@ LLM 重写时不要发明「万能 doctor」——每个专题独立可调用。
 ### [BAN-DOC-2] 不发明「智能修复」
 
 `--fix` 必须是**机械的、对称的、可预测的**：
-- ✅ 「重建  词频」——可预测
+- ❌ 「重建词频」——词频表已废除（不可预测，无此功能）
 - ✅ 「检测 L1 外部修改并报警」——可预测
 - ❌ 「用 LLM 重新推断 frontmatter」——不可预测
 - ❌ 「询问用户该删还是该恢复」——超出 CLI 边界
@@ -166,20 +165,11 @@ doctor 全程确定性逻辑：DB 查询 + 文件状态比对 + 结构化输出�
 
 **注意**：不检查任何「分类配额」或「评分」——关系是无分类的 LRU 链表（[PRIN-ARCH-8]），没有强/热点/弱之分，也没有评分公式。
 
-### [CONST-DOC-5]词频表一致性检查
-
-`doctor` 必须验证：
-1. `词频表` 中每个词的 频次 字段与实际 Page 出现频次一致
-2. 没有 deleted Page 留下的悬挂名词（频次 > 0 但无 Page 引用）
-3.  权重公式应用一致（权重 = 常量（具体数值由实现决定） / (频次 + 1)）
-
-`--fix` 可重建（机械操作）。
-
-### [CONST-DOC-6] --fix 必须先列「将做什么」
+### [CONST-DOC-5] --fix 必须先列「将做什么」
 
 `--fix` 的 dry-run 必须逐条列出待执行的修复动作及其原因（哪条记录、为什么修),让用户在真正写入前看清全部影响面。输出形态由实现决定,但「先列清单后执行」不可省。
 
-### [CONST-DOC-7] 4 键 JSON 返回
+### [CONST-DOC-6] 4 键 JSON 返回
 
 返回 `status/data/message/hints`。data 应分层汇总:各检查项的 issues 明细 + 总览统计(总问题数、可自动修复数、只读项数,并按 L1/L2/L3 分层计数)。hints 含「跑 --fix」建议。
 
@@ -205,8 +195,8 @@ doctor 全程确定性逻辑：DB 查询 + 文件状态比对 + 结构化输出�
 
 ## 六、与相关模块的关系
 
-- **ingest**：doctor 检查 ingest 留下的不变量（L1 不可变、patches v1、 入库）
-- **query**：doctor 检查 query 依赖的前提（词频表存在、关系出边未超 50）
+- **ingest**：doctor 检查 ingest 留下的不变量（L1 不可变、patches v1）
+- **query**：doctor 检查 query 依赖的前提（关系出边未超 50）
 - **create**：doctor 检查 wiki 三件套完整性（含 patches 表 存在性）
 - **delete-node**：doctor 检查删除是否彻底（不留 orphan Page / 关系）
 - **report**：doctor 检查 Report 证据链完整
@@ -234,8 +224,8 @@ doctor 全程确定性逻辑：DB 查询 + 文件状态比对 + 结构化输出�
 - [ ] L1 不变性检查（[CONST-DOC-2]）
 - [ ] L3 证据链检查（[CONST-DOC-3]）
 - [ ] 关系上限检查 50 条 + 无悬挂边（[CONST-DOC-4]）
-- [ ] --fix 输出将做什么（[CONST-DOC-6]）
-- [ ] 4 键 JSON + by_layer 字段（[CONST-DOC-7]）
+- [ ] --fix 输出将做什么（[CONST-DOC-5]）
+- [ ] 4 键 JSON + by_layer 字段（[CONST-DOC-6]）
 - [ ] 修复后重检查（[CONST-DOC-8]）
 - [ ] 不修〈形态字段〉与 body 不匹配（[CONST-DOC-9]）
 - [ ] 不调 LLM（[CONST-DOC-10]）

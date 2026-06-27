@@ -231,7 +231,7 @@ xu ingest-verify --wiki research --uid <uid from commit response>
 # → {"status": "success", "data": {"passed": [...], "failed": [], "checks": [...]}, ...}
 ```
 
-**7 checks**: nodes/ frontmatter completeness, content_hash match, content_type ↔ body format match, raw file exists, raw_path ↔ node_path mirroring (both top-level `raw_path` for regular pages and `attrs.album.sources[].raw_rel_path` for albums), raw path mirrors node_path structure.
+**5 checks**: nodes_file_exists, frontmatter_complete, content_hash_match, content_type↔body_match, raw_path_checks (raw file exists, raw_path↔node_path mirroring for both top-level `raw_path` and `attrs.album.sources[].raw_rel_path`).
 
 If Phase 2 commit returned `VerifyFailed`: files were rolled back. Start fresh from Phase 1.
 
