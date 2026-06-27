@@ -50,13 +50,9 @@ EXPANSION_WEIGHT = 500
 DENSITY_BONUS = 1.5            # CONST-QRY-5: must be > 1
 
 # Slicing (DESIGN-ARCH-6/7)
-SLICE_SOFT_LIMIT = 80
-SLICE_HARD_LIMIT = 150
+SLICE_CHARS = 50
 MERGE_RADIUS = 80
 
-# Fast Pass (PRIN-QRY-12, CONST-QRY-6)
-FAST_PASS_K = 3.0
-FAST_PASS_LOW_HIT = 3
 TOP_K = 10                    # CONST-QRY-7
 
 # Multi-round query (PRIN-QRY-14, CONST-QRY-12)
@@ -88,20 +84,13 @@ def default_wiki_config(name: str) -> dict:
         "name": name,
         "query": {
             "slice": {
-                "soft_limit": SLICE_SOFT_LIMIT,
-                "hard_limit": SLICE_HARD_LIMIT,
+                "chars": SLICE_CHARS,
                 "merge_radius": MERGE_RADIUS,
             },
             "scoring": {
                 "core_weight": CORE_WEIGHT,
                 "expansion_weight": EXPANSION_WEIGHT,
                 "density_bonus": DENSITY_BONUS,
-            },
-            "fast_pass": {
-                "enabled": True,
-                "dynamic": True,
-                "k": FAST_PASS_K,
-                "low_hit": FAST_PASS_LOW_HIT,
             },
             "top_k": TOP_K,
             "blocks": QUERY_BLOCKS,

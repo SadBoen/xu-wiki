@@ -100,6 +100,8 @@ def cmd_query(args) -> dict:
     slice_chars = cfg_get(qcfg, "slice.chars", 50)
     radius = cfg_get(qcfg, "slice.merge_radius", 80)
     top_blocks = cfg_get(qcfg, "blocks", 50)
+    uid_batch = cfg_get(qcfg, "uid_batch", 30)
+    max_rounds = cfg_get(qcfg, "max_rounds", 5)
     timeout = cfg_get(qcfg, "timeout_seconds", 10)
 
     raw_hits = scan(ctx.nodes_dir, keywords, timeout=timeout)
@@ -189,16 +191,24 @@ def cmd_query(args) -> dict:
             "blocks": top,
             "total_hits": len(scored_blocks),
             "block_count": len(top),
+            "uid_batch": uid_batch,
+            "max_rounds": max_rounds,
             "reflection": reflection,
         },
         f"{len(scored_blocks)} block(s); returning top {len(top)}",
+        hints=[
+            f"pick up to {uid_batch} UIDs from blocks, call xu expand --wiki {args.wiki} --uids <uids> to get full bodies + relations",
+            "Path A: re-call xu query with new keywords",
+            "Path B: expand UIDs to traverse relation edges",
+        ],
     )
 
 
 def cmd_expand(args) -> dict:
     """Fetch body + relations for specific UIDs. Used by Path B.
 
-    LLM picks UIDs → CLI returns full body text (no summary) + relations list.
+    LLM picks UIDs → CLI returns full body text (no summary) + filtered relations list.
+    --relation-names filters to specific directions; --limit caps total relations per UID.
     """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
@@ -207,6 +217,11 @@ def cmd_expand(args) -> dict:
     uids = _split_kw(args.uids)
     if not uids:
         return error("provide --uids", "NoUIDs")
+
+    rel_names_filter = None
+    if getattr(args, "relation_names", None):
+        rel_names_filter = set(_split_kw(args.relation_names))
+    limit = getattr(args, "limit", None)
 
     nodes_root = ctx.nodes_dir
     result: dict = {}
@@ -218,8 +233,12 @@ def cmd_expand(args) -> dict:
                 fd, body = fm.parse(text)
                 if fd.get("uid") != uid:
                     continue
-                rels = list_relations(fd, uid)
-                for r in rels:
+                all_rels = list_relations(fd, uid)
+                if rel_names_filter:
+                    all_rels = [r for r in all_rels if r.get("relation_name") in rel_names_filter]
+                if limit:
+                    all_rels = all_rels[:limit]
+                for r in all_rels:
                     touch_relation(fd, uid, r["to_uid"])
                 _write_node_fm(ctx, uid, fd)
                 result[uid] = {
@@ -227,7 +246,7 @@ def cmd_expand(args) -> dict:
                     "title": fd.get("title", ""),
                     "layer": fd.get("layer", "Page"),
                     "body": body,
-                    "relations": rels,
+                    "relations": all_rels,
                 }
                 break
             except Exception:
@@ -239,6 +258,7 @@ def cmd_expand(args) -> dict:
     return success(
         {"nodes": result, "found": len(found), "requested": len(uids)},
         f"expanded {len(found)}/{len(uids)} UID(s)",
+        hints=["pick up to 5 UIDs from these bodies and call expand again to traverse further"],
     )
 
 

@@ -101,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("expand", help="fetch body + relations for specific UIDs (Path B)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--uids", required=True, help="comma-separated UIDs to expand")
+    sp.add_argument("--limit", type=int, default=None,
+                    help="max relations per UID (default: all)")
+    sp.add_argument("--relation-names", default=None,
+                    help="comma-separated relation names to follow (default: all)")
     sp.set_defaults(func="expand")
 
     sp = sub.add_parser("read", help="read a single node full body (applies patches)")

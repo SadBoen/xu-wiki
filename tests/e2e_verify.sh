@@ -28,9 +28,9 @@ for f in "$SAMPLES/PDF/02_arxiv_resnet.pdf" "$SAMPLES/PDF/03_arxiv_bert.pdf"; do
 done
 
 echo
-echo "  --- query (multi-keyword, density bonus) ---"
-$XU query --wiki demo --core "network,learning" --expansion "training" --top-k 3 2>/dev/null \
-  | python3 -c "import sys,json;d=json.load(sys.stdin);print('  status',d['status'],'fast_pass',d['data']['fast_pass'],'hits',d['data']['total_hits']);[print('   ',b['uid'],'score=',b['score'],b['matched']) for b in d['data']['related_nodes']]"
+echo "  --- query (multi-keyword, multi-round) ---"
+$XU query --wiki demo --keywords "network,learning,training" --top-k 3 2>/dev/null \
+  | python3 -c "import sys,json;d=json.load(sys.stdin);print('  status',d['status'],'hits',d['data']['total_hits'],'uid_batch',d['data']['uid_batch'],'max_rounds',d['data']['max_rounds']);[print('   ',b['uid'],'score=',b['score'],'matched=',b['matched']) for b in d['data']['blocks']]"
 
 FIRST=$($XU nodes --wiki demo --layer Page 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['nodes'][0]['uid'])")
 echo "  --- read $FIRST ---"

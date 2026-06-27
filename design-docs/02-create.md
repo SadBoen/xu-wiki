@@ -144,10 +144,7 @@ query:
   # 切片软上限 / 硬上限 / 邻域合并半径 —— 具体数值由实现决定
   scoring:
     # 核心/扩展权重比、密度奖励系数等 —— 具体数值由实现决定
-  fast_pass:
-    enabled: true
-    dynamic: true             # 动态阈值（Top1 显著高于均值时触发，倍数由实现决定）
-relation:
+
   max_edges: <上限>           # 出边总数上限（默认建议 50）
   policy: lru                 # 不分类、不打分：建立进队首 / 命中前挪 / 满了弹队尾
 asset:

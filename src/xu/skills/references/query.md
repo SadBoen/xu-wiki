@@ -11,11 +11,12 @@ rule is restated here because it is the dominant failure mode of this SOP.
 ## CLI palette
 
 ```bash
-# Main search
-xu query --wiki <w> --keywords <kw,kw,kw> [--top-k N] [--neighbors] [--include-inactive]
+# Round 1: keyword search → top N blocks
+xu query --wiki <w> --keywords <kw,kw,kw>
 
-# Expand specific UIDs (Path B: follow relation edges from selected hits)
+# Path B: expand selected UIDs → full bodies + relations
 xu expand --wiki <w> --uids <uid,uid,...>
+xu expand --wiki <w> --uids <uid,...> --relation-names <name,name> --limit <n>
 
 # Read individual node (L1 markdown body)
 xu read  --wiki <w> --uid <uid>
@@ -37,114 +38,96 @@ xu report create --wiki <w> --title <t> --body <md> \
                       --references <uid,uid,...> [--node-path <p>]
 ```
 
-| Flag | Required | Purpose |
-|---|---|---|
-| `--wiki` | yes | Wiki name or alias |
-| `--keywords` | yes | Comma-separated keywords (LLM grades core vs expansion before calling) |
-| `--top-k` | no | Max results; default 10 |
-| `--neighbors` | no | Also include 50-edge LRU neighbors of top hits |
-| `--include-inactive` | no | Include nodes marked inactive (default: active only) |
-
 ## Hard rule for this SOP
 
 > **Keyword grading is the Agent's job. The CLI does NOT split a free-text
 > query.** You pass a comma-separated `--keywords` list — the LLM grades
 > entities (high weight) vs synonyms (low weight) before calling CLI.
 > There is **no** `--core`, **no** `--expansion`, **no** `--q`, **no** `--mode`.
->
-> - "find papers about BERT" → `xu query --wiki W --keywords "BERT,transformer,pre-training,encoder,attention,model,architecture"`
-> - "现在库里面收录了几条船？" → `xu query --wiki W --keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
->
-> If the user gives a free-text query and you cannot extract entities, **ask**
-> for core entities before invoking.
+
+## Multi-round query workflow
+
+The CLI executes searches; **you** (the agent) decide every next step.
+The loop is bounded by `max_rounds` (default: 5).
+
+**Round 1 — keyword search:**
+1. Grade the user's query into a keyword list (always include English forms).
+2. Call `xu query --wiki W --keywords "kw1,kw2,..."`.
+3. Inspect `data.blocks` — each block has `uid / title / layer / text / score`.
+4. `data.uid_batch` tells you how many UIDs to pick (default: 30).
+5. `data.max_rounds` tells you the remaining rounds (default: 5).
+
+**Path B — follow relation edges:**
+- Pick UIDs from blocks → call `xu expand --wiki W --uids uid1,uid2,...`
+- Each expanded node returns full `body` + `relations` list.
+- `--relation-names` filters to specific directions (e.g. `--relation-names cites,references`).
+- `--limit` caps relations per UID (e.g. `--limit 5`).
+- Touched relations are advanced in the LRU (most-recently-used order).
+
+**Path A — new keywords:**
+- Call `xu query` again with a new keyword list.
+- Any round can take either path.
+
+**Stopping conditions:**
+- You can give a conclusion → stop.
+- `max_rounds` exhausted → stop.
+- No more relations to follow (end of chain) → stop.
 
 ## Workflow
 
 1. **Grade the user's query** into a comma-separated keyword list:
    - Input: the **raw user query** (full natural language, e.g. "现在库里面收录了几条船？")
    - **Always add English forms** — regardless of query language,
-     include English synonyms (e.g. `ship,vessel,boat` for 船). This is a hard
-     requirement.
-   - Output: `--keywords` (comma-separated, LLM grades importance before calling)
+     include English synonyms (e.g. `ship,vessel,boat` for 船).
+   - Output: `--keywords` (comma-separated)
    - Example: `"现在库里面收录了几条船？"` →
      `--keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
-    - Jieba plays **no role in query keyword generation** — it only runs inside
-      ingest for noun extraction. At query time, you grade from the raw
-      query text directly.
-2. **Invoke `query`** with `--keywords` (required).
-3. **Inspect the result's `data.hits`** — list of UIDs with relevance score.
-4. **Read the top hits** with `read --wiki W --uid <uid>`.
-5. **Post-query reflection** — the agent runs
-   this before answering the user. LLM decides autonomously — no user approval needed.
-   The CLI's `list_hint` / `report_hint` are **starting points, not mandates**.
+2. **Invoke `query`** with `--keywords`.
+3. **Pick up to `data.uid_batch` UIDs** from `data.blocks` (sorted by score).
+4. **Call `expand`** on those UIDs to get full bodies + relations.
+5. **Decide next**: give conclusion / Path A (new keywords) / Path B (more expand).
+6. **Post-query reflection** — before declaring done, run reflection:
+   - Query for similar existing Entity/List/Report.
+   - Extend existing if found; else LLM decides to create.
+   - The CLI's `reflection` field in query response gives you starting hints.
+7. **Wire relations** with `query-relation add`.
 
-   **Step 1 — Find similar Report (mandatory, before any creation decision):**
-   Run a query to find existing Reports that reference the same or overlapping L1
-   nodes as the current hits. If one exists → extend that Report (add the new
-   hits as additional evidence or update the conclusion). Do not ask the user.
-
-   **Step 2 — Assess Report value (only if no similar found):**
-   - Do the hits + any existing `report_hint` form an evidence chain
-     (premise → evidence → conclusion)?
-   - Is there a conclusion emerging that future "what's the verdict on X"
-     queries would benefit from being able to look up?
-   - Would writing this up as a Node_Report prevent the user (or others)
-     from having to re-ask the same question later?
-   → If yes: call `report create` autonomously. Do not ask the user.
-
-   **Step 3 — List valuation (SECONDARY, opportunistic):**
-   Only if the hits form a natural comparable group on a missing axis and no
-   similar List exists. Otherwise, by default, do not propose List after query.
-
-   **Why query leans Report, not List**: query is "I asked a question"; the
-    natural follow-up is "save the answer". A List would just bundle related
-    hits without synthesizing anything. The CLI does NOT run this reflection
-    and never auto-creates.
-6. **If the user wants to wire edges** — `query-relation add` with
-   `--from-uid` / `--to-uid` / `--relation-name`.
-7. **If the user wants the neighborhood** — re-run with `--neighbors`.
-
-## Example
+## Example — multi-round
 
 ```bash
-xu query --wiki research --keywords "BERT,transformer,pre-training,encoder,attention" --top-k 5
-# → {"status": "success", "data": {
-#     "blocks": [{"uid": "...", "title": "...", "score": 24.5, "text": "..."}],
-#     "total_hits": 12, "block_count": 5,
-#     "reflection": {
-#       "existing_entities": [...], "existing_lists": [...],
-#       "existing_reports": [...],
-#       "suggest_extract_entities": true,
-#       "hint": "5 page(s) found – consider extracting entities..."
-#     }
-#   }, ...}
+# Round 1
+xu query --wiki research --keywords "BERT,transformer,pre-training"
+# → {"status":"success","data":{
+#     "blocks": [...50 blocks...],
+#     "uid_batch": 30,
+#     "max_rounds": 5,
+#     "reflection": {"existing_entities":[], "suggest_extract_entities":true,...},
+#     "hints": ["pick up to 30 UIDs, call xu expand --wiki research --uids ...",
+#               "Path A: re-call xu query with new keywords",
+#               "Path B: expand UIDs to traverse relation edges"]
+#   },...}
 
-xu read --wiki research --uid WXYZ5678
-# → {"status": "success", "data": {"uid": "...", "body": "## BERT\n..."}, ...}
-
-xu query-relation add --wiki research \
-  --from-uid WXYZ5678 --to-uid ABCD1234 \
-  --relation-name cites --comment "section 3.2"
-# → {"status": "success", "data": {"from": "...", "to": "...", "relation": "cites"}, ...}
+# Path B: pick 3 UIDs, expand with relation filter
+xu expand --wiki research --uids UID1,UID2,UID3 --relation-names cites --limit 5
+# → {"status":"success","data":{
+#     "nodes": {
+#       "UID1": {"uid":"UID1","body":"...","relations":[...]},
+#       "UID2": {...},
+#       "UID3": {...}
+#     },"found":3,"requested":3
+#   },...}
 ```
 
 ## Common pitfalls
 
-- **Free-text to `--keywords`** — "BERT papers" is a free-text phrase, not
-  keyword list. Convert to `--keywords "BERT,papers"` (commas) or ask the user
-  for the entities.
-- **`--neighbors` without intent** — adding `--neighbors` returns up to
-  50 edges per top hit. For a 5-hit result with full neighborhoods, this
-  is 250 nodes. Use only when the user actually wants the neighborhood.
-- **Auto-creating L2/L3 on hint** — the CLI's `list_hint` / `report_hint`
-  are starting points, not mandates. The post-query reflection in step 5
-  is the **agent's** job; the agent must always run the valuation and
-  only propose if value is real, with PRIMARY bias toward Report
-  LLM decides autonomously; always query for similar Report first
-  and extend existing if found.
-- **Forgetting the 50-edge limit** — when wiring relations, adding a
-  51st evicts the tail (hard rule 3 in `SKILL.md`). Don't re-add the
-  evicted one unless the user really needs it.
+- **Forgetting multi-round**: each query round gives you up to 50 blocks and
+  lets you pick up to `uid_batch` UIDs. You don't need to cram everything
+  into one call.
+- **Path B without relation filter**: `--relation-names` prevents chain
+  explosion — always narrow the direction when you know what you're looking for.
+- **Auto-creating L2/L3 on hint**: the `reflection` field is a starting point,
+  not a mandate. Always run valuation first.
+- **Forgetting the 50-edge limit**: 51st relation evicts the tail.
 
 ## Cross-references
 

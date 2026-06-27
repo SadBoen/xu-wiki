@@ -42,20 +42,13 @@ templates: {{}}
 # --- 检索切片参数（query CLI） ---
 query:
   slice:
-    soft_limit: 80         # 软上限：query 返回前先做切片，单次切片 token 数的软上限（超限触发合并）
-    hard_limit: 150        # 硬上限：单次切片 token 数的绝对上限（超限直接截断）
-    merge_radius: 80       # 相邻切片合并半径（token 距离）
+    chars: 50             # 切片字符数（上下文窗口大小）
+    merge_radius: 80       # 相邻切片合并半径（字符距离）
 
   scoring:
     core_weight: 2000      # core 关键词权重（分母上的常量）
     expansion_weight: 500   # expansion 关键词权重
     density_bonus: 1.5     # 密度奖励系数（>1，高密度切片权重上浮）
-
-  fast_pass:
-    enabled: true          # 是否启用 Fast Pass（提前退出优化）
-    dynamic: true          # 是否动态调整 k
-    k: 3.0                # Fast Pass 阈值系数：得分第 k 名高于均值 × k 时提前退出
-    low_hit: 3            # Fast Pass 低命中下限：低于此阈值时不触发快速退出
 
   top_k: 10               # query 默认返回条数（--top-k 覆盖）
   timeout_seconds: 10      # query 超时（秒），超时则返回已有结果

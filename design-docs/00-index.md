@@ -15,7 +15,7 @@
 | 03 | [03-install.md](03-install.md) | install | 装的是能力还是数据？怎么不污染系统？ |
 | 04 | [04-uninstall.md](04-uninstall.md) | uninstall | 卸载软件还是卸载数据？ |
 | 05 | [05-ingest.md](05-ingest.md) | ingest | L1 不可变怎么实现？/patches 何时入库？ |
-| 06 | [06-query.md](06-query.md) | query | 三层介入怎么打分？Fast Pass 怎么动态？ |
+| 06 | [06-query.md](06-query.md) | query | 三层介入怎么打分？多轮查询怎么控制？ |
 | 07 | [07-doctor.md](07-doctor.md) | doctor | 三层不变量 + 50 条上限 + L1 不可变怎么检？ |
 | 08 | [08-sop-architecture.md](08-sop-architecture.md) | **SOP 层**（create / ingest / query / doctor / config） | 用户/Agent 层意图动词如何映射到 CLI 子命令？slash command 为什么不是 CLI 子命令别名？ |
 | 09 | [09-skill-architecture.md](09-skill-architecture.md) | **Skill 文档架构**（`src/xu/skills/` 的文件结构与内容划分） | 如何让 Agent 加载 Skill 时零污染？`references/` 的占位引导是什么？ |
@@ -96,7 +96,6 @@ L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
 | L1 | ripgrep + 弹性切片 | 切片窗口 **软上限 + 硬上限**（软优先寻标点，硬上限兜底）；合并半径 = 紧凑关联阈值（具体数值由实现决定） |
 | L1 评分 | 重平衡算法 | `(覆盖分 + 稀有分) × 密度奖励`，**核心词权重远大于扩展词**（防同义词噪音淹没实体），密度奖励 **密度奖励系数（> 1）** |
 | L1 稀有分 |词频表 | `稀有度权重 = 常量 / (库内频次 + 1)` |
-| L1 加速 | Fast Pass | 动态阈值：Top1 显著高于均值 → 自动附 body；**命中数极少时直接附 body**（均值法在低命中下失效，见 [PRIN-QRY-12]） |
 | L2/L3 | Agent 决定 | CLI 只返 hint（list_hint / report_hint） |
 
 ---
@@ -341,7 +340,7 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 - 这一步**不碰**任何节点逻辑，只搭地基
 
 **M2 — L1 主线闭环**（能存、能查）⭐ 最关键
-- `ingest-commit`（[05]，含两阶段、SHA256 去重、frontmatter 校验、patches v1、 入库）+ `query`（[06]，ripgrep + 切片 + 打分 + Fast Pass）+ `read`
+- `ingest-commit`（[05]，含两阶段、SHA256 去重、frontmatter 校验、patches v1、 入库）+ `query`（[06]，ripgrep + 切片 + 打分 ）+ `read`
 - 验收：摄入一个 PDF → 切成 Node_Page → query 能命中 → read 能取全文
 - **这是整个系统的心脏**——M2 跑通，产品就有了核心价值。L2/L3 都是在 L1 之上的增量
 
@@ -363,7 +362,7 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 
 ## 原则 ↔ 具体值对照（经验参考值）
 
-本套文档**有意不写死**切片窗口、 常量、核心/扩展权重比、密度奖励系数、Fast Pass 倍数等具体数值（遵循「设计文档不指定 magic number」原则）。但实现总要有个起点——下表给出一组**经验参考值**（来自项目早期手写设计稿，作者实跑可用），供开发者作为缺省起点：
+本套文档**有意不写死**切片窗口、 常量、核心/扩展权重比、密度奖励系数、等具体数值（遵循「设计文档不指定 magic number」原则）。但实现总要有个起点——下表给出一组**经验参考值**（来自项目早期手写设计稿，作者实跑可用），供开发者作为缺省起点：
 
 | 原则编号 | 主题 | 经验参考值 |
 |---|---|---|
@@ -374,7 +373,6 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 | [PRIN-ARCH-20] / [PRIN-QRY-11] |  稀有度常量 | 权重 = 10000 / (库内频次 + 1) |
 | [PRIN-QRY-8] / [DESIGN-ARCH-6] | 切片窗口软/硬上限 | 软上限 80 字符 / 硬上限 150 字符 |
 | [PRIN-QRY-9] / [DESIGN-ARCH-7] | 邻域合并半径 | 物理距离 < 80 字符（或边界重叠）则合并 |
-| [PRIN-QRY-12] | Fast Pass 阈值倍数 | 动态：top1 分数 > 均值 × 3 倍 |
 | [PRIN-ING-4] | Page 切分粒度 | 300 行正文（本套文档已定为硬默认，见 [PRIN-ING-4]） |
 
 **用法**：这些是**起点不是契约**——实现者可按硬件、库规模、领域特性调整。它们是「作者跑过、能用」的经验值，不是「必须如此」的规范。**唯一例外**是 [PRIN-ING-4] 的 300 行——那是本套文档明确定下的默认值（可经库内 config 调），其余各项纯属参考。

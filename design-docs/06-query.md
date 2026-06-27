@@ -160,18 +160,6 @@ query 时从 `词频表` 实时调取每个命中关键词的频次，计算权�
 
 稀有词贡献远超通用词——这让精确查询命中证据链时，分数不被通用词淹没。
 
-### [PRIN-QRY-12] Fast Pass = 动态阈值 + 自动取 body
-
-如果某个切片块分值**显著高于平均**（如 Top 1 分数远超均值）→ CLI **自动**在返回里附带该节点的整页正文，并打上 fast_pass 标记。
-
-**目的**：减少 Agent 二次读取的 round-trip——高置信度结果直接返回 body。
-
-**阈值特性**：
-- 动态计算（不写死）——避免硬编码阈值在某些 query 上过松/过严
-- 阈值公式可微调（如 top1 显著大于 mean，具体倍数由实现决定）
-- 没命中阈值 → 返回纯 JSON Map，不附带 body
-
-**低命中数兜底（重要）**：基于「均值倍数」的阈值在命中数很少时会失效——只命中 1 个切片时 top1 恒等于 mean，`top1 > mean × k`（k>1）永远为假，反而是最该直接给 body 的高置信场景拿不到 body。因此当命中切片数低于某个小阈值（如 ≤ 2~3 个）时，应**跳过均值判断、直接附带 body**（命中本就稀少，round-trip 不值得省）。均值倍数法只在命中数足够多、需要「优中选优」时才启用。
 
 ### [PRIN-QRY-13] 50 条关系上限约束——不要越界
 
@@ -200,14 +188,14 @@ query 路径上**任何** LLM 调用都是禁止的：
 - 单 wiki 内 ripgrep 性能可控；跨 wiki 无法预测
 - 跨 wiki 会让 hint 复杂化
 
-### [BAN-QRY-3] 默认不返 raw body（除非 Fast Pass 触发）
+### [BAN-QRY-3] 默认不返 raw body
 
-Round 1 只返回 snippet map（path/line/col/match/context），**不**返回完整 body——除非 [PRIN-QRY-12] 的 Fast Pass 阈值触发。
+Round 1 只返回 snippet map（path/line/col/match/context），**不**返回完整 body——Agent 通过 `expand` 主动获取 body 是设计意图，不是性能缺陷。
 
 理由：
 - 默认返 body 会让响应体膨胀
 - snippet 已经足够 Agent 决定是否要读 body
-- Agent 二次请求的「round-trip」是设计意图，不是性能缺陷
+- Agent 二次请求的「round-trip」是设计意图
 
 ### [BAN-QRY-4] 不索引 inactive 和 pending
 
@@ -251,17 +239,6 @@ LLM 重写时改这个公式必须明确文档化——它是 query 行为的核
 
 可调（如 1.3 或 2.0），但**必须 > 1.0**——奖励多词共现是机制的核心，不能去掉。
 
-### [CONST-QRY-6] Fast Pass 阈值公式
-
-```
-if 命中切片数 <= 低命中阈值:        # 命中稀少，直接给 body
-    return snippet_map + full_body
-threshold = mean(scores) × k        # k 取较高倍数（让高分结果罕见触发）
-if top1_score > threshold:
-    return snippet_map + full_body
-```
-
-k 值与「低命中阈值」可在库内 config 调整，但 Fast Pass 主判据**必须动态**（基于本次结果分布），不能用硬编码绝对分值；低命中数必须有兜底分支（见 [PRIN-QRY-12]）。
 
 ### [CONST-QRY-7] top_k 默认小整数（具体由实现决定）
 
@@ -278,13 +255,11 @@ ripgrep 不可用时自动 fallback 到 Python re（慢但能用）。必须 fal
 ### [CONST-QRY-10] 4 键 JSON 返回
 
 返回 `status/data/message/hints`：
-- `data.related_nodes` = snippet map（必有）
-- 「快速通关」字段（true/false）（决定是否返 body）
-- `data.body_map` = 完整 body（仅 「快速通关」触发时）
-- `data.neighbor_preview` = 1-hop 邻居（仅 --neighbors）
-- `data.report_hint` = 关联 Node_Report 提示（仅 L3 命中时）
-- `data.list_hint` = 关联 Node_List 提示（仅 L2 命中时）
-- `hints` 含「读 body」「扩展邻居」「查关联 Report」建议
+- `data.blocks` = snippet 列表（必有）
+- `data.uid_batch` = 本轮建议选取的最大 UID 数（默认 30）
+- `data.max_rounds` = 剩余轮数（默认 5）
+- `data.reflection` = 现有 Entity/List/Report 命中提示
+- `hints` 含 Path A / Path B 多轮建议
 
 ### [CONST-QRY-11] 不调 LLM
 
@@ -292,7 +267,7 @@ ripgrep 不可用时自动 fallback 到 Python re（慢但能用）。必须 fal
 
 ## 六、性能预算
 
-目标是**全程子秒级、最差不过数秒**：全库扫描、Fast Pass 取 body、关系遍历都应远快于人的感知阈值。具体预算值由实现按硬件与库规模标定。超预算时返回 warning + partial result，绝不无限期阻塞 Agent。
+目标是**全程子秒级、最差不过数秒**：全库扫描、切片、关系遍历都应远快于人的感知阈值。具体预算值由实现按硬件与库规模标定。超预算时返回 warning + partial result，绝不无限期阻塞 Agent。
 
 ## 七、多轮扩展查询（Agent 决策环）
 
@@ -338,7 +313,6 @@ LLM：能结 → 停；不能结 → 选 Path A 或 Path B
 - [ ] 弹性切片（软/硬双上限）（[PRIN-QRY-8]）
 - [ ] 邻域合并按紧凑阈值（[PRIN-QRY-9]）
 - [ ] 打分 (覆盖分 + 稀有分) × 密度奖励，核心权重远大于扩展（[PRIN-QRY-10]）
-- [ ] Fast Pass 动态阈值（[PRIN-QRY-12]）
 - [ ] 50 条关系上限不越界（LRU、命中前挪）（[PRIN-QRY-13]）
 - [ ] 多轮扩展：Path A 换词优先，Path B 关系扩散兜底，每轮 LLM 决策（[PRIN-QRY-14]）
 - [ ] 每轮独立计分，CLI 禁止生成摘要（[PRIN-QRY-15]）
@@ -355,7 +329,6 @@ LLM：能结 → 停；不能结 → 选 Path A 或 Path B
 - [ ] 合并距离阈值（紧凑关联物理证据）（[CONST-QRY-3]）
 - [ ] 核心/扩展权重比显著（核心远大于扩展）（[CONST-QRY-4]）
 - [ ] 密度奖励显著大于 1（[CONST-QRY-5]）
-- [ ] Fast Pass 动态阈值（[CONST-QRY-6]）
 - [ ] top_k 默认值由实现在库内 config 给定（[CONST-QRY-7]）
 - [ ] rg + Python re fallback（[CONST-QRY-8]）
 - [ ] 超时返回部分（[CONST-QRY-9]）

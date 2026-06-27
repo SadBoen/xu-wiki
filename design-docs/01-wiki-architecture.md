@@ -230,11 +230,6 @@ CLI 不做语义判断，**也不做关键词生成**。关键词（core + expan
 
 **核心权重远大于扩展**——确保核心实体（船名、项目号）不被同义词淹没。
 
-### [PRIN-ARCH-14] Fast Pass——减少 Agent 二次请求
-
-当某切片块分值显著超过动态阈值时，CLI 自动额外读取该节点整页正文一并返回，省掉 Agent 二次读取的 round-trip。阈值动态计算,低命中数下有兜底(见 [PRIN-QRY-12])。
-
----
 
 ## 五、存储与元数据
 
@@ -602,7 +597,6 @@ Node_Report 必须能追溯到 L1 / L2 的证据——没有证据链的 Report 
 - [ ] 三层介入（L1 定位 → L2 对齐 → L3 提炼）（[PRIN-ARCH-11]）
 - [ ] 关键词分级是 LLM 责任（CLI 分词 + Agent 分级）（[PRIN-ARCH-12]）
 - [ ] 打分公式 (覆盖分 + 稀有分) × 密度奖励，核心词权重远大于扩展词（[PRIN-ARCH-13]）
-- [ ] Fast Pass 阈值动态（[PRIN-ARCH-14]）
 
 **存储与 Schema**：
 - [ ] Markdown + YAML Frontmatter（[PRIN-ARCH-15]）
