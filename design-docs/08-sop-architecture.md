@@ -332,8 +332,8 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **意图**：用户说「我要找知识」。
 
 **调用步骤**：
-1. Agent 把用户查询词分成 `--core`（实体，高权）与 `--expansion`（同义词，低权）（[PRIN-ARCH-12]）
-2. `xu-wiki query --wiki <w> --core <kw,kw> --expansion <kw,kw> [--top-k N]`
+1. Agent 把用户查询词分词后合成逗号分隔的 `--keywords` 列表（[PRIN-ARCH-12]）
+2. `xu-wiki query --wiki <w> --keywords <kw,kw,kw> [--top-k N]`
 3. 命中后按用户意图调：
    - 读单节点 → `xu-wiki read --wiki <w> --uid <uid>`
    - 看 L2 对比 → `xu-wiki list show --wiki <w> --uid <uid>`
@@ -341,7 +341,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 4. （可选）查节点是否存在 → `xu-wiki nodes --wiki <w>`
 
 **失败模式**：
-- `--core` 空 → Agent 必须问用户（hard rule 8）
+- `--keywords` 空 → Agent 必须问用户（hard rule 8）
 - 0 命中 → 不许自动切换模式，告知用户换关键词
 - `list_hint` / `report_hint` 提示 → Agent 决定是否跟进，CLI 不擅自动作（[PRIN-QRY-1]）
 
