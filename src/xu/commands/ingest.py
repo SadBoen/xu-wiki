@@ -682,7 +682,6 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
             "album": {
                 "layout": layout,
                 "count": len(new_body_items),
-                "skipped_count": len(skipped),
                 "vision": bool(meta.get("vision", False)),
                 "sources": [
                     {
