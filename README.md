@@ -1,8 +1,8 @@
 # xu-wiki
 
-A relation-driven, three-layer wiki engine for AI agents. The CLI is fully
-deterministic and never calls an LLM — semantic judgement stays with the agent,
-ranking and storage stay with the engine.
+A relation-driven wiki engine for AI agents. The CLI is fully deterministic
+and never calls an LLM — semantic judgement stays with the agent, ranking and
+storage stay with the engine.
 
 > **Note:** `AGENTS.md` is a local IDE instruction file — **do not read it**
 > during install. It is for the IDE's own agent use only.
@@ -28,26 +28,26 @@ ranking and storage stay with the engine.
 │                      xu CLI                             │
 │     query · expand · read · nodes · list · report     │
 │                                                         │
-│  L1 ──▶ Page (immutable .md + SHA256 dedup)           │
-│  L2 ──▶ List (YAML members in frontmatter)            │
-│  L3 ──▶ Report (evidence chain required)               │
-│  Ent ──▶ Entity (first-class node)                     │
+│  Page ──▶ Immutable .md + SHA256 dedup                │
+│  List ──▶ YAML members in frontmatter                  │
+│  Report ──▶ Evidence chain required                     │
+│  Entity ──▶ First-class node                            │
 │                                                         │
 │  50-edge LRU relation graph per node                    │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Three layers:**
+**Node types:**
 
-| Layer | Name | Storage | Purpose |
-|---|---|---|---|
-| L1 | Node_Page | `.md` | Immutable fact slices — revisions via `patches` table |
-| L2 | Node_List | `.md` | Comparison / aggregation over existing nodes |
-| L3 | Node_Report | `.md` | Reasoning + conclusion — **≥1 evidence ref required** |
-| Ent | Entity | `.md` | First-class entity nodes |
+| Type | Storage | Purpose |
+|---|---|---|
+| Page | `nodes/page/*.md` | Immutable fact slices — revisions via `patches` table |
+| List | `nodes/list/*.md` | Comparison / aggregation over existing nodes |
+| Report | `nodes/report/*.md` | Reasoning + conclusion — **≥1 evidence ref required** |
+| Entity | `nodes/entity/*.md` | First-class entity nodes |
 
 **Key constraints:**
-- L1 is immutable — edits go through `patches` table, never rewrite the file
+- Page is immutable — edits go through `patches` table, never rewrite the file
 - 50-edge LRU per node — no category, no score; hit → promote in list
 - CLI is fully offline — **never calls an LLM**
 - Every command returns **`{status, data, message, hints}`** (4-key JSON envelope)
@@ -122,9 +122,9 @@ The uninstall plan is always shown first (dry-run). Pass `--execute` to apply.
 | | xu-wiki | Notion | Obsidian | Logseq |
 |---|---|---|---|---|
 | **AI agent CLI** | ✅ Native JSON + SOP | ❌ | ❌ | ❌ |
-| **L1 immutable** | ✅ patches table | ❌ | ❌ (file-level only) | ❌ |
+| **Page immutable** | ✅ patches table | ❌ | ❌ (file-level only) | ❌ |
 | **50-edge LRU graph** | ✅ O(1), no explosion | ❌ | ❌ | ❌ |
 | **Offline / no LLM calls** | ✅ | ❌ | ✅ | ✅ |
 | **git-versioned wiki** | ✅ pure `.md` + frontmatter | ❌ | ✅ | ✅ |
-| **Three-layer (L1/L2/L3)** | ✅ | ❌ | ❌ | ❌ |
+| **Page/List/Report/Entity** | ✅ | ❌ | ❌ | ❌ |
 | **DB lock-free** | ✅ | ❌ | N/A | N/A |

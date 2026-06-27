@@ -20,7 +20,7 @@ Cross-references:
 - Process-layer audit carrying `error_class` → `SKILL.md §Process-layer audit log`
 
 ## CreationRefused
-- Trigger: LLM decided not to create an L2/L3 after post-commit or
+- Trigger: LLM decided not to create a List/Report after post-commit or
   post-query reflection, after checking for similar existing
   nodes (query-before-create). Not a CLI error — the agent weighed the
   evidence and chose not to create.

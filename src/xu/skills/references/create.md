@@ -6,7 +6,7 @@ path and registers the wiki. The CLI is **fail-loud on safety**: if the path
 already holds user content, it refuses rather than overwriting.
 
 This file is **self-contained**. All cross-cutting rules
-(L1 immutability, 4-key JSON, missing-args policy, paths-must-be-absolute) live
+(Page immutability, 4-key JSON, missing-args policy, paths-must-be-absolute) live
 in `SKILL.md` and are referenced when needed, not duplicated here.
 
 ## CLI palette

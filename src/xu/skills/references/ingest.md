@@ -1,12 +1,12 @@
 # ingest — add content to a wiki
 
-`/xu-wiki ingest` adds content to a wiki as **L1 Node_Page** (immutable). It
-is the most complex SOP because L1 body style **must match the content
+`/xu-wiki ingest` adds content to a wiki as **Page** (immutable). It
+is the most complex SOP because Page body style **must match the content
 type**. The `content_type` frontmatter key stores the body form
 (`article` for prose, `table` for tabular, `gallery` for album).
 
 This file is **self-contained** (PRIN-SKILL-1). Cross-cutting rules
-(L1 immutability, 4-key JSON, missing-args, paths-must-be-absolute) live in
+(Page immutability, 4-key JSON, missing-args, paths-must-be-absolute) live in
 `SKILL.md`; the body-form decision tree lives here because it only applies
 to ingest.
 
@@ -33,7 +33,7 @@ to ingest.
 > returns `BodyFormatMismatch` error and blocks commit.
 >
 > **Never split a single album into N parallel `ingest-file` + `ingest-commit`
-> cycles** — that breaks the body-form rule and leaves N disjoint L1 pages
+> cycles** — that breaks the body-form rule and leaves N disjoint Page nodes
 > with no album structure.
 
 ## CLI palette
@@ -65,13 +65,13 @@ xu report create --wiki <w> --title <t> --body <md> \
 | Flag (album) | Required | Purpose |
 |---|---|---|
 | `--wiki` | yes | Wiki name or alias |
-| `--title` | yes | Album theme = L1 page title |
+| `--title` | yes | Album theme = Page title |
 | `--files` | yes | Comma-separated absolute paths to images |
 | `--node-path` | no | Where in the wiki tree to place the page |
 | `--layout` | no | `table` (default) or `list` |
 | `--vision` | no | Flag that user wants per-photo captions; sets intent even if backend absent |
 | `--captions` | no | Pre-computed captions as JSON; if absent, vision backend runs at view time |
-| `--author` | no | L1 frontmatter author field |
+| `--author` | no | Page frontmatter author field |
 
 ## Workflow — prose / document (PDF / DOCX / MD / image)
 
@@ -87,7 +87,7 @@ xu report create --wiki <w> --title <t> --body <md> \
    title, node_path, content_type — all LLM-generated, never asked of the user.
    `--title` is required by CLI but the value comes from the LLM.
 4. **Phase 2 — `ingest-commit --temp <f> --title <t>`**: promotes temp file
-   to L1. Intermediate values (content_type, node_path, author) are LLM-generated.
+   to Page. Intermediate values (content_type, node_path, author) are LLM-generated.
    **Commit includes internal verify + atomic rollback on failure** — if verify fails,
    all written files are deleted; the response returns `VerifyFailed`
    error with `hints=["fix the failed checks and re-run ingest-commit"]`.
@@ -106,7 +106,7 @@ xu report create --wiki <w> --title <t> --body <md> \
    start from Phase 1 again if needed).
    > Commit succeeded + verify failed = files were rolled back; start fresh.
 7. **Page splitting notice**: if `data.page_count > 1`, tell the user
-   "文档较长，已自动按容量分片为 N 个 L1 节点"。This is normal behavior, not an error.
+   "文档较长，已自动按容量分片为 N 个 Page 节点"。This is normal behavior, not an error.
 8. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
    An empty `raws/` directory with populated `nodes/page/` = copy was
    bypassed (usually from `--native` on a document).
@@ -123,7 +123,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 1. **Verify files**: all `--files` must be absolute paths to images.
 2. **Ask vision intent**: "需要每张照片的 AI 描述吗？" — set `--vision` if yes
    (never decide for the user).
-3. **Single-shot `ingest-album`**: writes ONE L1 page with a markdown
+3. **Single-shot `ingest-album`**: writes ONE Page with a markdown
    table (or list if `--layout list`). Album theme = `--title`.
    Includes internal verify + rollback on failure.
 4. **Phase 3 — `ingest-verify --wiki <w> --uid <uid>`**: explicit verify
@@ -261,21 +261,21 @@ xu ingest-verify --wiki <w> --uid <uid_from_commit_b>
 ## Common pitfalls
 
 - **Wrong body form** — applying `ingest-file` to an album produces N
-  disjoint L1 pages with no album structure. Always confirm form first.
+  disjoint Page nodes with no album structure. Always confirm form first.
 - **Deciding vision for the user** — if the user didn't say, ASK. Setting
   `--vision` when the build has no vision backend records the intent
    but does NOT crash. This is the right way to defer.
 - **Splitting an album** — never call `ingest-file` N times then
   `ingest-commit` N times for an album. Use `ingest-album` once.
-- **Editing the L1 body after commit** — the L1 markdown is immutable
-   (L1 is immutable; see hard rule 1 in `SKILL.md`). To "add another photo to
-  the album", use `ingest-album` with a fresh call targeting the existing
-  node-path — this creates a new L1 node; there is currently no CLI
-  for appending photos to an existing album node.
-- **Empty raws/ despite L1 pages** — if `nodes/page/` has content but
+- **Editing the Page body after commit** — the Page markdown is immutable
+   (Page is immutable; see hard rule 1 in `SKILL.md`). To "add another photo to
+   the album", use `ingest-album` with a fresh call targeting the existing
+   node-path — this creates a new Page node; there is currently no CLI
+   for appending photos to an existing album node.
+- **Empty raws/ despite Page nodes** — if `nodes/page/` has content but
    `raws/` is empty, the copy step was bypassed (usually from using `--native`
   on a document). `data.created[].raw_path` in the response would be null.
-  Fix: delete the L1 and re-ingest via `--temp` path.
+  Fix: delete the Page and re-ingest via `--temp` path.
 - **Skip ingest-verify after commit** — run `xu ingest-verify <wiki> <uid>` to
   confirm DB / nodes/ / content_hash / raw file / body format are all consistent;
   do not treat `ingest-commit` returning success as sufficient proof of integrity.

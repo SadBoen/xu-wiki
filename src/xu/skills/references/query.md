@@ -1,6 +1,6 @@
 # query — find knowledge
 
-`/xu-wiki query` finds L1/L2/L3 nodes by graded keywords. The CLI is purely
+`/xu-wiki query` finds Page/List/Report/Entity nodes by graded keywords. The CLI is purely
 a matcher — **it does not interpret free-text**. The agent grades the user's
 query into a comma-separated `--keywords` list before invoking.
 
@@ -18,7 +18,7 @@ xu query --wiki <w> --keywords <kw,kw,kw>
 xu expand --wiki <w> --uids <uid,uid,...>
 xu expand --wiki <w> --uids <uid,...> --relation-names <name,name> --limit <n>
 
-# Read individual node (L1 markdown body)
+# Read individual node (Page markdown body)
 xu read  --wiki <w> --uid <uid>
 
 # List nodes in a layer (debug / discovery)
@@ -29,7 +29,7 @@ xu query-relation list --wiki <w> --from-uid <uid>
 xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
                             --relation-name <r> [--comment <c>]
 
-# Follow L2 / L3 hints
+# Follow List / Report hints
 xu list   show --wiki <w> --uid <uid>
 xu list   create --wiki <w> --title <t> --members <uid,uid,...> \
                     [--dimension <d>] [--node-path <p>]
@@ -125,7 +125,7 @@ xu expand --wiki research --uids UID1,UID2,UID3 --relation-names cites --limit 5
   into one call.
 - **Path B without relation filter**: `--relation-names` prevents chain
   explosion — always narrow the direction when you know what you're looking for.
-- **Auto-creating L2/L3 on hint**: the `reflection` field is a starting point,
+- **Auto-creating List/Report on hint**: the `reflection` field is a starting point,
   not a mandate. Always run valuation first.
 - **Forgetting the 50-edge limit**: 51st relation evicts the tail.
 

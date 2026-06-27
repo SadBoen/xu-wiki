@@ -3,7 +3,7 @@
 `/xu-wiki config` is the SOP for **everything that isn't wiki data**:
 registering / aliasing / unregistering wikis, managing the MinerU API key,
 inspecting the global state, and **uninstalling the xu-wiki package
-itself**. It does not touch L1/L2/L3 content.
+itself**. It does not touch Page/List/Report/Entity content.
 
 This file is **self-contained**. Cross-cutting rules
 (4-key JSON, missing-args) live in `SKILL.md`; the safety rules for

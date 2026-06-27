@@ -20,8 +20,8 @@ xu doctor-all --wiki <w> [--fix]
 xu doctor-fields         --wiki <w> [--fix]   # frontmatter completeness + file existence
 xu doctor-files          --wiki <w> [--fix]   # raws/ / nodes/ filesystem consistency
 xu doctor-relations      --wiki <w> [--fix]   # 50-edge LRU invariants
-xu doctor-l1-immutable   --wiki <w> [--fix]   # L1 markdown body never modified
-xu doctor-report-evidence --wiki <w> [--fix]  # L3 reports have ≥ 1 evidence ref
+xu doctor-l1-immutable   --wiki <w> [--fix]   # Page markdown body never modified
+xu doctor-report-evidence --wiki <w> [--fix]  # Report nodes have ≥ 1 evidence ref
 xu doctor-node-path-organization --wiki <w> [--fix]  # root-level pages + suggested paths
 
 # Node integrity verification (ingest module)
@@ -83,12 +83,12 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
    and ask for confirmation.
 2. **For `delete-node`**:
    - Run **without** `--force` first; the CLI refuses if X is referenced
-     by L2/L3.
+      by List/Report.
    - If the user accepts the orphan references, re-run with `--force`.
 3. **For `rebuild`**:
-   - Pick the granularity. `keep-l1` is the safest (only rebuilds L2/L3
-     from L1). `keep-l1-l2` rebuilds L3 only. `full` rebuilds everything
-     from raw markdown — **destructive** for L2/L3 edits.
+    - Pick the granularity. `keep-l1` is the safest (only rebuilds List/Report
+      from Page). `keep-l1-l2` rebuilds Report only. `full` rebuilds everything
+      from raw markdown — **destructive** for List/Report edits.
    - The CLI requires a confirmation flag (check current CLI; ask the
      user if unsure).
 
@@ -119,9 +119,9 @@ xu delete-node --wiki research --uid WXYZ5678 --force
 ## Common pitfalls
 
 - **`--fix` on a check that doesn't support it** — `doctor-l1-immutable`
-  never auto-repairs (L1 is immutable; if it's modified, the only fix is
-  to restore from a backup or rebuild). The CLI returns "fix not supported
-  for this check".
+   never auto-repairs (Page is immutable; if it's modified, the only fix is
+   to restore from a backup or rebuild). The CLI returns "fix not supported
+   for this check".
 - **Auto-running destructive ops** — never invoke `delete-node` or
   `rebuild` without explicit user confirmation, even if the doctor report
   lists them as candidates.
@@ -130,8 +130,8 @@ xu delete-node --wiki research --uid WXYZ5678 --force
   Re-running `ingest-commit` with the same temp file (it will be rejected as
   duplicate by Level-2 dedup) will trigger the deletion. There is no `nodes/pending/`
   directory.
-- **Rebuilding L1 from raw markdown** — `rebuild --granularity full` is
-  destructive for any L2/L3 work done after the L1 ingest. Default
+- **Rebuilding from raw markdown** — `rebuild --granularity full` is
+  destructive for any List/Report work done after the Page ingest. Default
   granularity is `keep-l1`; only escalate if the user really wants to
   throw away derived layers.
 
