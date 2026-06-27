@@ -51,10 +51,19 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func="wikis")
 
     # ---- M2: ingest / query / read ----
-    sp = sub.add_parser("ingest-file", help="Phase 1: parse a file into pending (no node created)")
+    sp = sub.add_parser("ingest-file", help="Phase 1: parse a file (or images) into pending (no node created)")
     sp.add_argument("--wiki", required=True)
-    sp.add_argument("--file", required=True)
+    sp.add_argument("--file", help="single source file (for article/table content)")
+    sp.add_argument("--files", help="comma-separated absolute image paths (for gallery/album content)")
+    sp.add_argument("--title", required=True, help="title for the pending node")
     sp.add_argument("--node-path", default="", help="logical partition path")
+    sp.add_argument("--layout", default="table", choices=["table", "list"],
+                    help="body layout for gallery content (default table)")
+    sp.add_argument("--vision", action="store_true",
+                    help="mark vision intent (per-photo captions); SOP should ask user first")
+    sp.add_argument("--captions", default="",
+                    help='JSON object {filename: description} (optional)')
+    sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_file")
 
     sp = sub.add_parser("ingest-commit", help="Phase 2: commit pending pages into wiki (only write entry)")
@@ -69,22 +78,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--source", default="", help="abs path to source file (required when --native is used, for PRIN-ING-6 raws copy)")
     sp.add_argument("--author", default="agent")
     sp.set_defaults(func="ingest_commit")
-
-    sp = sub.add_parser("ingest-album",
-                        help="Album: N images → 1 Page (single-shot, no two-phase; PRIN-ING-13)")
-    sp.add_argument("--wiki", required=True)
-    sp.add_argument("--title", required=True, help="album theme (becomes the title)")
-    sp.add_argument("--files", required=True,
-                    help="comma-separated absolute image paths")
-    sp.add_argument("--node-path", default="", help="logical partition path (album lives under nodes/page/<node-path>/)")
-    sp.add_argument("--layout", default="table", choices=["table", "list"],
-                    help="body layout: table (default) or list")
-    sp.add_argument("--vision", action="store_true",
-                    help="mark vision intent (per-photo captions); SOP should ask user first")
-    sp.add_argument("--captions", default="",
-                    help='JSON object {filename: description} (optional)')
-    sp.add_argument("--author", default="agent")
-    sp.set_defaults(func="ingest_album")
 
     sp = sub.add_parser("ingest-verify",
                         help="Verify a committed node's integrity (DB / nodes/ / raws/ / body format)")
@@ -285,9 +278,6 @@ def _dispatch(args) -> dict:
     if func == "ingest_commit":
         from .commands.ingest import cmd_ingest_commit
         return cmd_ingest_commit(args)
-    if func == "ingest_album":
-        from .commands.album import cmd_ingest_album
-        return cmd_ingest_album(args)
     if func == "ingest_verify":
         from .commands.ingest import cmd_ingest_verify
         return cmd_ingest_verify(args)

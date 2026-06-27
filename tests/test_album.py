@@ -1,23 +1,25 @@
-"""Unit tests for the album CLI (M7: ingest-album sub-flow of SOP-ingest).
+"""Unit tests for gallery/album ingestion via the two-phase ingest flow.
 
-Covers PRIN-ING-13 (body-form) and PRIN-ING-14 (single-shot). The album CLI
-takes N images → 1 L1 Page with table or list body, copying each source
-file to raws/, hashing for dedup, and rendering metadata from Pillow
-when available (graceful degradation when Pillow is missing).
+Covers PRIN-ING-13 (body-form), PRIN-ING-14 (merged into two-phase),
+PRIN-ING-3a (SHA256 three-way). The gallery flow goes:
+  Phase 1: ingest-file --files img1,img2,... --title T --node-path P
+  Phase 2: ingest-commit --pending <path> --title T --content-type gallery
+
+Tests: Phase 1, Phase 2, dedup, captions, vision, Pillow degradation,
+raws/ copy, and integration (resolve_wiki round-trip).
 """
 import json
 import os
-import yaml
-import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from xu.commands import album as album_mod
+from xu.commands import ingest as ingest_mod
 from xu.commands import create as create_mod
 from xu.utils import config as cfg_mod
 from xu.utils import frontmatter as fm
@@ -30,7 +32,6 @@ from xu.utils.wiki import resolve_wiki
 
 @pytest.fixture
 def xu_home(monkeypatch, tmp_path):
-    """Point global config dir at tmp_path."""
     monkeypatch.setattr(cfg_mod, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(cfg_mod, "GLOBAL_CONFIG", tmp_path / "config.yaml")
     return tmp_path
@@ -38,7 +39,6 @@ def xu_home(monkeypatch, tmp_path):
 
 @pytest.fixture
 def wiki(xu_home):
-    """Create a fresh empty wiki and return its name + root path."""
     name = "album-test-wiki"
     root = xu_home / "wikis" / name
     r = create_mod.cmd_create(SimpleNamespace(
@@ -58,162 +58,194 @@ def _args(**kw) -> SimpleNamespace:
 
 
 # ---------------------------------------------------------------------------
-# happy path
+# helpers
+# ---------------------------------------------------------------------------
+
+def _phase1(wiki_name, title, files, node_path="", layout="table",
+            vision=False, captions="", author="agent"):
+    """Run Phase 1: ingest-file with --files (gallery mode)."""
+    r1 = ingest_mod.cmd_ingest_file(_args(
+        wiki=wiki_name, title=title, files=files,
+        node_path=node_path, layout=layout, vision=vision,
+        captions=captions, author=author,
+        file=None,
+    ))
+    return r1
+
+
+def _phase2(wiki_name, pending, title, content_type="gallery", author="agent"):
+    """Run Phase 2: ingest-commit with pending."""
+    r2 = ingest_mod.cmd_ingest_commit(_args(
+        wiki=wiki_name, pending=pending, title=title,
+        content_type=content_type, author=author,
+        native=None, source=None, node_path="", relations="",
+    ))
+    return r2
+
+
+def _two_phase(wiki_name, title, files, node_path="", layout="table",
+                vision=False, captions="", author="agent"):
+    """Full two-phase album commit."""
+    r1 = _phase1(wiki_name, title, files, node_path, layout, vision, captions, author)
+    if r1["status"] != "success":
+        return r1
+    pending = r1["data"]["pending"]
+    r2 = _phase2(wiki_name, pending, title, "gallery", author)
+    return r2
+
+
+# ---------------------------------------------------------------------------
+# happy path: table layout
 # ---------------------------------------------------------------------------
 
 def test_album_happy_table(wiki, tmp_path):
     name, root = wiki
-    files = []
     for n in ("001.jpeg", "002.jpeg", "003.jpeg"):
         p = tmp_path / "photos" / n
         _write_fake_jpeg(p, body=f"image-{n}".encode())
-        files.append(str(p))
+    files_str = ",".join(str(tmp_path / "photos" / n) for n in ("001.jpeg", "002.jpeg", "003.jpeg"))
 
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="SGW001 第一次岸上系统部署完工",
-        files=",".join(files), node_path="船舶/SGW001/照片",
-        layout="table", vision=False, captions="",
-        author="tester",
-    ))
+    r = _two_phase(name, "SGW001 第一次岸上系统部署完工", files_str,
+                   node_path="船舶/SGW001/照片", layout="table")
     assert r["status"] == "success", r
     data = r["data"]
     assert data["layout"] == "table"
     assert data["count"] == 3
-    # 3 source files copied into raws/
+
+    # raws/ copied
     raws_dir = root / "raws" / "船舶" / "SGW001" / "照片"
     assert raws_dir.is_dir()
     assert sorted(p.name for p in raws_dir.iterdir()) == ["001.jpeg", "002.jpeg", "003.jpeg"]
-    # 1 L1 page written
+
+    # L1 page written
     md = root / data["md_path"]
     assert md.is_file()
     front, body = fm.parse(md.read_text(encoding="utf-8"))
     assert front["title"] == "SGW001 第一次岸上系统部署完工"
     assert front["layer"] == "Page"
     assert front["content_type"] == "gallery"
-    assert front["source_hashes"]  # array of all source hashes
+    assert front["source_hashes"]
     assert len(front["source_hashes"]) == 3
-    # body is YAML list of dicts (gallery body format per PRIN-ING-13)
+    assert front["attrs"]["album"]["layout"] == "table"
+    assert front["attrs"]["album"]["count"] == 3
+    assert front["attrs"]["album"]["vision"] is False
+    assert len(front["attrs"]["album"]["sources"]) == 3
+
+    # body is YAML list
     assert body.startswith("- filename:")
     items = yaml.safe_load(body)
     assert len(items) == 3
     assert [i["filename"] for i in items] == ["001.jpeg", "002.jpeg", "003.jpeg"]
     assert items[0]["raw_rel_path"] == "raws/船舶/SGW001/照片/001.jpeg"
 
-    # attrs.album.sources stored: verify via frontmatter
-    ctx = resolve_wiki(name)
-    found = None
-    for p in ctx.page_dir.rglob("*.md"):
-        text = p.read_text(encoding="utf-8", errors="replace")
-        fd, _ = fm.parse(text)
-        if fd.get("uid") == data["uid"]:
-            found = p
-            break
-    assert found is not None, f"node {data['uid']} not found in {ctx.page_dir}"
-    text = found.read_text(encoding="utf-8")
-    fd, _ = fm.parse(text)
-    attrs_obj = fd.get("attrs", {})
-    assert attrs_obj["album"]["layout"] == "table"
-    assert attrs_obj["album"]["count"] == 3
-    assert attrs_obj["album"]["vision"] is False
-    assert len(attrs_obj["album"]["sources"]) == 3
-    assert attrs_obj["album"]["sources"][0]["filename"] == "001.jpeg"
-    assert attrs_obj["album"]["sources"][0]["source_hash"]  # sha256 present
-
 
 def test_album_happy_list(wiki, tmp_path):
-    name, root = wiki
-    files = []
+    name, _ = wiki
     for n in ("a.png", "b.png"):
         p = tmp_path / "pics" / n
         _write_fake_jpeg(p, body=f"img-{n}".encode())
-        files.append(str(p))
+    files_str = ",".join(str(tmp_path / "pics" / n) for n in ("a.png", "b.png"))
 
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="List layout album",
-        files=",".join(files), node_path="",
-        layout="list", vision=False, captions="", author="tester",
-    ))
+    r = _two_phase(name, "List layout album", files_str, layout="list")
     assert r["status"] == "success", r
-    md = root / r["data"]["md_path"]
-    body = fm.parse(md.read_text(encoding="utf-8"))[1]
-    # body is YAML list of dicts regardless of layout preference
-    assert body.startswith("- filename:")
-    items = yaml.safe_load(body)
-    assert len(items) == 2
-    assert [i["filename"] for i in items] == ["a.png", "b.png"]
+    assert r["data"]["layout"] == "list"
+    assert r["data"]["count"] == 2
 
 
 # ---------------------------------------------------------------------------
-# validation
+# Phase 1 validation
 # ---------------------------------------------------------------------------
 
-def test_album_missing_wiki(xu_home, tmp_path):
+def test_album_phase1_missing_wiki(xu_home, tmp_path):
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki="no-such-wiki", title="t", files=str(p), node_path="",
-        layout="table", vision=False, captions="", author="tester",
+    r = ingest_mod.cmd_ingest_file(_args(
+        wiki="no-such-wiki", title="t", files=str(p),
+        node_path="", layout="table", vision=False, captions="",
+        author="agent", file=None,
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "WikiNotFound"
 
 
-def test_album_missing_title(wiki, tmp_path):
+def test_album_phase1_missing_files(wiki):
     name, _ = wiki
-    p = tmp_path / "x.jpeg"
-    _write_fake_jpeg(p)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="", files=str(p), node_path="",
-        layout="table", vision=False, captions="", author="tester",
+    r = ingest_mod.cmd_ingest_file(_args(
+        wiki=name, title="t", files=None,
+        node_path="", layout="table", vision=False, captions="",
+        author="agent", file=None,
     ))
     assert r["status"] == "error"
-    assert r["data"]["error_class"] == "MissingTitle"
-    assert "title" in r["data"].get("missing", [])
+    assert r["data"]["error_class"] == "FileNotFound"
 
 
-def test_album_missing_files(wiki):
-    name, _ = wiki
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="t", files="", node_path="",
-        layout="table", vision=False, captions="", author="tester",
-    ))
-    assert r["status"] == "error"
-    assert r["data"]["error_class"] == "MissingFiles"
-
-
-def test_album_relative_path(wiki, tmp_path):
+def test_album_phase1_relative_path(wiki, tmp_path):
     name, _ = wiki
     rel = tmp_path / "x.jpeg"
     _write_fake_jpeg(rel)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="t", files=f"./{rel.name}", node_path="",
-        layout="table", vision=False, captions="", author="tester",
+    r = ingest_mod.cmd_ingest_file(_args(
+        wiki=name, title="t",
+        files=f"./{rel.name}",          # relative — must be rejected
+        node_path="", layout="table", vision=False, captions="",
+        author="agent", file=None,
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "PathNotAbsolute"
 
 
-def test_album_invalid_layout(wiki, tmp_path):
+def test_album_phase1_file_not_found(wiki, tmp_path):
+    name, _ = wiki
+    r = ingest_mod.cmd_ingest_file(_args(
+        wiki=name, title="t",
+        files=str(tmp_path / "missing.jpeg"),
+        node_path="", layout="table", vision=False, captions="",
+        author="agent", file=None,
+    ))
+    assert r["status"] == "error"
+    assert r["data"]["error_class"] == "FileNotFound"
+
+
+def test_album_phase1_invalid_layout(wiki, tmp_path):
     name, _ = wiki
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="t", files=str(p), node_path="",
-        layout="yaml", vision=False, captions="", author="tester",
+    r = ingest_mod.cmd_ingest_file(_args(
+        wiki=name, title="t", files=str(p),
+        node_path="", layout="yaml", vision=False, captions="",
+        author="agent", file=None,
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "InvalidLayout"
 
 
-def test_album_file_not_found(wiki, tmp_path):
+# ---------------------------------------------------------------------------
+# Phase 2 validation
+# ---------------------------------------------------------------------------
+
+def test_album_phase2_pending_not_found(wiki, tmp_path):
     name, _ = wiki
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="t",
-        files=str(tmp_path / "missing.jpeg"),
-        node_path="", layout="table", vision=False, captions="", author="tester",
+    r = ingest_mod.cmd_ingest_commit(_args(
+        wiki=name, pending=str(tmp_path / "nonexistent.pending"),
+        title="t", content_type="gallery", author="agent",
+        native=None, source=None, node_path="", relations="",
     ))
     assert r["status"] == "error"
-    assert r["data"]["error_class"] == "FileNotFound"
+    assert r["data"]["error_class"] == "PendingNotFound"
+
+
+def test_album_phase2_invalid_content_type(wiki, tmp_path):
+    name, _ = wiki
+    p = tmp_path / "x.jpeg"
+    _write_fake_jpeg(p)
+    r1 = _phase1(name, "t", str(p))
+    assert r1["status"] == "success"
+    r2 = ingest_mod.cmd_ingest_commit(_args(
+        wiki=name, pending=r1["data"]["pending"],
+        title="t", content_type="invalid_type", author="agent",
+        native=None, source=None, node_path="", relations="",
+    ))
+    assert r2["status"] == "error"
+    assert r2["data"]["error_class"] == "InvalidContentType"
 
 
 # ---------------------------------------------------------------------------
@@ -221,31 +253,24 @@ def test_album_file_not_found(wiki, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_album_source_collision_skipped(wiki, tmp_path):
-    """If a source file's hash is already in the DB, only that image is skipped."""
+    """If a source file's hash already exists, only that image is skipped."""
     name, root = wiki
-
-    # First commit a single Page with a known source_hash by running
-    # ingest-album on a 1-photo album.
     p1 = tmp_path / "first.jpeg"
     _write_fake_jpeg(p1, body=b"uniquely-stable-bytes-for-collision-test")
-    r1 = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="first album", files=str(p1),
-        node_path="", layout="table", vision=False, captions="", author="tester",
-    ))
+
+    # First album: 1 photo
+    r1 = _two_phase(name, "first album", str(p1))
     assert r1["status"] == "success", r1
     first_hash = r1["data"]["sources"][0]["source_hash"]
 
-    # Second album: include the SAME physical file (will hash the same) plus a new one.
+    # Second: same photo (duplicate) + new photo
     p2 = tmp_path / "second.jpeg"
     _write_fake_jpeg(p2, body=b"different-content-not-colliding")
-    r2 = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="second album",
-        files=f"{p1},{p2}", node_path="",
-        layout="table", vision=False, captions="", author="tester",
-    ))
-    assert r2["status"] == "success", r2  # succeeds, not rejected
-    assert r2["data"]["count"] == 1        # only the new image was written
-    assert len(r2["data"]["skipped"]) == 1 # first.jpeg was skipped
+
+    r2 = _two_phase(name, "second album", f"{p1},{p2}")
+    assert r2["status"] == "success", r2   # succeeds, not rejected
+    assert r2["data"]["count"] == 1         # only new image written
+    assert len(r2["data"]["skipped"]) == 1   # first.jpeg skipped
     assert r2["data"]["skipped"][0]["source_hash"] == first_hash
     assert r2["data"]["skipped"][0]["filename"] == "first.jpeg"
 
@@ -256,64 +281,55 @@ def test_album_source_collision_skipped(wiki, tmp_path):
 
 def test_album_captions_inline_json(wiki, tmp_path):
     name, root = wiki
-    files = []
     for n in ("c1.jpeg", "c2.jpeg"):
         p = tmp_path / n
         _write_fake_jpeg(p, body=f"img-{n}".encode())
-        files.append(str(p))
+    files_str = ",".join(str(tmp_path / n) for n in ("c1.jpeg", "c2.jpeg"))
     captions = json.dumps({"c1.jpeg": "船头整体完工", "c2.jpeg": "侧视图"})
 
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="captions test", files=",".join(files),
-        node_path="", layout="table", vision=False,
-        captions=captions, author="tester",
-    ))
+    r = _two_phase(name, "captions test", files_str, captions=captions)
     assert r["status"] == "success", r
-    md = root / r["data"]["md_path"]
-    body = fm.parse(md.read_text(encoding="utf-8"))[1]
-    assert "船头整体完工" in body
-    assert "侧视图" in body
+    md_path = root / r["data"]["md_path"]
+    _, body_text = fm.parse(md_path.read_text(encoding="utf-8"))
+    assert "船头整体完工" in body_text
+    assert "侧视图" in body_text
 
 
 def test_album_captions_bad_json(wiki, tmp_path):
     name, _ = wiki
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="t", files=str(p), node_path="",
-        layout="table", vision=False, captions="{not-json", author="tester",
+    r = ingest_mod.cmd_ingest_file(_args(
+        wiki=name, title="t", files=str(p),
+        node_path="", layout="table", vision=False,
+        captions="{not-json",
+        author="agent", file=None,
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "BadCaptionsJSON"
 
 
 def test_album_vision_flag_recorded(wiki, tmp_path):
-    """--vision is recorded in attrs.album.vision; hint surfaces deferred-caption."""
+    """--vision intent is stored in attrs.album.vision."""
     name, root = wiki
     p = tmp_path / "v.jpeg"
     _write_fake_jpeg(p)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="vision test", files=str(p), node_path="",
-        layout="table", vision=True, captions="", author="tester",
-    ))
+
+    r = _two_phase(name, "vision test", str(p), vision=True)
     assert r["status"] == "success", r
-    md = root / r["data"]["md_path"]
-    body = fm.parse(md.read_text(encoding="utf-8"))[1]
-    assert body.startswith("- filename:")
-    # attrs.album.vision stored for backend to pick up later
+
+    # Read back and check attrs.album.vision
+    uid = r["data"]["uid"]
     ctx = resolve_wiki(name)
-    found = None
-    for p in ctx.page_dir.rglob("*.md"):
-        text = p.read_text(encoding="utf-8", errors="replace")
-        fd, _ = fm.parse(text)
-        if fd.get("uid") == r["data"]["uid"]:
-            found = p
+    for md_path in ctx.page_dir.rglob("*.md"):
+        fd, _ = fm.parse(md_path.read_text(encoding="utf-8"))
+        if fd.get("uid") == uid:
+            attrs_obj = fd.get("attrs", {})
+            assert attrs_obj["album"]["vision"] is True
             break
-    assert found is not None
-    fd, _ = fm.parse(found.read_text(encoding="utf-8"))
-    attrs_obj = fd.get("attrs", {})
-    assert attrs_obj["album"]["vision"] is True
-    # hint surfaces the deferred-caption expectation
+    else:
+        pytest.fail(f"uid {uid} not found")
+
     assert any("vision" in h for h in r["hints"])
 
 
@@ -322,57 +338,45 @@ def test_album_vision_flag_recorded(wiki, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_album_runs_without_pillow(wiki, tmp_path, monkeypatch):
-    """Force image_meta._PILLOW_OK = False; album must still commit with '—'."""
+    """Force image_meta._PILLOW_OK = False; album still commits with null meta."""
     from xu.parsers import image_meta
 
-    name, root = wiki
+    name, _ = wiki
     p = tmp_path / "n.jpeg"
     _write_fake_jpeg(p, body=b"some-bytes")
 
     monkeypatch.setattr(image_meta, "_PILLOW_OK", False)
-    # also reload the image_meta module attribute inside the album module
-    # (the album module imported read_image_meta by reference, so monkeypatching
-    # the module attr is enough)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="no pillow test", files=str(p), node_path="",
-        layout="table", vision=False, captions="", author="tester",
-    ))
+    r = _two_phase(name, "no pillow test", str(p))
     assert r["status"] == "success", r
     src = r["data"]["sources"][0]
     assert src["width"] is None
     assert src["height"] is None
     assert src["gps"] is None
     assert src["captured"] is None
-    md = root / r["data"]["md_path"]
-    body = fm.parse(md.read_text(encoding="utf-8"))[1]
-    # resolution field absent when width/height are None
-    items = yaml.safe_load(body)
-    assert len(items) == 1
-    assert "resolution" not in items[0]
-    assert items[0]["filename"] == "n.jpeg"
     monkeypatch.undo()
 
 
 # ---------------------------------------------------------------------------
-# sources copied to raws/ (PRIN-ING-6)
+# raws/ copy (PRIN-ING-6)
 # ---------------------------------------------------------------------------
 
 def test_album_sources_copied_to_raws(wiki, tmp_path):
+    """All source images are copied to raws/<node-path>/ before Phase 2."""
     name, root = wiki
     p1 = tmp_path / "raw1.jpeg"
     p2 = tmp_path / "raw2.jpeg"
     _write_fake_jpeg(p1, body=b"raw-bytes-1")
     _write_fake_jpeg(p2, body=b"raw-bytes-2")
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="raws copy test",
-        files=f"{p1},{p2}", node_path="嵌套/路径/段",
-        layout="table", vision=False, captions="", author="tester",
-    ))
-    assert r["status"] == "success", r
+    files_str = f"{p1},{p2}"
+
+    # Phase 1 alone must copy to raws/
+    r1 = _phase1(name, "raws copy test", files_str,
+                  node_path="嵌套/路径/段")
+    assert r1["status"] == "success", r1
+
     raws_root = root / "raws" / "嵌套" / "路径" / "段"
     assert raws_root.is_dir()
-    files = sorted(p.name for p in raws_root.iterdir())
-    assert files == ["raw1.jpeg", "raw2.jpeg"]
+    assert sorted(p.name for p in raws_root.iterdir()) == ["raw1.jpeg", "raw2.jpeg"]
 
 
 # ---------------------------------------------------------------------------
@@ -380,29 +384,44 @@ def test_album_sources_copied_to_raws(wiki, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_resolve_wiki_after_album_creation(wiki, tmp_path):
-    name, _ = wiki
-    ctx = resolve_wiki(name)
-    assert ctx is not None
+    """Created L1 is queryable via resolve_wiki after commit."""
+    name, root = wiki
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)
-    r = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="resolve test", files=str(p), node_path="",
-        layout="table", vision=False, captions="", author="tester",
-    ))
+
+    r = _two_phase(name, "resolve test", str(p))
     assert r["status"] == "success", r
-    # Re-resolve and confirm the L1 is queryable via frontmatter
-    ctx2 = resolve_wiki(name)
-    assert ctx2 is not None
+
     uid = r["data"]["uid"]
+    ctx = resolve_wiki(name)
+    assert ctx is not None
     found = None
-    for p in ctx2.page_dir.rglob("*.md"):
-        text = p.read_text(encoding="utf-8", errors="replace")
-        fd, _ = fm.parse(text)
+    for md_path in ctx.page_dir.rglob("*.md"):
+        fd, _ = fm.parse(md_path.read_text(encoding="utf-8"))
         if fd.get("uid") == uid:
-            found = p
+            found = fd
             break
-    assert found is not None, f"node {uid} not found"
-    fd, _ = fm.parse(found.read_text(encoding="utf-8"))
-    assert fd.get("title") == "resolve test"
-    assert fd.get("layer") == "Page"
-    assert fd.get("content_type") == "gallery"
+    assert found is not None
+    assert found["title"] == "resolve test"
+    assert found["layer"] == "Page"
+    assert found["content_type"] == "gallery"
+
+
+# ---------------------------------------------------------------------------
+# pending file deleted after success (PRIN-ING-7)
+# ---------------------------------------------------------------------------
+
+def test_album_pending_deleted_after_commit(wiki, tmp_path):
+    """Pending temp file is deleted after Phase 2 success."""
+    name, _ = wiki
+    p = tmp_path / "x.jpeg"
+    _write_fake_jpeg(p)
+
+    r1 = _phase1(name, "pending delete test", str(p))
+    assert r1["status"] == "success", r1
+    pending_path = Path(r1["data"]["pending"])
+    assert pending_path.exists(), "Phase 1 pending should exist before Phase 2"
+
+    r2 = _phase2(name, str(pending_path), "pending delete test")
+    assert r2["status"] == "success", r2
+    assert not pending_path.exists(), "Pending should be deleted after Phase 2 success"

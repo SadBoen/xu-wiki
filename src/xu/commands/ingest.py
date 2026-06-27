@@ -11,11 +11,14 @@ import importlib
 import json
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yaml
 from pathlib import Path
+from typing import Any
 
 from ..ingest.splitter import split_pages
+from ..parsers.image_meta import read_image_meta
 from ..parsers.registry import parse_file
 from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
@@ -28,6 +31,7 @@ from ..utils.constants import (
     FM_PATCHES,
     FM_PARENT_UID,
     FM_SOURCE_HASH,
+    FM_SOURCE_HASHES,
     FM_SPLIT_INDEX,
     FM_CONTENT_TYPE,
     FM_TITLE,
@@ -79,8 +83,56 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
     return source_map, content_map
 
 
+# ---------------------------------------------------------------------------
+# Album/gallery helpers (shared between Phase 1 and Phase 2)
+# ---------------------------------------------------------------------------
+
+ALBUM_LAYOUTS = ("table", "list")
+
+
+def _parse_captions(raw: str) -> dict[str, str]:
+    """Parse --captions JSON: {filename: description_string}."""
+    if not raw:
+        return {}
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("--captions must be a JSON object {filename: description}")
+    out: dict[str, str] = {}
+    for k, v in parsed.items():
+        if isinstance(v, str):
+            out[str(k)] = v
+        elif isinstance(v, dict):
+            out[str(k)] = str(v.get("description", "") or "")
+        else:
+            out[str(k)] = ""
+    return out
+
+
+def _render_body(rows: list[dict[str, Any]], layout: str = "table") -> str:
+    items = []
+    for r in rows:
+        w, h = r.get("width"), r.get("height")
+        item: dict[str, Any] = {
+            "filename": r["filename"],
+            "raw_rel_path": r["raw_rel_path"],
+        }
+        if w and h:
+            item["resolution"] = f"{w}×{h}"
+        if r.get("gps"):
+            item["gps"] = r["gps"]
+        if r.get("captured"):
+            item["captured"] = r["captured"]
+        if r.get("caption"):
+            item["caption"] = r["caption"]
+        items.append(item)
+    return yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+
 def cmd_ingest_file(args) -> dict:
-    """Phase 1: dedup check → parse source → write temp file. No node created.
+    """Phase 1: parse source (single file or gallery) → write temp file. No node created.
+
+    Gallery mode (--files): N images → pending file with YAML body.
+    Single-file mode (--file): 1 file → parsed markdown pending file.
 
     Dedup is checked BEFORE calling the parser (especially expensive MinerU)
     to avoid wasting API calls on already-ingested sources (PRIN-ING-3).
@@ -93,11 +145,18 @@ def cmd_ingest_file(args) -> dict:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound",
                      hints=["check the name/path; do NOT auto-create (PRIN-SAFETY)"])
 
+    # ---- Gallery mode: --files provided ----
+    _files = getattr(args, "files", None)
+    if _files is not None and _files != "":
+        return _cmd_ingest_file_album(ctx, args)
+
+    # ---- Single-file mode ----
+    if getattr(args, "file", None) is None:
+        return error("source file not provided", "FileNotFound")
     src = Path(args.file).expanduser()
     if not src.is_file():
         return error(f"source file not found: {src}", "FileNotFound")
 
-    # MissingExtra check: PDF/DOCX/PPTX requires the parse extra (markitdown)
     rich_exts = {".pdf", ".docx", ".pptx", ".xlsx", ".xls"}
     if src.suffix.lower() in rich_exts:
         try:
@@ -110,9 +169,6 @@ def cmd_ingest_file(args) -> dict:
                 hints=["pip install xu-wiki[parse] to enable PDF/DOCX/PPTX parsing"],
             )
 
-    # Level-2 dedup: check BEFORE calling parser (especially MinerU — costs money).
-    # Level-2 is all-pages, not active-only, so re-ingesting a deactivated source
-    # is also caught here (PRIN-ING-3). Frontmatter is source of truth (FS).
     source_hash = sha256_file(src)
     dup_fm = find_by_source_hash(ctx, source_hash)
     if dup_fm:
@@ -123,8 +179,6 @@ def cmd_ingest_file(args) -> dict:
                   "existing_active": dup_fm.get("active", True), "source_hash": source_hash},
         )
 
-    # path whitelist (BAN-ING-5): allow anywhere readable for Phase 1 source,
-    # but temp output stays in system temp dir.
     from ..utils.config import load_global_config
     mineru_key = load_global_config().get("mineru", {}).get("api_key", "")
     res = parse_file(src, mineru_key=mineru_key)
@@ -169,9 +223,144 @@ def cmd_ingest_file(args) -> dict:
     )
 
 
+def _cmd_ingest_file_album(ctx, args) -> dict:
+    """Phase 1 for gallery mode: copy raws + extract meta + write pending."""
+    layout = (args.layout or "table").lower()
+    if layout not in ALBUM_LAYOUTS:
+        return error(f"invalid layout: {args.layout!r}; must be one of {ALBUM_LAYOUTS}",
+                     "InvalidLayout")
+    vision = bool(getattr(args, "vision", False))
+
+    raw_files = [p.strip() for p in args.files.split(",") if p.strip()]
+    if not raw_files:
+        return error("ingest-file --files requires comma-separated absolute paths",
+                     "MissingFiles")
+
+    files: list[Path] = []
+    for f in raw_files:
+        p = Path(f).expanduser()
+        if not p.is_absolute():
+            return error(f"file path must be absolute: {p}", "PathNotAbsolute",
+                         data={"file": str(p)})
+        if not p.is_file():
+            return error(f"file not found: {p}", "FileNotFound", data={"file": str(p)})
+        files.append(p)
+
+    captions: dict[str, str] = {}
+    if getattr(args, "captions", None):
+        try:
+            captions = _parse_captions(args.captions)
+        except (ValueError, json.JSONDecodeError) as e:
+            return error(f"--captions invalid: {e}", "BadCaptionsJSON",
+                         data={"hint": 'use a JSON object {"001.jpeg": "船头整体"}'})
+
+    try:
+        node_path = safe_node_path(args.node_path or "")
+    except ValueError as e:
+        return error(str(e), "BadNodePath")
+
+    title = args.title or safe_slug(args.files.split(",")[0].strip())
+
+    # ---- Parallel: sha256 + meta + copy ----
+    album_raw_dir = ctx.raws_dir / (Path(node_path) if node_path else Path("."))
+    album_raw_dir.mkdir(parents=True, exist_ok=True)
+
+    def process_one(src: Path) -> dict[str, Any]:
+        sha = sha256_file(src)
+        meta = read_image_meta(src)
+        rel_raw = (Path("raws") / Path(node_path) / src.name) if node_path \
+            else Path("raws") / src.name
+        dst = ctx.root / rel_raw
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if not dst.exists():
+            shutil.copy2(src, dst)
+        return {
+            "filename": src.name,
+            "source_path": str(src),
+            "source_hash": sha,
+            "raw_rel_path": str(rel_raw).replace("\\", "/"),
+            "width": meta.get("width"),
+            "height": meta.get("height"),
+            "gps": meta.get("gps"),
+            "captured": meta.get("captured"),
+            "caption": captions.get(src.name, ""),
+        }
+
+    with ThreadPoolExecutor() as executor:
+        rows: list[dict[str, Any]] = list(executor.map(process_one, files))
+
+    body = _render_body(rows, layout)
+
+    # Write YAML frontmatter (clean, no parsing hacks needed)
+    frontmatter_dict = {
+        "mode": "album",
+        "title": title,
+        "node_path": node_path,
+        "layout": layout,
+        "vision": vision,
+        "source_hashes": [r["source_hash"] for r in rows],
+        "sources": rows,
+    }
+    yaml_header = yaml.dump(frontmatter_dict, allow_unicode=True, default_flow_style=False)
+    pending_content = f"---\n{yaml_header}---\n{body}"
+
+    stem = safe_slug(title)
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix="-pre.md", prefix=f"{stem}-",
+        dir=tempfile.gettempdir(), delete=False, encoding="utf-8"
+    ) as f:
+        f.write(pending_content)
+        temp_path = Path(f.name)
+
+    return success(
+        {
+            "pending": str(temp_path),
+            "parser": "album",
+            "source": ", ".join(str(f) for f in files),
+            "source_hash": rows[0]["source_hash"] if rows else None,
+            "source_hashes": [r["source_hash"] for r in rows],
+            "chars": len(body),
+            "images": len(rows),
+        },
+        f"album Phase 1: {len(rows)} images → pending temp file. No node created yet.",
+        hints=[
+            "review pending content, then run ingest-commit with --pending --title --content-type gallery",
+            "Agent can edit the YAML body in pending file before Phase 2",
+            "if node_path is empty, all pages land at nodes/page/ root",
+        ],
+    )
+
+
 def _parse_pending_header(text: str) -> tuple[dict, str]:
-    meta = {}
-    body = text
+    """Parse pending file: supports both HTML-comment style and YAML-frontmatter style.
+
+    HTML-comment style (legacy single-file):
+        <!-- xu-pending source=/path parser=text source_hash=abc -->
+
+    YAML frontmatter style (gallery/album):
+        ---
+        mode: album
+        title: 2026WWC参展
+        node_path: events/2026wwc
+        layout: table
+        vision: false
+        source_hashes:
+          - sha256:abc
+          - sha256:def
+        sources:
+          - filename: 001.jpeg
+            source_hash: sha256:abc
+            raw_rel_path: raws/events/2026wwc/001.jpeg
+            ...
+        ---
+        - filename: 001.jpeg
+          raw_rel_path: raws/events/2026wwc/001.jpeg
+          ...
+    """
+    import re
+    meta: dict = {}
+
+    # HTML-comment style (single-file / legacy)
     if text.startswith("<!-- xu-pending"):
         end = text.find("-->")
         if end != -1:
@@ -181,7 +370,22 @@ def _parse_pending_header(text: str) -> tuple[dict, str]:
                     k, v = tok.split("=", 1)
                     meta[k] = v
             body = text[end + 3:].lstrip("\n")
-    return meta, body
+            return meta, body
+
+    # YAML frontmatter style (gallery)
+    if text.startswith("---"):
+        end = text.find("\n---")
+        if end != -1:
+            try:
+                front = yaml.safe_load(text[:end + 1])
+                if isinstance(front, dict):
+                    meta = front
+                body = text[end + 4:].lstrip("\n")
+                return meta, body
+            except yaml.YAMLError:
+                pass
+
+    return meta, text
 
 
 def _validate_body_format(body: str, content_type: str) -> str | None:
@@ -231,16 +435,19 @@ def cmd_ingest_commit(args) -> dict:
 
     --pending: path to Phase 1 temp file (required for normal flow).
     --native: deprecated, bypasses Phase 1 (no temp file, no source copy to raws/).
+
+    Gallery mode (mode=album in pending): dedup by per-image source_hash,
+    skip duplicate images, render attrs.album.sources.
     """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound",
                      hints=["check the name/path; do NOT auto-create (PRIN-SAFETY)"])
 
-    # Determine source content (BAN-ING-3: --native still goes through commit flow)
     source_hash = None
     raw_src_path = None
     parser_used = "native"
+    pending_meta: dict = {}
     if args.native:
         if not args.source:
             return error(
@@ -260,10 +467,10 @@ def cmd_ingest_commit(args) -> dict:
         if not pending_path.is_file():
             return error(f"pending temp file not found: {pending_path}", "PendingNotFound")
         raw_text = pending_path.read_text(encoding="utf-8")
-        meta, content = _parse_pending_header(raw_text)
-        source_hash = meta.get("source_hash")
-        parser_used = meta.get("parser", "unknown")
-        raw_src_path = meta.get("source")
+        pending_meta, content = _parse_pending_header(raw_text)
+        source_hash = pending_meta.get("source_hash")
+        parser_used = pending_meta.get("parser", "unknown")
+        raw_src_path = pending_meta.get("source")
         node_path_arg = args.node_path
     else:
         return error("ingest-commit requires --pending or --native", "MissingInput")
@@ -279,13 +486,16 @@ def cmd_ingest_commit(args) -> dict:
     if args.content_type not in CONTENT_TYPES:
         return error(f"invalid content-type: {args.content_type}", "InvalidContentType")
 
+    # ---- Gallery mode (mode=album): delegate to dedicated handler ----
+    if pending_meta.get("mode") == "album":
+        return _cmd_ingest_commit_album(ctx, args, pending_meta, content)
+
     # split into pages (PRIN-ING-4)
     max_lines = cfg_get(ctx.config, "ingest.page_split_lines", 300)
     pages = split_pages(content, max_lines)
     if not pages:
         return error("no content to commit after splitting", "EmptyContent")
 
-    # Build frontmatter index once (for content dedup)
     _, content_index = _scan_fm_index(ctx)
 
     created = []
@@ -294,7 +504,6 @@ def cmd_ingest_commit(args) -> dict:
     first_uid = gen_uid()
     new_content_hashes: set[str] = set()
 
-    # Track files written so we can roll back on verify failure
     written: list[dict] = []
 
     for idx, page_body in enumerate(pages):
@@ -332,7 +541,7 @@ def cmd_ingest_commit(args) -> dict:
             FM_SPLIT_INDEX: split_index,
             FM_PARENT_UID: parent_uid,
             FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
-                          "author": args.author or "agent", "created_at": ts}],
+                          "author": getattr(args, "author", None) or "agent", "created_at": ts}],
         }
         if source_hash:
             frontmatter[FM_SOURCE_HASH] = source_hash
@@ -364,7 +573,6 @@ def cmd_ingest_commit(args) -> dict:
                         "body": page_body,
                         "lines": len(page_body.splitlines())})
 
-    # Verify all created nodes after writes (post-write, with rollback on failure)
     verify_failed = []
     for item in created:
         md_p = ctx.root / item["md_path"]
@@ -373,7 +581,6 @@ def cmd_ingest_commit(args) -> dict:
             verify_failed.append({"uid": item["uid"], "failed": v_failed, "checks": v_checks})
 
     if verify_failed:
-        # Rollback: delete written files
         for w in written:
             if w["md"].exists():
                 w["md"].unlink()
@@ -386,7 +593,6 @@ def cmd_ingest_commit(args) -> dict:
             hints=["fix the failed checks and re-run ingest-commit"]
         )
 
-    # Phase 2 success → delete pending temp file (PRIN-ING-7)
     if args.pending:
         try:
             Path(args.pending).expanduser().resolve().unlink()
@@ -405,6 +611,138 @@ def cmd_ingest_commit(args) -> dict:
         if "/" not in bare:
             hints.append("node_path is empty — all pages are piling at nodes/page/ root; future ingest should pass --node-path to organize by category")
     return success(data, f"committed {len(created)} Node_Page via {parser_used}", hints=hints)
+
+
+def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
+    """Phase 2 commit handler for gallery mode (mode=album in pending meta).
+
+    Phase 1 already:
+    - copied all images to raws/
+    - extracted metadata (width, height, gps, captured, caption)
+    - rendered YAML body (all images)
+
+    Phase 2 here:
+    - Level-2 dedup: skip images whose source_hash already exists
+    - content_hash: based on deduplicated body
+    - render frontmatter with attrs.album.sources (only new images)
+    - write .md
+    """
+    sources_raw: list[dict] = meta.get("sources", []) or []
+
+    # Level-2 dedup: skip images already ingested
+    source_index, _ = _scan_fm_index(ctx)
+    new_sources: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for s in sources_raw:
+        sh = s.get("source_hash", "")
+        if sh and sh in source_index:
+            existing_uid, existing_title, existing_active = source_index[sh]
+            skipped.append({
+                "filename": s.get("filename", ""),
+                "source_hash": sh,
+                "existing_uid": existing_uid,
+                "existing_title": existing_title,
+                "existing_layer": "Page",
+                "existing_active": existing_active,
+            })
+        else:
+            new_sources.append(s)
+
+    if not new_sources:
+        return warning(
+            {"skipped": skipped, "checked": len(sources_raw),
+             "wiki": args.wiki, "title": args.title},
+            "all images already ingested; nothing to commit",
+            hints=[
+                "remove skipped files from --files and re-run Phase 1",
+                "or use 'revise' to update the existing node",
+            ],
+        )
+
+    # Render body with only new images
+    layout = meta.get("layout", "table")
+    body = _render_body(new_sources, layout)
+    content_hash = sha256_text(body)
+
+    uid = gen_uid()
+    base_slug = safe_slug(args.title)
+    slug = f"{base_slug}-{uid}"
+    ts = now_ts()
+    author = getattr(args, "author", None) or "agent"
+
+    frontmatter: dict[str, Any] = {
+        FM_UID: uid,
+        FM_TITLE: args.title,
+        FM_LAYER: "Page",
+        FM_CONTENT_TYPE: "gallery",
+        FM_ACTIVE: True,
+        FM_CREATED: ts,
+        FM_CONTENT_HASH: content_hash,
+        FM_NODE_PATH: meta.get("node_path", ""),
+        FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
+                      "author": author, "created_at": ts}],
+        FM_SOURCE_HASHES: [s["source_hash"] for s in new_sources],
+        "attrs": {
+            "album": {
+                "layout": layout,
+                "count": len(new_sources),
+                "skipped_count": len(skipped),
+                "vision": bool(meta.get("vision", False)),
+                "sources": [
+                    {
+                        "filename": s["filename"],
+                        "source_hash": s["source_hash"],
+                        "raw_rel_path": s["raw_rel_path"],
+                        "width": s.get("width"),
+                        "height": s.get("height"),
+                        "gps": s.get("gps"),
+                        "captured": s.get("captured"),
+                    }
+                    for s in new_sources
+                ],
+            },
+        },
+    }
+
+    node_path_val = meta.get("node_path", "")
+    rel_md = Path("nodes/page") / node_path_val / f"{slug}.md" if node_path_val \
+        else Path("nodes/page") / f"{slug}.md"
+    md_path = ctx.root / rel_md
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(md_path, fm.render(frontmatter, body))
+
+    # Delete pending
+    if getattr(args, "pending", None):
+        try:
+            Path(args.pending).expanduser().resolve().unlink()
+        except OSError:
+            pass
+
+    data = {
+        "uid": uid,
+        "title": args.title,
+        "node_path": node_path_val,
+        "layout": layout,
+        "count": len(new_sources),
+        "skipped": skipped,
+        "md_path": str(rel_md).replace("\\", "/"),
+        "sources": [
+            {k: s[k] for k in ("filename", "source_hash", "raw_rel_path",
+                                 "width", "height", "gps", "captured")}
+            for s in new_sources
+        ],
+    }
+    hints = ["read by UID to view; revise to update captions"]
+    if skipped:
+        hints.insert(0, f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details")
+    if meta.get("vision"):
+        hints.append("vision intent was set; per-photo captions will be added when a vision backend is configured")
+        hints.append("vision intent was set; per-photo captions will be added when a vision backend is configured")
+    return success(
+        data,
+        f"album committed: {len(new_sources)} photos → 1 Node_Page (content_type=gallery)",
+        hints=hints,
+    )
 
 
 def _raw_path_checks(ctx, frontmatter) -> list[dict]:
