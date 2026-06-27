@@ -108,7 +108,16 @@ xu report create --wiki <w> --title <t> --body <md> \
 
 ```bash
 xu query --wiki research --keywords "BERT,transformer,pre-training,encoder,attention" --top-k 5
-# → {"status": "success", "data": {"hits": [{"uid": "...", "score": 0.92}, ...]}, ...}
+# → {"status": "success", "data": {
+#     "blocks": [{"uid": "...", "title": "...", "score": 24.5, "text": "..."}],
+#     "total_hits": 12, "block_count": 5,
+#     "reflection": {
+#       "existing_entities": [...], "existing_lists": [...],
+#       "existing_reports": [...],
+#       "suggest_extract_entities": true,
+#       "hint": "5 page(s) found – consider extracting entities..."
+#     }
+#   }, ...}
 
 xu read --wiki research --uid WXYZ5678
 # → {"status": "success", "data": {"uid": "...", "body": "## BERT\n..."}, ...}

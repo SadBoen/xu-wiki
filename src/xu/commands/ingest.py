@@ -15,8 +15,7 @@ import tempfile
 import yaml
 from pathlib import Path
 
-from ..ingest.relations_lru import add_relation
-from ..ingest.splitter import extract_nouns, split_pages
+from ..ingest.splitter import split_pages
 from ..parsers.registry import parse_file
 from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
@@ -33,10 +32,8 @@ from ..utils.constants import (
     FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
-    IDF_CONSTANT,
     CONTENT_TYPES,
 )
-from ..utils.idf import increment_idf, load_idf, dump_idf
 from ..utils.paths import (
     atomic_write_text,
     gen_uid,
@@ -112,11 +109,11 @@ def cmd_ingest_file(args) -> dict:
     source_hash = sha256_file(src)
     dup_fm = find_by_source_hash(ctx, source_hash)
     if dup_fm:
-        return warning(
-            {"existing_uid": dup_fm["uid"], "existing_title": dup_fm.get("title", ""),
-             "existing_active": dup_fm.get("active", True), "source_hash": source_hash},
-            f"source already ingested as {dup_fm['uid']} (BAN-ING-4); Phase 1 skipped to avoid wasted parse cost",
-            hints=["use 'revise' to update; ingest never overwrites (PRIN-ING-3)"],
+        return error(
+            f"source already ingested as {dup_fm['uid']} (BAN-ING-4); use 'revise' to update",
+            "DuplicateSource",
+            data={"existing_uid": dup_fm["uid"], "existing_title": dup_fm.get("title", ""),
+                  "existing_active": dup_fm.get("active", True), "source_hash": source_hash},
         )
 
     # path whitelist (BAN-ING-5): allow anywhere readable for Phase 1 source,
@@ -275,50 +272,20 @@ def cmd_ingest_commit(args) -> dict:
     if args.content_type not in CONTENT_TYPES:
         return error(f"invalid content-type: {args.content_type}", "InvalidContentType")
 
-    # relations parsing (CONST-ING-5): must be JSON array
-    relations = []
-    if args.relations:
-        try:
-            relations = json.loads(args.relations)
-        except json.JSONDecodeError as e:
-            return error(f"--relations must be valid JSON: {e}", "BadRelationsJSON")
-        if not isinstance(relations, list):
-            return error("--relations must be a JSON array (CONST-ING-5)", "BadRelationsType")
-
     # split into pages (PRIN-ING-4)
     max_lines = cfg_get(ctx.config, "ingest.page_split_lines", 300)
     pages = split_pages(content, max_lines)
     if not pages:
         return error("no content to commit after splitting", "EmptyContent")
 
-    # Build frontmatter index once (for dedup + relation target check)
-    source_index, content_index = _scan_fm_index(ctx)
-
-    # Level-2 dedup: source file hash across ALL pages (CONST-ING-3,
-    # PRIN-ING-3). Note: Level-2 is "所有 Page" — NOT filtered by active —
-    # so re-ingesting the same source is caught even against a deactivated
-    # page. (Level-1 below is active-only, per the design's contrast.)
-    if source_hash:
-        if source_hash in source_index:
-            existing_uid, existing_title, existing_active = source_index[source_hash]
-            return warning(
-                {"existing_uid": existing_uid, "existing_title": existing_title,
-                 "existing_active": existing_active, "source_hash": source_hash},
-                f"source already ingested as {existing_uid} (BAN-ING-4); not re-created",
-                hints=["use 'revise' to update; ingest never overwrites (PRIN-ING-3)"],
-            )
+    # Build frontmatter index once (for content dedup)
+    _, content_index = _scan_fm_index(ctx)
 
     created = []
     dup_pages = []
     multi = len(pages) > 1
     first_uid = gen_uid()
     new_content_hashes: set[str] = set()
-    all_uids: set[str] = {uid for uid, _, _ in source_index.values()}
-    for uid in {v[0] for v in content_index.values()}:
-        all_uids.add(uid)
-
-    # Snapshot IDF before writes so we can restore on rollback
-    idf_snapshot = load_idf(ctx)
 
     # Track files written so we can roll back on verify failure
     written: list[dict] = []
@@ -328,7 +295,6 @@ def cmd_ingest_commit(args) -> dict:
 
         body_err = _validate_body_format(page_body, args.content_type)
         if body_err:
-            dump_idf(ctx, idf_snapshot)
             return error(body_err, "BodyFormatMismatch")
 
         content_hash = sha256_text(page_body)
@@ -382,9 +348,6 @@ def cmd_ingest_commit(args) -> dict:
                 shutil.copy2(raw_src_path, raw_dst)
             raw_written = raw_dst
 
-        # IDF (PRIN-ING-9, CONST-ING-6)
-        increment_idf(ctx, extract_nouns(page_body))
-
         new_content_hashes.add(content_hash)
         written.append({"md": md_path, "raw": raw_written})
         created.append({"uid": uid, "title": title, "md_path": str(rel_md),
@@ -401,8 +364,7 @@ def cmd_ingest_commit(args) -> dict:
             verify_failed.append({"uid": item["uid"], "failed": v_failed, "checks": v_checks})
 
     if verify_failed:
-        # Rollback: restore IDF + delete written files
-        dump_idf(ctx, idf_snapshot)
+        # Rollback: delete written files
         for w in written:
             if w["md"].exists():
                 w["md"].unlink()
@@ -415,31 +377,6 @@ def cmd_ingest_commit(args) -> dict:
             hints=["fix the failed checks and re-run ingest-commit"]
         )
 
-    # relations: attach to the first created page (CONST-ING-5)
-    invalid_relations = []
-    if relations and created:
-        anchor = created[0]
-        anchor_fm_path = ctx.root / anchor["md_path"]
-        try:
-            anchor_text = anchor_fm_path.read_text(encoding="utf-8")
-            anchor_fd, _ = fm.parse(anchor_text)
-        except Exception:
-            anchor_fd = {}
-        for rel in relations:
-            to_uid = rel.get("to")
-            rname = rel.get("relation_name")
-            if not to_uid or not rname:
-                invalid_relations.append({"relation": rel, "reason": "missing to/relation_name"})
-                continue
-            if to_uid not in all_uids:
-                existing = find_node_md(ctx, to_uid)
-                if not existing:
-                    invalid_relations.append({"relation": rel, "reason": "to_uid not found"})
-                    continue
-                all_uids.add(to_uid)
-            add_relation(anchor_fd, anchor["uid"], to_uid, rname, rel.get("comment", ""))
-        anchor_fm_path.write_text(fm.render(anchor_fd, anchor.get("body", "")), encoding="utf-8")
-
     # Phase 2 success → delete pending temp file (PRIN-ING-7)
     if args.pending:
         try:
@@ -448,12 +385,9 @@ def cmd_ingest_commit(args) -> dict:
             pass
 
     data = {"created": created, "page_count": len(created),
-            "duplicate_parts": dup_pages, "invalid_relations": invalid_relations}
+            "duplicate_parts": dup_pages}
     if not created and dup_pages:
         return warning(data, "all pages were content-duplicates; nothing created (BAN-ING-4)")
-    if invalid_relations:
-        return warning(data, f"created {len(created)} page(s); some relations invalid",
-                       hints=["fix invalid_relations and retry via query-relation add"])
     hints = ["query to retrieve; read --uid for full body"]
     if parser_used == "native":
         hints.insert(0, "DEPRECATED: --native is deprecated; use --pending for external documents (PRIN-ING-6)")

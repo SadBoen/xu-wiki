@@ -40,10 +40,10 @@ to ingest.
 
 ```bash
 # Three-phase prose flow
-xu ingest-file   --wiki <w> --file <abs> [--node-path <p>]   # Phase 1: parse → pending
+xu ingest-file   --wiki <w> --file <abs>   # Phase 1: dedup check → parse → pending temp file
 xu ingest-commit --wiki <w> --pending <f> --title <t> \
                       [--content-type article|table|gallery] \
-                      [--node-path <p>] [--relations '<json>'] \
+                      [--node-path <p>] \
                       [--native '<md>'] --source <abs-path> [--author <a>]
                       # NOTE: --source is required when using --native
 
@@ -52,9 +52,10 @@ xu ingest-album  --wiki <w> --title <t> --files <abs1,abs2,...> \
                       [--node-path <p>] [--layout table|list] [--vision] \
                       [--captions '<json>'] [--author <a>]
 
-# Optional follow-up (still in the ingest SOP — wiring happens here)
+# Phase 3 — after commit, LLM queries wiki then wires relations
 xu query-relation add  --wiki <w> --from-uid <uid> --to-uid <uid> \
                             --relation-name <r> [--comment <c>]
+# Reflection: append to existing List/Report if overlap found
 xu list create --wiki <w> --title <t> --members <uid,uid,...> \
                     [--dimension <d>] [--node-path <p>]
 xu report create --wiki <w> --title <t> --body <md> \
@@ -75,19 +76,20 @@ xu report create --wiki <w> --title <t> --body <md> \
 ## Workflow — prose / document (PDF / DOCX / MD / image)
 
 1. **Confirm wiki exists and file is absolute** (rule 8, rule 9 in `SKILL.md`).
-2. **Phase 1 — `ingest-file`**: computes SHA256 → Level-2 dedup check (Phase 1,
-   before calling any parser) → if duplicate, returns warning immediately
-   (no parser called, no money spent). If unique: parses via MinerU →
+2. **Phase 1 — `ingest-file`**: computes SHA256 → dedup check (Phase 1,
+   before calling any parser) → if duplicate, returns `DuplicateSource` error
+   immediately (no parser called, no money spent). If unique: parses via MinerU →
    markitdown chain → writes a temp file to the system temp directory.
    Returns the temp file path in `data.pending`. No node is created at this stage.
-3. **Agent synthesizes all metadata** from the temp file:
-   title, node_path, relations, content_type — all LLM-generated, never asked
-   of the user. `--title` is required by CLI but the value comes from the LLM.
+3. **Agent decides metadata — query wiki first**: before synthesizing node_path,
+   agent calls `xu query --wiki <w> --keywords <theme>` to see the existing
+   node tree and find candidate related UIDs. Then synthesizes:
+   title, node_path, content_type — all LLM-generated, never asked of the user.
+   `--title` is required by CLI but the value comes from the LLM.
 4. **Phase 2 — `ingest-commit --pending <f> --title <t>`**: promotes temp file
-   to L1. All intermediate values (content_type, node_path, relations, author)
-   are synthesized by the LLM and passed as CLI arguments. **Commit includes
-   internal verify + atomic rollback on failure** — if verify fails, all written
-   files are deleted and IDF is restored; the response returns `VerifyFailed`
+   to L1. Intermediate values (content_type, node_path, author) are LLM-generated.
+   **Commit includes internal verify + atomic rollback on failure** — if verify fails,
+   all written files are deleted; the response returns `VerifyFailed`
    error with `hints=["fix the failed checks and re-run ingest-commit"]`.
 5. **取证副本**: after `ingest-commit` succeeds, the CLI copies
    the source file to `raws/<node_path>/<original_name>` (first page only).
@@ -108,8 +110,13 @@ xu report create --wiki <w> --title <t> --body <md> \
 8. **Verify raws/**: after commit, confirm `raw_path` in the response is non-null.
    An empty `raws/` directory with populated `nodes/page/` = copy was
    bypassed (usually from `--native` on a document).
-9. **(Optional) Wire relations** with `query-relation add`.
-10. **(Optional) Group into L2/L3** with `list create` / `report create`.
+9. **Phase 3 — Wire relations**: agent calls `xu query --wiki <w> --keywords <theme>`
+   to find related UIDs, then `xu query-relation add` for each relation.
+   This step requires a query first — never wire relations blindly.
+10. **Phase 3 — Reflection (append-only)**: agent queries for existing
+    List/Report that overlap with the new page(s). Priority: **append to
+    existing** List/Report rather than creating new ones. Query's reflection
+    (not ingest's) is the primary place for List/Report creation.
 
 ## Workflow — album (multiple images, one theme)
 
@@ -169,31 +176,26 @@ When to call reorganize:
 - `doctor-node-path-organization` reports the page is at root with no organization
 - Agent decides the page belongs in a different logical partition after review
 
-## Post-commit reflection
+## Post-commit reflection (append-focused, not creation-focused)
 
-After **every** `ingest-commit` (single page, album, or batch), the agent runs
-a creation-value reflection **before declaring the task done**. LLM decides
-autonomously — no user approval needed. The CLI does not run this reflection
-The CLI does not run this reflection and never auto-creates.
+After **every** `ingest-commit`, the agent runs a reflection with one goal:
+**append the new page(s) to existing List/Report if overlap exists**. Creating
+new List/Report is primarily query's job (query-side reflection); ingest-side
+reflection should prefer linking over creating.
 
-**Step 1 — Find similar List (mandatory, before any creation decision):**
-Run a query to find existing Lists that overlap with the new page(s) on
-dimension or members. If one exists → call `list create` with existing +
-new members combined (extend the existing List). Do not ask the user.
+**Step 1 — Find overlapping List (mandatory):**
+Query the wiki to find existing Lists that share a dimension or member with
+the new page(s). If found → call `list create --members <existing UIDs + new UIDs>`
+to extend the existing List. Do not ask the user.
 
-**Step 2 — Assess List value (only if no similar found):**
-- Did this ingest add ≥ 1 page comparable to ≥ 1 existing L1 on an obvious
-  axis (parameter count / accuracy / date / location / category / model family / phase)?
-- Or did this ingest add ≥ 2 pages sharing an obvious dimension?
-- Would a Node_List save future "find me the X" queries or prevent duplication?
-→ If yes: call `list create` autonomously. Do not ask the user.
+**Step 2 — Find overlapping Report (if obviously relevant):**
+Only if the new page directly contradicts or materially updates an existing
+Report should you propose appending to it. By default, leave Report creation
+to the query-side reflection.
 
-**Step 3 — Report valuation (SECONDARY, opportunistic):**
-Only if the new page clearly contradicts or forces re-evaluation of an
-existing Report. Otherwise, by default, do not propose Report after ingest.
-
-**Single-page ingest also triggers this reflection** — "just one page" is not
-an excuse; the value can be "this page joins an existing group".
+**Step 3 — Wire relations (from Step 1's query results):**
+Use the UIDs discovered in Step 1's query to call `query-relation add`.
+Do not guess UID values — always query first.
 
 This section is the **ingest-side counterpart** to the query-side reflection
 in `query.md §Workflow` step 5. Same asymmetric bias (List primary after

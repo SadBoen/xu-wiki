@@ -19,11 +19,68 @@ from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success, warning
 from ..utils.wiki import find_node_md, resolve_wiki
-from ..utils.idf import load_idf
+
 
 
 def _split_kw(s: str) -> list[str]:
     return [k.strip() for k in s.split(",") if k.strip()]
+
+
+def _build_reflection(ctx, keywords: list[str], top_blocks: list[dict]) -> dict:
+    """Search derived layers for existing Entity/List/Report nodes matching keywords.
+
+    Mirrors Rust branch reflection logic (query.rs build_reflection).
+    Returns suggestions for Entity extraction, List creation, and Report creation.
+    """
+    timeout = cfg_get(ctx.config.get("query", {}), "timeout_seconds", 10)
+
+    existing_entities: list[dict] = []
+    existing_lists: list[dict] = []
+    existing_reports: list[dict] = []
+
+    for subdir, collection in [
+        (ctx.entity_dir, existing_entities),
+        (ctx.list_dir, existing_lists),
+        (ctx.report_dir, existing_reports),
+    ]:
+        if not subdir.is_dir():
+            continue
+        hits = scan(subdir, keywords, timeout=timeout)
+        seen: set[str] = set()
+        for kw, kw_hits in hits.items():
+            for h in kw_hits:
+                try:
+                    text = Path(h["file"]).read_text(encoding="utf-8", errors="replace")
+                    fd, _ = fm.parse(text)
+                    uid = fd.get("uid", "")
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    collection.append({
+                        "uid": uid,
+                        "title": fd.get("title", ""),
+                    })
+                except Exception:
+                    continue
+
+    has_pages = any(b["layer"] == "Page" for b in top_blocks)
+
+    if has_pages and not existing_entities:
+        hint = f"{len(top_blocks)} page(s) found – consider extracting entities with: xu entity-create --wiki <w> --title <name> --source-page <uid>"
+    elif len(top_blocks) >= 2 and not existing_lists:
+        hint = "multiple results share a theme – consider: xu list-create"
+    else:
+        hint = ""
+
+    return {
+        "existing_entities": existing_entities,
+        "existing_lists": existing_lists,
+        "existing_reports": existing_reports,
+        "suggest_extract_entities": has_pages and len(existing_entities) == 0,
+        "suggest_create_list": len(top_blocks) >= 2 and len(existing_lists) == 0,
+        "suggest_create_report": len(top_blocks) >= 3 and len(existing_reports) == 0,
+        "hint": hint,
+    }
 
 
 def cmd_query(args) -> dict:
@@ -40,21 +97,12 @@ def cmd_query(args) -> dict:
         return error("provide --keywords", "NoKeywords")
 
     qcfg = ctx.config.get("query", {})
-    soft = cfg_get(qcfg, "slice.soft_limit", 80)
-    hard = cfg_get(qcfg, "slice.hard_limit", 150)
+    slice_chars = cfg_get(qcfg, "slice.chars", 50)
     radius = cfg_get(qcfg, "slice.merge_radius", 80)
-    core_w = cfg_get(qcfg, "scoring.core_weight", 2000)
-    density = cfg_get(qcfg, "scoring.density_bonus", 1.5)
     top_blocks = cfg_get(qcfg, "blocks", 50)
     timeout = cfg_get(qcfg, "timeout_seconds", 10)
 
     raw_hits = scan(ctx.nodes_dir, keywords, timeout=timeout)
-
-    idf_table = load_idf(ctx)
-    idf_weight = {}
-    for kw in keywords:
-        freq, weight = idf_table.get(kw.lower(), (0, 0.0))
-        idf_weight[kw] = weight
 
     by_file: dict[str, list] = {}
     for kw, hits in raw_hits.items():
@@ -80,6 +128,8 @@ def cmd_query(args) -> dict:
                 continue
 
     scored_blocks = []
+    layer_bonus = {"Page": 0, "Entity": 2, "List": 1, "Report": 3}
+
     for file_path, kw_hits in by_file.items():
         node = uid_cache.get(file_path)
         if not node:
@@ -90,27 +140,37 @@ def cmd_query(args) -> dict:
             text = Path(file_path).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+
         _, body = fm.parse(text)
-        offset = text.find(body) if body else 0
+        body_offset = text.find(body) if body else 0
+
+        title_hits = sum(1 for _, h in kw_hits
+                         if _line_col_to_offset(text, h["line"], h["col"]) is not None
+                         and _line_col_to_offset(text, h["line"], h["col"]) < body_offset)
+        total_hits = len(kw_hits)
+        body_hit_count = total_hits - title_hits
 
         slices = []
         for kw, h in kw_hits:
             char_pos = _line_col_to_offset(text, h["line"], h["col"])
             if char_pos is None:
                 continue
-            if char_pos < offset:
+            if char_pos < body_offset:
                 continue
-            s, e, snippet = make_slice(text, char_pos, char_pos + len(h["match"]), soft, hard)
+            s, e, snippet = make_slice(text, char_pos, char_pos + len(h["match"]),
+                                        slice_chars, slice_chars)
             slices.append({"start": s, "end": e, "text": snippet,
                            "hits": {kw}, "line": h["line"]})
 
         merged = merge_slices(slices, radius, text)
+        layer = node["layer"]
+        bonus = layer_bonus.get(layer, 0)
         for blk in merged:
-            score = _score_block(blk, keywords, core_w, density, idf_weight, text)
+            score = _score_block(blk, keywords, title_hits, body_hit_count, bonus)
             scored_blocks.append({
                 "uid": node["uid"],
                 "title": node["title"],
-                "layer": node["layer"],
+                "layer": layer,
                 "node_path": node["node_path"],
                 "file": file_path,
                 "line": blk["line"],
@@ -122,11 +182,14 @@ def cmd_query(args) -> dict:
     scored_blocks.sort(key=lambda b: b["score"], reverse=True)
     top = scored_blocks[:top_blocks]
 
+    reflection = _build_reflection(ctx, keywords, top)
+
     return success(
         {
             "blocks": top,
             "total_hits": len(scored_blocks),
             "block_count": len(top),
+            "reflection": reflection,
         },
         f"{len(scored_blocks)} block(s); returning top {len(top)}",
     )
@@ -179,15 +242,9 @@ def cmd_expand(args) -> dict:
     )
 
 
-def _score_block(blk, keywords, core_w, density, idf_weight, text) -> float:
-    """score = (coverage + rarity) × density_bonus (PRIN-QRY-10)."""
-    snippet = blk["text"]
-    hits = sum(snippet.lower().count(k.lower()) for k in keywords)
-    coverage = core_w * hits
-    rarity = sum(idf_weight.get(k, 0.0) for k in blk["hits"])
-    distinct = len(blk["hits"])
-    bonus = density if distinct > 1 else 1.0
-    return (coverage + rarity) * bonus
+def _score_block(blk, keywords, title_hits, body_hit_count, layer_bonus) -> float:
+    """score = title_hits × 5 + body_hit_count + layer_bonus (additive, small)."""
+    return title_hits * 5 + body_hit_count + layer_bonus
 
 
 def _line_col_to_offset(text: str, line: int, col: int) -> int | None:
