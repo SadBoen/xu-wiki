@@ -114,6 +114,7 @@ def _render_body(rows: list[dict[str, Any]], layout: str = "table") -> str:
         w, h = r.get("width"), r.get("height")
         item: dict[str, Any] = {
             "filename": r["filename"],
+            "sha256": r["sha256"],
             "raw_rel_path": r["raw_rel_path"],
         }
         if w and h:
@@ -277,7 +278,7 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         return {
             "filename": src.name,
             "source_path": str(src),
-            "source_hash": sha,
+            "sha256": sha,
             "raw_rel_path": str(rel_raw).replace("\\", "/"),
             "width": meta.get("width"),
             "height": meta.get("height"),
@@ -291,15 +292,14 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
 
     body = _render_body(rows, layout)
 
-    # Write YAML frontmatter (clean, no parsing hacks needed)
+    # Write YAML frontmatter (body already has sha256, no need to duplicate sources[] in meta)
     frontmatter_dict = {
         "mode": "album",
         "title": title,
         "node_path": node_path,
         "layout": layout,
         "vision": vision,
-        "source_hashes": [r["source_hash"] for r in rows],
-        "sources": rows,
+        "source_hashes": [r["sha256"] for r in rows],
     }
     yaml_header = yaml.dump(frontmatter_dict, allow_unicode=True, default_flow_style=False)
     pending_content = f"---\n{yaml_header}---\n{body}"
@@ -317,8 +317,8 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
             "pending": str(temp_path),
             "parser": "album",
             "source": ", ".join(str(f) for f in files),
-            "source_hash": rows[0]["source_hash"] if rows else None,
-            "source_hashes": [r["source_hash"] for r in rows],
+            "source_hash": rows[0]["sha256"] if rows else None,
+        "source_hashes": [r["sha256"] for r in rows],
             "chars": len(body),
             "images": len(rows),
         },
@@ -627,18 +627,17 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
     - render frontmatter with attrs.album.sources (only new images)
     - write .md
     """
-    sources_raw: list[dict] = meta.get("sources", []) or []
-
-    # Level-2 dedup: skip images already ingested
+    # Level-2 dedup: parse body to get source_hash per image
     source_index, _ = _scan_fm_index(ctx)
-    new_sources: list[dict[str, Any]] = []
+    all_body_items: list[dict] = yaml.safe_load(body) or []
+    new_body_items: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    for s in sources_raw:
-        sh = s.get("source_hash", "")
+    for item in all_body_items:
+        sh = item.get("sha256", "")
         if sh and sh in source_index:
             existing_uid, existing_title, existing_active = source_index[sh]
             skipped.append({
-                "filename": s.get("filename", ""),
+                "filename": item.get("filename", ""),
                 "source_hash": sh,
                 "existing_uid": existing_uid,
                 "existing_title": existing_title,
@@ -646,11 +645,11 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
                 "existing_active": existing_active,
             })
         else:
-            new_sources.append(s)
+            new_body_items.append(item)
 
-    if not new_sources:
+    if not new_body_items:
         return warning(
-            {"skipped": skipped, "checked": len(sources_raw),
+            {"skipped": skipped, "checked": len(all_body_items),
              "wiki": args.wiki, "title": args.title},
             "all images already ingested; nothing to commit",
             hints=[
@@ -659,9 +658,9 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
             ],
         )
 
-    # Render body with only new images
+    # Re-render body with only new (non-duplicate) images
     layout = meta.get("layout", "table")
-    body = _render_body(new_sources, layout)
+    body = _render_body(new_body_items, layout)
     content_hash = sha256_text(body)
 
     uid = gen_uid()
@@ -681,24 +680,24 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         FM_NODE_PATH: meta.get("node_path", ""),
         FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
                       "author": author, "created_at": ts}],
-        FM_SOURCE_HASHES: [s["source_hash"] for s in new_sources],
+        FM_SOURCE_HASHES: [item["sha256"] for item in new_body_items],
         "attrs": {
             "album": {
                 "layout": layout,
-                "count": len(new_sources),
+                "count": len(new_body_items),
                 "skipped_count": len(skipped),
                 "vision": bool(meta.get("vision", False)),
                 "sources": [
                     {
-                        "filename": s["filename"],
-                        "source_hash": s["source_hash"],
-                        "raw_rel_path": s["raw_rel_path"],
-                        "width": s.get("width"),
-                        "height": s.get("height"),
-                        "gps": s.get("gps"),
-                        "captured": s.get("captured"),
+                        "filename": item["filename"],
+                        "source_hash": item["sha256"],
+                        "raw_rel_path": item["raw_rel_path"],
+                        "width": item.get("width"),
+                        "height": item.get("height"),
+                        "gps": item.get("gps"),
+                        "captured": item.get("captured"),
                     }
-                    for s in new_sources
+                    for item in new_body_items
                 ],
             },
         },
@@ -723,24 +722,30 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         "title": args.title,
         "node_path": node_path_val,
         "layout": layout,
-        "count": len(new_sources),
+        "count": len(new_body_items),
         "skipped": skipped,
         "md_path": str(rel_md).replace("\\", "/"),
-        "sources": [
-            {k: s[k] for k in ("filename", "source_hash", "raw_rel_path",
-                                 "width", "height", "gps", "captured")}
-            for s in new_sources
-        ],
+            "sources": [
+                {
+                    "filename": item["filename"],
+                    "source_hash": item["sha256"],
+                    "raw_rel_path": item["raw_rel_path"],
+                    "width": item.get("width"),
+                    "height": item.get("height"),
+                    "gps": item.get("gps"),
+                    "captured": item.get("captured"),
+                }
+                for item in new_body_items
+            ],
     }
     hints = ["read by UID to view; revise to update captions"]
     if skipped:
         hints.insert(0, f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details")
     if meta.get("vision"):
         hints.append("vision intent was set; per-photo captions will be added when a vision backend is configured")
-        hints.append("vision intent was set; per-photo captions will be added when a vision backend is configured")
     return success(
         data,
-        f"album committed: {len(new_sources)} photos → 1 Node_Page (content_type=gallery)",
+        f"album committed: {len(new_body_items)} photos → 1 Node_Page (content_type=gallery)",
         hints=hints,
     )
 
