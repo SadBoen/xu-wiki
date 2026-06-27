@@ -43,12 +43,7 @@ query:
     chars: 50             # 切片字符数（上下文窗口大小）
     merge_radius: 80       # 相邻切片合并半径（字符距离）
 
-  scoring:
-    core_weight: 2000      # core 关键词权重（分母上的常量）
-    expansion_weight: 500   # expansion 关键词权重
-    density_bonus: 1.5     # 密度奖励系数（>1，高密度切片权重上浮）
-
-  top_k: 10               # query 默认返回条数（--top-k 覆盖）
+  blocks: 50              # 每轮最多返回的块数
   uid_batch: 30            # 每轮建议选取的最大 UID 数
   query_max_expand: 10    # expand 单次最多取的 UID 数
   max_rounds: 5           # 多轮查询最大轮数

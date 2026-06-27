@@ -45,16 +45,9 @@ CONTENT_TYPE_MAP: dict[str, str] = {
 # Ingest (PRIN-ING-4)
 PAGE_SPLIT_LINES = 300
 
-# Query scoring (PRIN-QRY-10, experience reference values)
-CORE_WEIGHT = 2000
-EXPANSION_WEIGHT = 500
-DENSITY_BONUS = 1.5            # CONST-QRY-5: must be > 1
-
 # Slicing (DESIGN-ARCH-6/7)
 SLICE_CHARS = 50
 MERGE_RADIUS = 80
-
-TOP_K = 10                    # CONST-QRY-7
 
 # Multi-round query (PRIN-QRY-14, CONST-QRY-12)
 QUERY_BLOCKS = 50             # top N blocks returned per round
@@ -90,12 +83,6 @@ def default_wiki_config(name: str) -> dict:
                 "chars": SLICE_CHARS,
                 "merge_radius": MERGE_RADIUS,
             },
-            "scoring": {
-                "core_weight": CORE_WEIGHT,
-                "expansion_weight": EXPANSION_WEIGHT,
-                "density_bonus": DENSITY_BONUS,
-            },
-            "top_k": TOP_K,
             "blocks": QUERY_BLOCKS,
             "uid_batch": QUERY_BATCH,
             "query_max_expand": QUERY_MAX_EXPAND,
