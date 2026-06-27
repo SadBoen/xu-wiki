@@ -334,8 +334,6 @@ def cmd_ingest_commit(args) -> dict:
             else Path("nodes/page") / f"{slug}.md"
         md_path = ctx.root / rel_md
         md_path.parent.mkdir(parents=True, exist_ok=True)
-        doc = fm.render(frontmatter, page_body)
-        atomic_write_text(md_path, doc)
 
         rel_raw = None
         raw_written = None
@@ -347,6 +345,10 @@ def cmd_ingest_commit(args) -> dict:
             if not raw_dst.exists():
                 shutil.copy2(raw_src_path, raw_dst)
             raw_written = raw_dst
+            frontmatter[FM_RAW_PATH] = str(rel_raw)
+
+        doc = fm.render(frontmatter, page_body)
+        atomic_write_text(md_path, doc)
 
         new_content_hashes.add(content_hash)
         written.append({"md": md_path, "raw": raw_written})
@@ -436,8 +438,8 @@ def _raw_path_checks(ctx, frontmatter) -> list[dict]:
         else:
             add_check("raw_path_node_path_mirror", "skip", "node_path empty")
     else:
-        add_check("raw_file_exists", "skip", "native ingest (no source file)")
-        add_check("raw_path_node_path_mirror", "skip", "native ingest (no raw file)")
+        add_check("raw_file_exists", "skip", "raw_path not in frontmatter (pre-fix node or --native without source)")
+        add_check("raw_path_node_path_mirror", "skip", "raw_path not in frontmatter (pre-fix node or --native without source)")
     return checks
 
 
