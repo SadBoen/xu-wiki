@@ -119,7 +119,7 @@ Agent 第一步问用户内容形态。
 
 ### [CONST-ING-6] patches frontmatter 字段
 
-`patches: [{version, op, delta, author, created_at}]`，YAML 列表，写入 nodes/page/ .md 的 frontmatter。
+`patches: [{version, op, delta, created_at}]`，YAML 列表，写入 nodes/page/ .md 的 frontmatter。
 
 ### [CONST-ING-8] 4 键 JSON
 

@@ -569,7 +569,7 @@ def cmd_ingest_commit(args) -> dict:
             FM_SPLIT_INDEX: split_index,
             FM_PARENT_UID: parent_uid,
             FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
-                          "author": getattr(args, "author", None) or "agent", "created_at": ts}],
+                          "created_at": ts}],
         }
         if source_hash:
             frontmatter[FM_SOURCE_HASH] = source_hash
@@ -707,7 +707,7 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         FM_CONTENT_HASH: content_hash,
         FM_NODE_PATH: meta.get("node_path", ""),
         FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
-                      "author": author, "created_at": ts}],
+                      "created_at": ts}],
         FM_SOURCE_HASHES: [item["sha256"] for item in new_body_items],
         "attrs": {
             "album": {
