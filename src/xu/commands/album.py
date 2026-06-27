@@ -24,7 +24,7 @@ def cmd_ingest_album(args) -> dict:
     return error(
         "ingest-album is deprecated; use the two-phase ingest flow instead:\n"
         "  Phase 1: ingest-file --files <imgs> --title <t> --node-path <p>\n"
-        "  Phase 2: ingest-commit --pending <path> --title <t> --content-type gallery",
+        "  Phase 2: ingest-commit --temp <path> --title <t> --content-type gallery",
         "DeprecatedCommand",
         hints=["see design-docs/05-ingest.md PRIN-ING-14 for the new flow"],
     )
