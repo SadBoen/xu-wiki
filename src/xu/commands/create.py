@@ -1,7 +1,7 @@
 """create — initialize a new wiki instance (02-create.md).
 
 Builds the three-piece layout (raws/nodes/.xu), DB schema with all three
-layers + patches/IDF derived tables, wiki-internal config, and a registry entry.
+layers + patches derived table, wiki-internal config, and a registry entry.
 Builds in a temp dir then atomically renames (CONST-CRT-2).
 """
 from __future__ import annotations
@@ -54,7 +54,7 @@ query:
   fast_pass:
     enabled: true          # 是否启用 Fast Pass（提前退出优化）
     dynamic: true          # 是否动态调整 k
-    k: 3.0                # Fast Pass 阈值系数：TF-IDF 得分第 k 名高于均值 × k 时提前退出
+    k: 3.0                # Fast Pass 阈值系数：得分第 k 名高于均值 × k 时提前退出
     low_hit: 3            # Fast Pass 低命中下限：低于此阈值时不触发快速退出
 
   top_k: 10               # query 默认返回条数（--top-k 覆盖）
@@ -105,7 +105,7 @@ def _build_skeleton(target: Path, name: str) -> None:
         encoding="utf-8",
     )
 
-    # DB schema with all three layers + patches/IDF (CONST-CRT-6, PRIN-CRT-4/6)
+    # DB schema with all three layers + patches (CONST-CRT-6, PRIN-CRT-4/6)
     db.init_schema(target / ".xu" / "wiki.db")
 
 
@@ -191,7 +191,7 @@ def cmd_create(args) -> dict:
         "path": str(target),
         "version": WIKI_FORMAT_VERSION,
         "layout": ["raws/", "nodes/page/", "nodes/list/", "nodes/report/", ".xu/"],
-        "tables": ["nodes", "patches", "idf", "relations", "evidence", "list_members"],
+        "tables": ["nodes", "patches", "relations", "evidence", "list_members"],
     }
     if alias_warning:
         return warning(data, alias_warning, hints=["alias not bound; pick another"])

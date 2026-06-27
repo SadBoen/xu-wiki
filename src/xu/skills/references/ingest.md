@@ -133,7 +133,7 @@ xu report create --wiki <w> --title <t> --body <md> \
 ## Workflow — code block / terminal output
 
 1. **`ingest-commit --native "<code>" --source <abs-path>`**: skips Phase 1 (no parse),
-   goes through dedup / patches v1 / IDF directly. `--source` is required even
+   goes through dedup / patches v1 directly. `--source` is required even
    for `--native` (for Level-2 dedup via source_hash).
    > **Warning — bypass**: `--native` has **no physical source file**
    > (it is agent-synthesized text), so `raw_path` in the response is null by

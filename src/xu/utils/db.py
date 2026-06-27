@@ -1,7 +1,7 @@
 """SQLite schema + access layer (PRIN-ARCH-16, CONST-ARCH-7).
 
-Schema reserves positions for Page/Entity/List/Report layers plus the two
-derived tables (patches / idf) and the relation LRU linked list.
+Schema reserves positions for Page/Entity/List/Report layers plus the
+patches derived table and the relation LRU linked list.
 WAL mode + foreign keys + busy timeout are mandatory (CONST-ARCH-7).
 """
 from __future__ import annotations
@@ -43,14 +43,6 @@ CREATE TABLE IF NOT EXISTS patches (
     created_at  INTEGER,
     PRIMARY KEY (page_uid, version),
     FOREIGN KEY (page_uid) REFERENCES nodes(uid) ON DELETE CASCADE
-);
-
--- IDF noun frequency table (PRIN-ARCH-20, CONST-ING-6)
-CREATE TABLE IF NOT EXISTS idf (
-    noun        TEXT PRIMARY KEY,
-    freq        INTEGER NOT NULL,
-    weight      REAL NOT NULL,
-    updated_at  INTEGER
 );
 
 -- Relation LRU linked list (PRIN-ARCH-8, CONST-ARCH-4).
@@ -114,28 +106,3 @@ def init_schema(db_path: str | Path) -> None:
         conn.commit()
     finally:
         conn.close()
-
-
-def idf_increment(conn, body: str, *, extract_nouns_fn, constant: float) -> None:
-    """Increment IDF frequencies from nouns extracted from body
-    (PRIN-ING-9, CONST-ING-6). Shared across ingest / album / any future
-    writer that adds text to a Page body.
-
-    `extract_nouns_fn` is injected to keep this module dependency-free
-    of the splitter module (utils.db is the lowest layer). `constant`
-    is the IDF constant (typically IDF_CONSTANT from utils.constants).
-    """
-    from .paths import now_ts  # local import: avoid circular at module load
-    nouns = extract_nouns_fn(body)
-    if not nouns:
-        return
-    ts = now_ts()
-    for noun, cnt in nouns.items():
-        row = conn.execute("SELECT freq FROM idf WHERE noun=?", (noun,)).fetchone()
-        new_freq = (row["freq"] if row else 0) + cnt
-        weight = constant / (new_freq + 1)
-        conn.execute(
-            "INSERT INTO idf(noun, freq, weight, updated_at) VALUES(?,?,?,?) "
-            "ON CONFLICT(noun) DO UPDATE SET freq=?, weight=?, updated_at=?",
-            (noun, new_freq, weight, ts, new_freq, weight, ts),
-        )

@@ -3,7 +3,7 @@
 Phase 1 (ingest-file): parse → write temporary file (system temp dir).
                         No node created.
 Phase 2 (ingest-commit): validate → atomic write Page(s) + raws copy + patches v1
-                         + IDF + relations. The ONLY write entry (PRIN-ING-1).
+                         + relations. The ONLY write entry (PRIN-ING-1).
 """
 from __future__ import annotations
 
@@ -220,7 +220,7 @@ def _strip_frontmatter(text: str) -> str:
 
 
 def cmd_ingest_commit(args) -> dict:
-    """Phase 2: validate + atomic write Page(s) + raws copy + patches v1 + IDF + relations.
+    """Phase 2: validate + atomic write Page(s) + raws copy + patches v1 + relations.
 
     --pending: path to Phase 1 temp file (required for normal flow).
     --native: deprecated, bypasses Phase 1 (no temp file, no source copy to raws/).

@@ -14,7 +14,7 @@
 | 02 | [02-create.md](02-create.md) | create | 如何为三层节点 + 弹性 Rebuild 铺路？ |
 | 03 | [03-install.md](03-install.md) | install | 装的是能力还是数据？怎么不污染系统？ |
 | 04 | [04-uninstall.md](04-uninstall.md) | uninstall | 卸载软件还是卸载数据？ |
-| 05 | [05-ingest.md](05-ingest.md) | ingest | L1 不可变怎么实现？IDF/patches 何时入库？ |
+| 05 | [05-ingest.md](05-ingest.md) | ingest | L1 不可变怎么实现？/patches 何时入库？ |
 | 06 | [06-query.md](06-query.md) | query | 三层介入怎么打分？Fast Pass 怎么动态？ |
 | 07 | [07-doctor.md](07-doctor.md) | doctor | 三层不变量 + 50 条上限 + L1 不可变怎么检？ |
 | 08 | [08-sop-architecture.md](08-sop-architecture.md) | **SOP 层**（create / ingest / query / doctor / config） | 用户/Agent 层意图动词如何映射到 CLI 子命令？slash command 为什么不是 CLI 子命令别名？ |
@@ -95,7 +95,7 @@ L1 物理定位 → L2 结构对齐 → L3 逻辑提炼
 |---|---|---|
 | L1 | ripgrep + 弹性切片 | 切片窗口 **软上限 + 硬上限**（软优先寻标点，硬上限兜底）；合并半径 = 紧凑关联阈值（具体数值由实现决定） |
 | L1 评分 | 重平衡算法 | `(覆盖分 + 稀有分) × 密度奖励`，**核心词权重远大于扩展词**（防同义词噪音淹没实体），密度奖励 **密度奖励系数（> 1）** |
-| L1 稀有分 | IDF 表 | `稀有度权重 = 常量 / (库内频次 + 1)` |
+| L1 稀有分 |词频表 | `稀有度权重 = 常量 / (库内频次 + 1)` |
 | L1 加速 | Fast Pass | 动态阈值：Top1 显著高于均值 → 自动附 body；**命中数极少时直接附 body**（均值法在低命中下失效，见 [PRIN-QRY-12]） |
 | L2/L3 | Agent 决定 | CLI 只返 hint（list_hint / report_hint） |
 
@@ -143,11 +143,11 @@ CLI 全程确定性。**关键词分级是 LLM 的责任**——CLI 做基础分
 
 ### 10. install 装能力不装数据（[PRIN-INST-1]）
 
-install 装 CLI/venv/SKILL/配置 schema。**不**动用户已有的任何 wiki 实例（含 patches 表 / IDF 表）。
+install 装 CLI/venv/SKILL/配置 schema。**不**动用户已有的任何 wiki 实例（含 patches 表 /词频表）。
 
 ### 11. uninstall 不动 L1 历史（[PRIN-UNINST-1] / [BAN-UNINST-4]）
 
-卸载 = 把 install 装进系统的东西原样拆出来。**永远不动**知识库本体、patches 表、IDF 表。
+卸载 = 把 install 装进系统的东西原样拆出来。**永远不动**知识库本体、patches 表、词频表。
 
 ### 12. doctor 默认只读（[PRIN-DOC-1]）
 
@@ -255,7 +255,7 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
     ├── config.yaml
     ├── state.json
     ├── patches 表      # L1 修订表
-    └── IDF 词频表     # IDF 词频表
+    └── 词频表     # 词频表
 ```
 
 ---
@@ -304,14 +304,14 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 00-09.md（本套文档，唯一权威产出）
 ```
 
-原稿的**原则**已全部吸收进 00-09；原稿的**具体参数值**（切片窗口、IDF 常量、权重比等）按「设计文档不指定 magic number」原则未写入正文，但作为**经验参考值**保留在上文「原则 ↔ 具体值对照」表里。原稿本身已无需单独保留——本套文档即唯一权威来源。
+原稿的**原则**已全部吸收进 00-09；原稿的**具体参数值**（切片窗口、 常量、权重比等）按「设计文档不指定 magic number」原则未写入正文，但作为**经验参考值**保留在上文「原则 ↔ 具体值对照」表里。原稿本身已无需单独保留——本套文档即唯一权威来源。
 
 ---
 
 ## 已知 Bug 与陷阱（开发时务必处理）
 
 1. **BUG-DOC-1**：模块命名不一致导致引用错误 → 统一各专题诊断模块的命名前缀。
-2. **安装后 wiki 实例内部结构**：patches 表 / IDF 词频表 由 create 负责，install 不能越界。
+2. **安装后 wiki 实例内部结构**：patches 表 由 create 负责，install 不能越界。
 3. **目录名 `raws/`（带 s）**：不是 `raw/`。
 4. **删除是物理删除 + 审计**：不是软删——不靠 `is_active=0` 标志留鬼节点。
 5. **切片窗口软/硬双上限、合并距离阈值**：硬指标,具体数值由实现定。
@@ -337,11 +337,11 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 
 **M1 — 软件骨架**（能装、能建空库）
 - `install`（[03]）+ `create`（[02]）
-- 验收：装好 CLI，建出一个空 wiki，三件套目录 + DB schema + 两张副表（patches / IDF）就位
+- 验收：装好 CLI，建出一个空 wiki，三件套目录 + DB schema + 两张副表（patches）就位
 - 这一步**不碰**任何节点逻辑，只搭地基
 
 **M2 — L1 主线闭环**（能存、能查）⭐ 最关键
-- `ingest-commit`（[05]，含两阶段、SHA256 去重、frontmatter 校验、patches v1、IDF 入库）+ `query`（[06]，ripgrep + 切片 + 打分 + Fast Pass）+ `read`
+- `ingest-commit`（[05]，含两阶段、SHA256 去重、frontmatter 校验、patches v1、 入库）+ `query`（[06]，ripgrep + 切片 + 打分 + Fast Pass）+ `read`
 - 验收：摄入一个 PDF → 切成 Node_Page → query 能命中 → read 能取全文
 - **这是整个系统的心脏**——M2 跑通，产品就有了核心价值。L2/L3 都是在 L1 之上的增量
 
@@ -363,7 +363,7 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 
 ## 原则 ↔ 具体值对照（经验参考值）
 
-本套文档**有意不写死**切片窗口、IDF 常量、核心/扩展权重比、密度奖励系数、Fast Pass 倍数等具体数值（遵循「设计文档不指定 magic number」原则）。但实现总要有个起点——下表给出一组**经验参考值**（来自项目早期手写设计稿，作者实跑可用），供开发者作为缺省起点：
+本套文档**有意不写死**切片窗口、 常量、核心/扩展权重比、密度奖励系数、Fast Pass 倍数等具体数值（遵循「设计文档不指定 magic number」原则）。但实现总要有个起点——下表给出一组**经验参考值**（来自项目早期手写设计稿，作者实跑可用），供开发者作为缺省起点：
 
 | 原则编号 | 主题 | 经验参考值 |
 |---|---|---|
@@ -371,7 +371,7 @@ User 与系统交互的唯一通道是 **Agent 的 UI**（聊天框、语音、I
 | 同上 · A 覆盖分 | 核心/扩展词权重 | 核心词命中数 × 2000 + 扩展词命中数 × 500 |
 | 同上 · C 密度奖励 | 多词共现系数 | 共现时 ×1.5（[CONST-QRY-5] 要求 > 1） |
 | [CONST-QRY-4] | 核心:扩展权重比 | 约 4 : 1（核心远大于扩展） |
-| [PRIN-ARCH-20] / [PRIN-QRY-11] | IDF 稀有度常量 | 权重 = 10000 / (库内频次 + 1) |
+| [PRIN-ARCH-20] / [PRIN-QRY-11] |  稀有度常量 | 权重 = 10000 / (库内频次 + 1) |
 | [PRIN-QRY-8] / [DESIGN-ARCH-6] | 切片窗口软/硬上限 | 软上限 80 字符 / 硬上限 150 字符 |
 | [PRIN-QRY-9] / [DESIGN-ARCH-7] | 邻域合并半径 | 物理距离 < 80 字符（或边界重叠）则合并 |
 | [PRIN-QRY-12] | Fast Pass 阈值倍数 | 动态：top1 分数 > 均值 × 3 倍 |

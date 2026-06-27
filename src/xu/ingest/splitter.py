@@ -1,4 +1,4 @@
-"""Page splitting (PRIN-ING-4) + noun extraction for IDF (PRIN-ING-9)."""
+"""Page splitting (PRIN-ING-4) + noun extraction for node-path suggestion."""
 from __future__ import annotations
 
 import re
@@ -90,8 +90,7 @@ def extract_nouns(text: str) -> dict[str, int]:
 
     Uses jieba POS tagging when available; falls back to a tokenizer that
     splits Latin runs on word boundaries and CJK runs into overlapping
-    bigrams. The bigram fallback keeps short Chinese query terms findable in
-    the IDF table even when jieba is not installed (PRIN-ARCH-20).
+    bigrams. The bigram fallback keeps short Chinese query terms findable.
     """
     counts: dict[str, int] = {}
     try:

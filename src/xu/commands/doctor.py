@@ -10,11 +10,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..ingest.splitter import extract_nouns
 from ..ingest.relations_lru import list_relations
 from ..utils import frontmatter as fm
-from ..utils.constants import IDF_CONSTANT, FM_EVIDENCE, FM_MEMBERS, FM_PATCHES, MAX_EDGES, REQUIRED_FM_FIELDS
-from ..utils.idf import load_idf, dump_idf
+from ..utils.constants import FM_EVIDENCE, FM_MEMBERS, FM_PATCHES, MAX_EDGES, REQUIRED_FM_FIELDS
 from ..utils.paths import now_ts, sha256_text
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
@@ -86,16 +84,12 @@ def cmd_doctor(args) -> dict:
             "doctor-relations": _check_relations,
             "doctor-l1-immutable": _check_l1_immutable,
             "doctor-report-evidence": _check_report_evidence,
-            "doctor-idf": _check_idf,
             "doctor-node-path-organization": _check_node_path_organization,
         }
         if kind in ("doctor", "doctor-all"):
             report = {}
             for fn_name, fn in checks.items():
-                if fn_name in ("doctor-report-evidence", "doctor-idf"):
-                    report[fn_name] = fn(ctx, fix)
-                else:
-                    report[fn_name] = fn(ctx, conn, fix)
+                report[fn_name] = fn(ctx, conn, fix)
             conn.commit()
             summary = _summarize(report)
             data = {"checks": report, "fix_applied": fix, **summary}
@@ -103,10 +97,7 @@ def cmd_doctor(args) -> dict:
             if fix:
                 recheck = {}
                 for fn_name, fn in checks.items():
-                    if fn_name in ("doctor-report-evidence", "doctor-idf"):
-                        recheck[fn_name] = fn(ctx, False)
-                    else:
-                        recheck[fn_name] = fn(ctx, conn, False)
+                    recheck[fn_name] = fn(ctx, conn, False)
                 post = _summarize(recheck)
                 data["post_fix"] = {"residual_issues": post["total_issues"],
                                     "by_layer": post["by_layer"]}
@@ -123,18 +114,12 @@ def cmd_doctor(args) -> dict:
         fn = checks.get(kind)
         if not fn:
             return error(f"unknown doctor check: {kind}", "UnknownCheck")
-        if kind in ("doctor-report-evidence", "doctor-idf"):
-            r = fn(ctx, fix)
-        else:
-            r = fn(ctx, conn, fix)
+        r = fn(ctx, conn, fix)
         conn.commit()
         summary = _summarize({kind: r})
         data = {kind: r, "fix_applied": fix, **summary}
         if fix:
-            if kind in ("doctor-report-evidence", "doctor-idf"):
-                post_r = fn(ctx, False)
-            else:
-                post_r = fn(ctx, conn, False)
+            post_r = fn(ctx, conn, False)
             post = _summarize({kind: post_r})
             data["post_fix"] = {"residual_issues": post["total_issues"],
                                 "by_layer": post["by_layer"]}
@@ -276,29 +261,6 @@ def _check_report_evidence(ctx, fix) -> dict:
             "note": "--fix removes dangling/inactive refs from Report frontmatter; Report itself is never deleted (BAN-DOC-6)"}
 
 
-def _check_idf(ctx, fix) -> dict:
-    """IDF weight = const/(freq+1) consistency (CONST-ING-6 / CONST-DOC-5)."""
-    issues = []
-    fixed = []
-    idf = load_idf(ctx)
-    new_idf = {}
-    for noun, (freq, weight) in idf.items():
-        expected = IDF_CONSTANT / (freq + 1)
-        if abs(expected - weight) > 1e-6:
-            issues.append({"noun": noun, "problem": "weight mismatch",
-                           "expected": round(expected, 4), "actual": weight,
-                           "layer": "cross", "fixable": True})
-            if fix:
-                new_idf[noun] = (freq, expected)
-                fixed.append(noun)
-    if fix and new_idf:
-        for noun in new_idf:
-            idf[noun] = new_idf[noun]
-        dump_idf(ctx, idf)
-    return {"issue_count": len(issues), "issues": issues[:50], "fixed": fixed,
-            "total_nouns": len(idf)}
-
-
 def _suggest_node_path(title: str) -> str:
     """Heuristic: extract dominant noun from title → use as node_path category."""
     try:
@@ -437,22 +399,6 @@ def cmd_delete_node(args) -> dict:
             hints=["remove the references first, or pass --force to cascade"],
         )
 
-    # Decrement IDF frequencies (CONST-ING-6)
-    if node_fd.get("layer") == "Page" and node_path and node_path.exists():
-        _, body = fm.parse(node_path.read_text(encoding="utf-8", errors="replace"))
-        idf = load_idf(ctx)
-        changed = False
-        for noun, cnt in extract_nouns(body).items():
-            freq, _ = idf.get(noun, (0, 0.0))
-            new_freq = freq - cnt
-            if new_freq <= 0:
-                idf.pop(noun, None)
-            else:
-                idf[noun] = (new_freq, IDF_CONSTANT / (new_freq + 1))
-            changed = True
-        if changed:
-            dump_idf(ctx, idf)
-
     # Remove references from List members and Report evidence and Page relations
     for md_p, fd, _ in _all_frontmatter_nodes(ctx):
         layer = fd.get("layer")
@@ -507,8 +453,8 @@ def cmd_rebuild(args) -> dict:
     """Rebuild derived layers from Page. NEVER regenerates Page content (PRIN-ARCH-3).
 
     granularity:
-      keep-l1     : rebuild IDF + renumber relation positions from frontmatter (default)
-      keep-l1-l2  : also leave List intact, rebuild IDF/relations
+      keep-l1     : renumber relation positions from frontmatter (default)
+      keep-l1-l2  : also leave List intact, renumber relations
       full        : same as keep-l1 (frontmatter is source of truth)
     """
     ctx = resolve_wiki(args.wiki)
@@ -519,20 +465,6 @@ def cmd_rebuild(args) -> dict:
 
     if gran == "full":
         actions.append("DB reconciliation skipped (frontmatter is source of truth)")
-
-    # rebuild IDF from all active Page bodies (always, for any granularity)
-    # reads from frontmatter via fs walk; writes to idf.md
-    freq: dict[str, tuple[int, float]] = {}
-    for md_path, fm_dict, body in _all_frontmatter_nodes(ctx):
-        if fm_dict.get("layer") != "Page":
-            continue
-        if not fm_dict.get("active", True):
-            continue
-        for noun, cnt in extract_nouns(body).items():
-            freq[noun] = (freq.get(noun, (0, 0.0))[0] + cnt,
-                          IDF_CONSTANT / (freq.get(noun, (0, 0.0))[0] + cnt + 1))
-    dump_idf(ctx, {noun: (f, w) for noun, (f, w) in freq.items()})
-    actions.append(f"rebuilt IDF: {len(freq)} noun(s)")
 
     # renumber relation positions to contiguous in frontmatter
     for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):

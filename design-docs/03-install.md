@@ -105,7 +105,7 @@ CLI 入口必须用软链（symlink）——这样代码更新时软链不用改
 
 ### [CONST-INST-3a] install 不创建 wiki 内部结构
 
-install 只装软件本身——不创建任何 wiki 实例的内部组件(`raws/` `nodes/` patches 表 IDF 词频表 等由 `create` 命令负责)。这些是 wiki 自己的事,install 时不存在。误启动「自动 create 示例 wiki」会污染用户数据空间(违反 [BAN-INST-5])。
+install 只装软件本身——不创建任何 wiki 实例的内部组件(`raws/` `nodes/` patches 表 词频表 等由 `create` 命令负责)。这些是 wiki 自己的事,install 时不存在。误启动「自动 create 示例 wiki」会污染用户数据空间(违反 [BAN-INST-5])。
 
 ### [CONST-INST-4] 4 键 JSON 协议
 

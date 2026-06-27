@@ -356,11 +356,11 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | 用户意图 | 编排 |
 |---|---|
 | 「全面检查」「健康检查」 | `doctor-all --wiki <w>` |
-| 「检查 fields / files / relations / l1-immutable / report-evidence / idf」 | 对应 `doctor-{xxx} --wiki <w>` |
+| 「检查 fields / files / relations / l1-immutable / report-evidence」 | 对应 `doctor-{xxx} --wiki <w>` |
 | 「修了再告诉我」（自动修） | `doctor-all --wiki <w> --fix`（先告诉用户再应用） |
 | 「删节点 X」 | `delete-node --wiki <w> --uid X`（若被 L2/L3 引用则先确认 `--force`） |
 | 「移位 / 移动 节点 X 到 Y」 | **当前无对应 CLI** → SOP 拒绝并解释（见下） |
-| 「重衍生层」「重建 IDF/LRU」 | `rebuild --wiki <w> --granularity keep-l1`（默认不动 L1） |
+| 「重衍生层」「重建 LRU」 | `rebuild --wiki <w> --granularity keep-l1`（默认不动 L1） |
 
 **意图不可达的显式拒绝**（[PRIN-SOP-7]）：
 
@@ -447,7 +447,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | | `report show` | 读 L3 结论 |
 | | `nodes` | 元数据查询 |
 | **doctor** | `doctor-all` | 全部检查 |
-| | `doctor-fields / files / relations / l1-immutable / report-evidence / idf` | 细分 |
+| | `doctor-fields / files / relations / l1-immutable / report-evidence` | 细分 |
 | | `rebuild` | 修复（衍生层） |
 | | `delete-node` | 清理（删 dangling 节点） |
 | | `nodes` | 找 dangling（doctor 也需要看节点列表，[PRIN-SOP-3] 共享） |

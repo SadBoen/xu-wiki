@@ -10,7 +10,7 @@
 
 Ingest 把外部信息（文件/URL/文本）变成 wiki 里的 **Node_Page**。它是**两阶段流程**：
 - **Phase 1（解析 + 暂存）**：原始内容 → 解析为 markdown → 写到暂存区
-- **Phase 2（提交落库）**：CLI 校验 + 原子写入 Page + 写修订表初值 + 入 IDF 词频
+- **Phase 2（提交落库）**：CLI 校验 + 原子写入 Page + 写修订表初值 + 入  词频
 
 **Agent 是语义判断者，CLI 是执行者**——这条边界绝不混淆。
 
@@ -23,7 +23,7 @@ Ingest 把外部信息（文件/URL/文本）变成 wiki 里的 **Node_Page**。
 - ingest-commit → **唯一**会创建节点的入口
 
 理由：
-- 单一入口 = 单一校验点（frontmatter、SHA256、一致性、修订表、IDF 全在这查）
+- 单一入口 = 单一校验点（frontmatter、SHA256、一致性、修订表、 全在这查）
 - 多入口 = 校验逻辑分散 = 必然漏检
 - 暂存可丢弃，正式节点不可——分开两阶段让失败可恢复
 
@@ -34,7 +34,7 @@ Phase 1: 原始内容 → 解析为 markdown → 写暂存
    ↓
 Agent 读暂存、提取元数据（title / relations / node_path / content_type / 层级字段 等）
    ↓
-Phase 2: 元数据 + 暂存内容 → 校验 → 原子写 Page + 写 patches 表初值 + 入 IDF
+Phase 2: 元数据 + 暂存内容 → 校验 → 原子写 Page + 写 patches 表初值 + 入 
 ```
 
 Agent 在两阶段之间**做语义判断**（这是 Agent 唯一介入的地方）。Phase 1 内部纯解析，Phase 2 内部纯校验+写盘。
@@ -115,9 +115,9 @@ ingest 的暂存文件名 + DB locks 都是**单进程安全**的。并发 inges
 
 Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Agent 自己排队。
 
-### [PRIN-ING-9] 入 IDF 词频表是 commit 的副产物
+### [PRIN-ING-9] 入 词频表是 commit 的副产物
 
-`ingest-commit` 成功后，必须**用 jieba 提取 Page body 里的名词 + 计算库内频次**，写入 `IDF 词频表`。
+`ingest-commit` 成功后，必须**用 jieba 提取 Page body 里的名词 + 计算库内频次**，写入 `词频表`。
 
 理由：检索时 `query` 会实时调取这些频次计算稀有度权重（[PRIN-ARCH-20] 的工程落地）。
 
@@ -178,7 +178,7 @@ Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Ag
 
 - 两阶段的设计初衷是**让 Agent 在两阶段之间做语义判断**([PRIN-ING-2])。相册的 body 是机器生成的,Agent 在两阶段之间没东西可判断
 - 强塞两阶段 = 多一次 IO + 多一次 pending 文件清理,无收益
-- 但**单次不意味着无校验**:dedup (CONST-ING-3)、frontmatter (CONST-ING-4)、patches v1 (PRIN-ING-10)、IDF 入库 (PRIN-ING-9) 全部照跑
+- 但**单次不意味着无校验**:dedup (CONST-ING-3)、frontmatter (CONST-ING-4)、patches v1 (PRIN-ING-10)、 入库 (PRIN-ING-9) 全部照跑
 
 #### 与 PRIN-ING-1 的关系
 
@@ -223,7 +223,7 @@ xu-wiki ingest-album \
 | 6 | 源文件 copy | 每张图 `shutil.copy2` 到 `raws/<node-path>/<原文件名>` (PRIN-ING-6) |
 | 7 | Level-2 dedup | 对每张图 `SELECT ... WHERE source_hash=?`;任一命中 → warning + 整相册拒绝 (CONST-ING-3 / BAN-ING-4) |
 | 8 | 渲染 body | `_render_body` 生成 markdown 表格或列表;每行包含 # / Filename / Path / Resolution / GPS / Captured / Description 七列 (PRIN-ING-13 表格化形态) |
-| 9 | 一次性写盘 | 1 条 INSERT nodes (content_type=gallery) + 1 条 INSERT patches v1 + N 条 IDF 增量;**单事务,失败全回滚** (PRIN-ING-1 / PRIN-ING-10 / PRIN-ING-9) |
+| 9 | 一次性写盘 | 1 条 INSERT nodes (content_type=gallery) + 1 条 INSERT patches v1 + N 条  增量;**单事务,失败全回滚** (PRIN-ING-1 / PRIN-ING-10 / PRIN-ING-9) |
 
 **与两阶段流的差异**:
 
@@ -309,7 +309,7 @@ xu-wiki ingest-album \
 Agent 不能绕过 commit 直接把内容写进正式 Page 文件。**必须**走 `ingest-commit`。
 
 理由：
-- ingest-commit 会校验 frontmatter、写 DB、写 patches 表、入 IDF——Agent 直写会绕过这一切
+- ingest-commit 会校验 frontmatter、写 DB、写 patches 表、入 ——Agent 直写会绕过这一切
 - Agent 写错了 Page = L1 客观层腐化 = 整层知识失真
 
 ### [BAN-ING-2] Phase 2 不调 LLM
@@ -320,7 +320,7 @@ ingest-commit 是纯确定性逻辑：
 - 写 DB 行（事务）
 - 建关系（如果 Agent 在 Phase 2 调用时给了 relations 参数）
 - 写 patches 表初值
-- 提取名词入 IDF 表
+- 提取名词入词频表
 - 写审计日志
 
 **绝不**调 LLM 做内容生成、标题建议、关系推断——这些都是 Phase 1 和 Phase 2 之间的 Agent 责任。
@@ -330,7 +330,7 @@ ingest-commit 是纯确定性逻辑：
 `ingest-commit --native`（直接传 markdown 字符串）允许「绕过解析」，但仍要走：
 - 写暂存（即使是 markdown 原样）
 - 走 commit 流程
-- 写 DB / 关系 / patches / IDF
+- 写 DB / 关系 / patches
 
 > **警告**：`--native` 模式**不满足 PRIN-ING-6**（无源文件可 copy 进 raws/）。
 > 设计用途：Agent 合成的代码片段、终端输出等**无外部源**的纯文本。
@@ -422,17 +422,17 @@ frontmatter 必填字段、类型、正则、必填 list 非空等——任何�
 - `add` = 一次触碰 → 插入该节点出边链表的**队首**
 - **50 条上限约束**——满了弹出队尾最久未触碰的关系（[PRIN-ARCH-9] / [PRIN-ARCH-10]）
 
-### [CONST-ING-6] IDF 入库 schema
+### [CONST-ING-6]  入库 schema
 
 ```
-IDF 词频表:
+词频表:
   名词 主键（字符串类型）,    -- 名词
   频次 整数字段 非空,   -- 库内出现次数
   权重 浮点字段 非空      -- = 常量（具体数值由实现决定） / (频次 + 1)
   updated_at 整数字段
 ```
 
-ingest-commit 时增量更新（不是重建）。用户可在 `doctor-idf` 检测异常。
+ingest-commit 时增量更新（不是重建）。用户可在 `doctor` 检测异常。
 
 ### [CONST-ING-7] patches 表 schema
 
@@ -476,7 +476,7 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 ## 六、与相关模块的关系
 
 - **query**：ingest 创建的 Page = query 检索的目标
-- **doctor**：ingest 留下的不变量（patches 初值 / IDF 入库 / 三层一致性）= doctor 检查的内容
+- **doctor**：ingest 留下的不变量（patches 初值 /  入库 / 三层一致性）= doctor 检查的内容
 - **rebuild**：ingest 是 L1 的入口，rebuild 是重建索引层的入口——两者必须协同
 
 ## 七、自检清单（开发时勾选）
@@ -490,12 +490,10 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 - [ ] 原始文件可追溯（[PRIN-ING-6]）
 - [ ] 暂存生命周期正确（[PRIN-ING-7]）
 - [ ] 不并发（[PRIN-ING-8]）
-- [ ] 入 IDF 词频表（[PRIN-ING-9]）
 - [ ] 写 patches 表初值（[PRIN-ING-10]）
 - [ ] 意图不明先问用户、绝不猜（[PRIN-ING-11]）
 - [ ] 图片压缩：双 SHA256 + 保 EXIF（[PRIN-ING-12]）
 - [ ] L1 body 样式与内容类型匹配（[PRIN-ING-13]——表格/散文/代码块三种形态，Agent 必须先问内容形态）
-- [ ] 相册子流 `ingest-album` 单次写入（[PRIN-ING-14]——不走两阶段，但 dedup / patches v1 / IDF 全跑）
 - [ ] 业务变更追溯走 DB（`nodes.created_at` / `patches 表` / 业务字段），不走过程层日志（[PRIN-ING-15]）
 - [ ] ingest 后运行 `xu ingest-verify` 做只读完整性校验（[PRIN-ING-16]）
 
@@ -513,7 +511,6 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 - [ ] SHA256 两级去重（[CONST-ING-3]）
 - [ ] frontmatter 校验（[CONST-ING-4]）
 - [ ] 关系处理 + 50 条上限（无分类、LRU）（[CONST-ING-5]）
-- [ ] IDF 入库 schema（[CONST-ING-6]）
 - [ ] patches 表 schema（[CONST-ING-7]）
 - [ ] 4 键 JSON（[CONST-ING-8]）
 - [ ] 不并发（[CONST-ING-9]）
@@ -536,6 +533,6 @@ xu ingest-verify --wiki mywiki --uid A1B2C3D4
 
 ---
 
-**作者注**：ingest 是最容易出 bug 的模块。新设计引入的两个**副产物**——IDF 入库（[PRIN-ING-9]）和 patches 初值（[PRIN-ING-10]）——是 Page 客观性的工程保障。LLM 重写时务必先实现「commit 是唯一写盘入口」（[PRIN-ING-1]）这条铁律，再加这两个副产物——**顺序反了会写入脏数据**。
+**作者注**：ingest 是最容易出 bug 的模块。新设计引入的两个**副产物**—— 入库（[PRIN-ING-9]）和 patches 初值（[PRIN-ING-10]）——是 Page 客观性的工程保障。LLM 重写时务必先实现「commit 是唯一写盘入口」（[PRIN-ING-1]）这条铁律，再加这两个副产物——**顺序反了会写入脏数据**。
 
 Page 切分 = 300 行正文、按余数算（[PRIN-ING-4]）是**默认行为**——库内 config 可调（键名由实现决定），但缺省值 300 保证跨实例切分行为一致,便于跨实例引用与审计;「按层级标题优先,过短则合并相邻小节,物理行数兜底」这条原则不可破。

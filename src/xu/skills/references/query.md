@@ -68,9 +68,9 @@ xu report create --wiki <w> --title <t> --body <md> \
    - Output: `--keywords` (comma-separated, LLM grades importance before calling)
    - Example: `"现在库里面收录了几条船？"` →
      `--keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
-   - Jieba plays **no role in query keyword generation** — it only runs inside
-     ingest (IDF table construction). At query time, you grade from the raw
-     query text directly.
+    - Jieba plays **no role in query keyword generation** — it only runs inside
+      ingest for noun extraction. At query time, you grade from the raw
+      query text directly.
 2. **Invoke `query`** with `--keywords` (required).
 3. **Inspect the result's `data.hits`** — list of UIDs with relevance score.
 4. **Read the top hits** with `read --wiki W --uid <uid>`.

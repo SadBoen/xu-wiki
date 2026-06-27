@@ -158,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
     # ---- M5: doctor / delete-node / rebuild ----
     for name in [
         "doctor", "doctor-fields", "doctor-files", "doctor-relations",
-        "doctor-l1-immutable", "doctor-report-evidence", "doctor-idf",
+        "doctor-l1-immutable", "doctor-report-evidence",
         "doctor-node-path-organization", "doctor-all",
     ]:
         spx = sub.add_parser(name, help=f"{name} health check (read-only by default)")

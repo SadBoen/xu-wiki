@@ -25,7 +25,6 @@ import yaml
 from pathlib import Path
 from typing import Any
 
-from ..ingest.splitter import extract_nouns
 from ..parsers.image_meta import read_image_meta
 from ..utils import frontmatter as fm
 from ..utils.paths import safe_slug, safe_node_path
@@ -40,9 +39,7 @@ from ..utils.constants import (
     FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
-    IDF_CONSTANT,
 )
-from ..utils.idf import increment_idf
 from ..utils.paths import (
     atomic_write_text,
     gen_uid,
@@ -269,9 +266,6 @@ def cmd_ingest_album(args) -> dict:
     md_path = ctx.root / rel_md
     md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, body))
-
-    # IDF incremental (PRIN-ING-9, CONST-ING-6)
-    increment_idf(ctx, extract_nouns(body))
 
     data = {
         "uid": uid,

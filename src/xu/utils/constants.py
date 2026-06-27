@@ -48,7 +48,6 @@ PAGE_SPLIT_LINES = 300
 CORE_WEIGHT = 2000
 EXPANSION_WEIGHT = 500
 DENSITY_BONUS = 1.5            # CONST-QRY-5: must be > 1
-IDF_CONSTANT = 10000          # PRIN-QRY-11: weight = const / (freq + 1)
 
 # Slicing (DESIGN-ARCH-6/7)
 SLICE_SOFT_LIMIT = 80
@@ -97,7 +96,6 @@ def default_wiki_config(name: str) -> dict:
                 "core_weight": CORE_WEIGHT,
                 "expansion_weight": EXPANSION_WEIGHT,
                 "density_bonus": DENSITY_BONUS,
-                "idf_constant": IDF_CONSTANT,
             },
             "fast_pass": {
                 "enabled": True,

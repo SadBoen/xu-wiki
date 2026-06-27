@@ -52,20 +52,20 @@ create 只动「软件本体」+「系统注册表」两层：
 
 create 时必须在库内 config / DB schema 里预留 **Rebuild 粒度开关**,支持后续按档位重建(只重建结构层 / 只清报告层 / 全量)。这是 [PRIN-ARCH-6]（弹性 Rebuild）的工程落地——create 必须为它铺好路。
 
-### [PRIN-CRT-6] 为 L1 不可变 / IDF 词频建表——wiki 内部组件
+### [PRIN-CRT-6] 为 L1 不可变 /  词频建表——wiki 内部组件
 
 create 时必须为 wiki 实例创建**两张衍生表**：
 
 ```
 patches 表    —— L1 修订历史（每次 Page 创建/修订追加一条 patch）
-IDF 词频表    —— 名词库内频次（ingest-commit 时增量更新）
+词频表    —— 名词库内频次（ingest-commit 时增量更新）
 ```
 
 这两张表是 wiki 自己的状态，不是软件配置——create 必须为它们预留 schema 与索引。
 
 理由：
 - patches 表是 [PRIN-ARCH-3] L1 不可变原则的工程实现——没有它，L1 修改无法追溯
-- IDF 表是 [PRIN-ARCH-20] 检索稀有度加成的数据源——没有它，query 的 B 稀有分拿不到数据
+-词频表是 [PRIN-ARCH-20] 检索稀有度加成的数据源——没有它，query 的 B 稀有分拿不到数据
 
 推论：create 不能只建 Page / List / Report 三类节点表——必须**同时建这两张衍生表**。
 
@@ -195,7 +195,6 @@ create 命令本身不创建节点——但必须为三种类型预留 schema。
 - [ ] 只动「软件本体 + 注册表」两层（[PRIN-CRT-3]）
 - [ ] 为三层节点预留位置（[PRIN-CRT-4]）
 - [ ] 为弹性 Rebuild 预留开关（[PRIN-CRT-5]）
-- [ ] 为 L1 不可变 / IDF 词频建表（[PRIN-CRT-6]）
 
 **禁令**：
 - [ ] 不覆盖已有内容（[BAN-CRT-1]）

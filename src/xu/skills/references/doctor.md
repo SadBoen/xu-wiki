@@ -22,7 +22,7 @@ xu doctor-files          --wiki <w> [--fix]   # raws/ / nodes/ filesystem consis
 xu doctor-relations      --wiki <w> [--fix]   # 50-edge LRU invariants
 xu doctor-l1-immutable   --wiki <w> [--fix]   # L1 markdown body never modified
 xu doctor-report-evidence --wiki <w> [--fix]  # L3 reports have ≥ 1 evidence ref
-xu doctor-idf            --wiki <w> [--fix]   # IDF table consistency
+
 xu doctor-node-path-organization --wiki <w> [--fix]  # root-level pages + suggested paths
 
 # Destructive ops (NEVER auto-invoked — explicit command, not a flag)
@@ -41,7 +41,7 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 | `doctor-relations` | read-only | rebuild LRU table from edges | no |
 | `doctor-l1-immutable` | read-only | n/a (always refuses) | no |
 | `doctor-report-evidence` | read-only | reject reports w/o evidence | no |
-| `doctor-idf` | read-only | rebuild IDF from corpus | no |
+
 | `doctor-node-path-organization` | read-only | calls `xu reorganize` per page | no |
 | `delete-node` | n/a (always destructive) | n/a | **yes** — `--force` ignores references |
 | `rebuild` | n/a (always destructive) | n/a | **yes** — granularity controls blast radius |
