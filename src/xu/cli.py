@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="comma-separated relation names to follow (default: all)")
     sp.set_defaults(func="expand")
 
-    sp = sub.add_parser("read", help="read a single node full body (applies patches)")
+    sp = sub.add_parser("read", help="read a single node full body")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--uid", required=True)
     sp.set_defaults(func="read")

@@ -177,14 +177,14 @@ def cmd_create(args) -> dict:
         "path": str(target),
         "version": WIKI_FORMAT_VERSION,
         "layout": ["raws/", "nodes/page/", "nodes/list/", "nodes/report/", ".xu/"],
-        "tables": ["nodes", "patches", "relations", "evidence", "list_members"],
+        "tables": ["nodes", "relations", "evidence", "list_members"],
     }
     if alias_warning:
         return warning(data, alias_warning, hints=["alias not bound; pick another"])
     return success(
         data,
         f"created empty wiki '{name}' at {target}",
-        hints=["next: xu-wiki ingest-commit to add Node_Page"],
+        hints=["next: xu-wiki ingest to add Page"],
     )
 
 

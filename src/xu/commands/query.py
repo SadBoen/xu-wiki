@@ -3,7 +3,7 @@
 query: CLI searches keywords → returns top N indexed blocks (uid/title/layer/position/text).
        LLM decides next step (conclude / Path A new keywords / Path B follow relations).
 expand: CLI fetches body + relations for specific UIDs (Path B).
-read: single-node full body, applying patches.
+read: single-node full body.
 nodes: DB metadata query (read-only, no ripgrep).
 CLI never generates summaries (PRIN-QRY-15).
 """

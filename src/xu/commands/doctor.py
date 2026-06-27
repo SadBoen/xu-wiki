@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..ingest.relations_lru import list_relations
 from ..utils import frontmatter as fm
-from ..utils.constants import FM_EVIDENCE, FM_MEMBERS, FM_PATCHES, MAX_EDGES, REQUIRED_FM_FIELDS
+from ..utils.constants import FM_EVIDENCE, FM_MEMBERS, MAX_EDGES, REQUIRED_FM_FIELDS
 from ..utils.paths import now_ts, sha256_text
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
