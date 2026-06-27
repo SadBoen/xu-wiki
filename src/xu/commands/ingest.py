@@ -64,6 +64,13 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
                 sh = fd.get("source_hash")
                 if sh:
                     source_map[sh] = (uid, fd.get("title", ""), active)
+                for _sh in (fd.get("source_hashes") or []):
+                    if _sh:
+                        source_map[_sh] = (uid, fd.get("title", ""), active)
+                attrs = fd.get("attrs", {})
+                for _s in (attrs.get("album", {}).get("sources") or []):
+                    if isinstance(_s, dict) and (_sh := _s.get("source_hash")):
+                        source_map[_sh] = (uid, fd.get("title", ""), active)
                 ch = fd.get("content_hash")
                 if ch:
                     content_map[ch] = (uid, fd.get("title", ""))

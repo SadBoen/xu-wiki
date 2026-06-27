@@ -44,6 +44,7 @@ from ..utils.constants import (
     FM_NODE_PATH,
     FM_PATCHES,
     FM_SOURCE_HASH,
+    FM_SOURCE_HASHES,
     FM_CONTENT_TYPE,
     FM_TITLE,
     FM_UID,
@@ -194,12 +195,13 @@ def cmd_ingest_album(args) -> dict:
 
     # Level-2 dedup (CONST-ING-3): scan frontmatter for existing source_hash
     source_index, _ = _scan_fm_index(ctx)
-    collides: list[dict[str, Any]] = []
+    new_rows: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     for r in rows:
         sh = r["source_hash"]
         if sh in source_index:
             existing_uid, existing_title, existing_active = source_index[sh]
-            collides.append({
+            skipped.append({
                 "filename": r["filename"],
                 "source_hash": sh,
                 "existing_uid": existing_uid,
@@ -207,18 +209,21 @@ def cmd_ingest_album(args) -> dict:
                 "existing_layer": "Page",
                 "existing_active": existing_active,
             })
-    if collides:
+        else:
+            new_rows.append(r)
+
+    if not new_rows:
         return warning(
-            {"collisions": collides, "checked": len(rows),
+            {"skipped": skipped, "checked": len(rows),
              "wiki": args.wiki, "title": args.title},
-            f"{len(collides)} source file(s) already ingested; album rejected (BAN-ING-4)",
+            "all images already ingested; nothing to commit",
             hints=[
-                "remove colliding files from --files, or use 'revise' to update the existing node",
-                "an album cannot reuse a source_hash (CONST-ING-3 Level-2)",
+                "remove skipped files from --files if you want to create an album with only new images",
+                "or use 'revise' to update the existing node",
             ],
         )
 
-    body = _render_body(rows)
+    body = _render_body(new_rows)
     content_hash = sha256_text(body)
 
     uid = gen_uid()
@@ -237,10 +242,12 @@ def cmd_ingest_album(args) -> dict:
         FM_NODE_PATH: node_path,
         FM_PATCHES: [{"version": 1, "op": "create", "delta": content_hash,
                       "author": args.author or "agent", "created_at": ts}],
+        FM_SOURCE_HASHES: [r["source_hash"] for r in new_rows],
         "attrs": {
             "album": {
                 "layout": layout,
-                "count": len(rows),
+                "count": len(new_rows),
+                "skipped_count": len(skipped),
                 "vision": vision,
                 "sources": [
                     {
@@ -252,13 +259,11 @@ def cmd_ingest_album(args) -> dict:
                         "gps": r["gps"],
                         "captured": r["captured"],
                     }
-                    for r in rows
+                    for r in new_rows
                 ],
             },
         },
     }
-    if rows:
-        frontmatter[FM_SOURCE_HASH] = rows[0]["source_hash"]
 
     rel_md = (Path("nodes") / "page" / Path(node_path) / f"{slug}.md") \
         if node_path else Path("nodes") / "page" / f"{slug}.md"
@@ -271,16 +276,19 @@ def cmd_ingest_album(args) -> dict:
         "title": args.title,
         "node_path": node_path,
         "layout": layout,
-        "count": len(rows),
+        "count": len(new_rows),
+        "skipped": skipped,
         "md_path": str(rel_md).replace("\\", "/"),
         "sources": [
             {k: r[k] for k in
              ("filename", "source_hash", "raw_rel_path",
               "width", "height", "gps", "captured")}
-            for r in rows
+            for r in new_rows
         ],
     }
     hints = ["read by UID to view; revise to update captions"]
+    if skipped:
+        hints.insert(0, f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details")
     if vision:
         hints.append(
             "vision intent was set; per-photo captions will be added "
@@ -288,6 +296,6 @@ def cmd_ingest_album(args) -> dict:
         )
     return success(
         data,
-        f"album committed: {len(rows)} photos → 1 Node_Page (content_type={ALBUM_CONTENT_TYPE})",
+        f"album committed: {len(new_rows)} photos → 1 Node_Page (content_type={ALBUM_CONTENT_TYPE})",
         hints=hints,
     )

@@ -17,6 +17,7 @@ FM_CONTENT_HASH = "content_hash"
 FM_NODE_PATH = "node_path"
 FM_RAW_PATH = "raw_path"
 FM_SOURCE_HASH = "source_hash"
+FM_SOURCE_HASHES = "source_hashes"
 FM_SPLIT_INDEX = "split_index"
 FM_PARENT_UID = "parent_uid"
 FM_RELATIONS = "relations"    # YAML list of {to_uid, relation_name, comment, created_at}

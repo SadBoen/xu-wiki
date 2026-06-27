@@ -158,7 +158,7 @@ Agent 多文件批量 ingest 应该**串行**调用多条 ingest 命令，由 Ag
 
 `ingest-album` 是 ingest SOP 的**子流(sub-flow)**,用于"多张图 → 1 个 L1 相册"场景。它**不**走 `ingest-file` → `ingest-commit` 两阶段:
 
-- **单次写入**:一次调用直接产出 1 个 L1 Page + N 个源文件 copy + 1 条 patches v1 + N 条 source_hash dedup
+- **单次写入**:一次调用直接产出 1 个 L1 Page + N 个源文件 copy + 1 条 patches v1 + 对每张图做 source_hash dedup（重复图片自动跳过，不导致整本 reject）
 - **不写 pending**:相册没有"先看再 commit"的需要——body 是程序生成的,Agent 看不到中间态有意义
 - **不强求两阶段校验**:相册内容的元数据(分辨率、GPS、DateTime)是**程序可决定的**,不需要 Agent 审阅;Agent 唯一要决定的只有 title / node-path / layout / vision 意图——这些都在调用前问清
 
@@ -209,7 +209,7 @@ xu-wiki ingest-album \
 | 4 | captions 解析 | `--captions` JSON → `{filename: description}`;缺省视为空串 |
 | 5 | EXIF 提取 | `parsers/image_meta.read_image_meta` (Pillow 软依赖);resolution + GPS + DateTime 缺失字段一律 "—" (PRIN-ING-13 优雅降级) |
 | 6 | 源文件 copy | 每张图 `shutil.copy2` 到 `raws/<node-path>/<原文件名>` (PRIN-ING-6) |
-| 7 | Level-2 dedup | 对每张图 `SELECT ... WHERE source_hash=?`;任一命中 → warning + 整相册拒绝 (CONST-ING-3 / BAN-ING-4) |
+| 7 | Level-2 dedup | 对每张图查 `source_hash`;命中则跳过该图（不写入 body）；全部命中则返回 warning + 拒绝写入；新图片正常写入 (CONST-ING-3) |
 | 8 | 渲染 body | `_render_body` 生成 markdown 表格或列表;每行包含 # / Filename / Path / Resolution / GPS / Captured / Description 七列 (PRIN-ING-13 表格化形态) |
 | 9 | 一次性写盘 | 1 条 INSERT nodes (content_type=gallery) + 1 条 INSERT patches v1 + N 条  增量;**单事务,失败全回滚** (PRIN-ING-1 / PRIN-ING-10 / PRIN-ING-9) |
 
@@ -249,15 +249,34 @@ xu-wiki ingest-album \
 <!-- xu-album layout=table count=10 vision=no -->
 ```
 
-**attrs.album.sources 存储形态 (供 L2/L3 工具查询)**:
+**frontmatter 完整结构 (gallery 相册)**:
 
-```json
-{
-  "album": {
-    "layout": "table",
-    "count": 10,
-    "vision": false,
-    "sources": [
+```yaml
+uid: ABC12345
+title: SGW001 第一次岸上系统部署完工
+layer: Page
+content_type: gallery
+active: true
+created_at: 1732000000
+content_hash: sha256:...        # body (YAML list) 的 hash
+node_path: 船舶/SGW001/...
+source_hashes:                 # 所有入库图片的 hash 数组 (PRIN-ING-3)
+  - sha256:001.jpeg的hash
+  - sha256:002.jpeg的hash
+  - ...
+patches:
+  - version: 1
+    op: create
+    delta: sha256:...          # = content_hash
+    author: agent
+    created_at: 1732000000
+attrs:
+  album:
+    layout: table
+    count: 10                # 入库图片数（不含 skipped）
+    skipped_count: 2          # 重复被跳过的图片数
+    vision: false
+    sources: [
       {
         "filename": "001.jpeg",
         "source_hash": "sha256:...",
@@ -269,9 +288,13 @@ xu-wiki ingest-album \
       },
       ...
     ]
-  }
-}
 ```
+
+**`source_hashes` 字段说明**:
+- 与 `attrs.album.sources[i].source_hash` 一一对应（数组顺序一致）
+- 顶层数组便于**批量去重查询**（`_scan_fm_index` 一次性拉入 `source_map`）
+- `attrs.album.sources` 保留完整元数据供 L2/L3 工具按需查询
+- `skipped_count` 记录本次有多少张图因重复未写入
 
 **与 image-parser 解析器的关系**:`parsers/registry.py` 的 `ImageParser` 仍然负责**单图走散文**场景 (PRIN-ING-13 散文形态);`parsers/image_meta.read_image_meta` 专门服务**相册**场景。两者不重复——一个管 prose 形态,一个管 table 形态。
 
@@ -329,7 +352,8 @@ ingest-commit 是纯确定性逻辑：
 命中 SHA256 重复时：
 - ❌ 不删旧 Page 重建
 - ❌ 不覆盖旧 Page 的 frontmatter
-- ✅ 返回 error（`DuplicateSource`）+ 旧 Page 信息（Phase 1 最早检查，不调用 parser，不花费用）
+- ✅ 普通文件：返回 error（`DuplicateSource`）+ 旧 Page 信息（Phase 1 最早检查，不调用 parser，不花费用）
+- ✅ 相册：重复图片**跳过**，其余正常写入；全部重复才拒绝
 
 用户用 `revise` 改旧 Page，不是用 ingest 覆盖。
 
@@ -393,7 +417,7 @@ URL 摄取必须：
 - **Level 1**：active Page 的内容哈希（正文 SHA256）—— Phase 2 内检查
 - **Level 2**：所有 Page 的原始文件哈希（图片用压缩前的哈希，见 [PRIN-ING-12]）—— **Phase 1 parser 调用之前检查**，避免浪费 parser 费用
 
-Level-2 在 Phase 1 最早执行，在 parser 调用之前（即使 parser 是 MinerU 等付费 API）。任一命中 → warning + 返回已有 Page 信息。
+Level-2 在 Phase 1 最早执行，在 parser 调用之前（即使 parser 是 MinerU 等付费 API）。**普通文件**：任一命中 → warning + 返回已有 Page 信息；**相册**：命中图片逐张跳过，全部命中才拒绝。
 
 ### [CONST-ING-4] 校验（commit 入口必跑）
 
@@ -475,7 +499,7 @@ LLM 重写 ingest 时务必只动 L1——不要让 ingest 顺便创建 L2/L3（
 - [ ] Agent 不直写 Page（[BAN-ING-1]）
 - [ ] Phase 2 不调 LLM（[BAN-ING-2]）
 - [ ] 跳过 Phase 1 仍要走 commit 流程（[BAN-ING-3]）
-- [ ] SHA256 重复不覆盖（[BAN-ING-4]）
+- [ ] SHA256 重复不覆盖（[BAN-ING-4]；相册为跳过重复而非整本拒绝）
 - [ ] 路径白名单（[BAN-ING-5]）
 - [ ] 不修改已存在 Page（[BAN-ING-6]）
 

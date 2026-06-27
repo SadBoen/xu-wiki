@@ -90,7 +90,8 @@ def test_album_happy_table(wiki, tmp_path):
     assert front["title"] == "SGW001 第一次岸上系统部署完工"
     assert front["layer"] == "Page"
     assert front["content_type"] == "gallery"
-    assert front["source_hash"]  # first source's hash recorded on the L1
+    assert front["source_hashes"]  # array of all source hashes
+    assert len(front["source_hashes"]) == 3
     # body is YAML list of dicts (gallery body format per PRIN-ING-13)
     assert body.startswith("- filename:")
     items = yaml.safe_load(body)
@@ -219,8 +220,8 @@ def test_album_file_not_found(wiki, tmp_path):
 # dedup
 # ---------------------------------------------------------------------------
 
-def test_album_source_collision_rejected(wiki, tmp_path):
-    """If a source file's hash is already in the DB, the whole album rejects."""
+def test_album_source_collision_skipped(wiki, tmp_path):
+    """If a source file's hash is already in the DB, only that image is skipped."""
     name, root = wiki
 
     # First commit a single Page with a known source_hash by running
@@ -234,20 +235,19 @@ def test_album_source_collision_rejected(wiki, tmp_path):
     assert r1["status"] == "success", r1
     first_hash = r1["data"]["sources"][0]["source_hash"]
 
-    # Second album: include the SAME physical file (will hash the same).
+    # Second album: include the SAME physical file (will hash the same) plus a new one.
     p2 = tmp_path / "second.jpeg"
     _write_fake_jpeg(p2, body=b"different-content-not-colliding")
     r2 = album_mod.cmd_ingest_album(_args(
-        wiki=name, title="second album collision",
+        wiki=name, title="second album",
         files=f"{p1},{p2}", node_path="",
         layout="table", vision=False, captions="", author="tester",
     ))
-    assert r2["status"] == "warning", r2
-    assert r2["data"]["checked"] == 2
-    assert any(
-        c["source_hash"] == first_hash and c["filename"] == "first.jpeg"
-        for c in r2["data"]["collisions"]
-    )
+    assert r2["status"] == "success", r2  # succeeds, not rejected
+    assert r2["data"]["count"] == 1        # only the new image was written
+    assert len(r2["data"]["skipped"]) == 1 # first.jpeg was skipped
+    assert r2["data"]["skipped"][0]["source_hash"] == first_hash
+    assert r2["data"]["skipped"][0]["filename"] == "first.jpeg"
 
 
 # ---------------------------------------------------------------------------
