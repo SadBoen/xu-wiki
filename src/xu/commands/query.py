@@ -100,6 +100,8 @@ def cmd_query(args) -> dict:
     slice_chars = cfg_get(qcfg, "slice.chars", 50)
     radius = cfg_get(qcfg, "slice.merge_radius", 80)
     top_blocks = cfg_get(qcfg, "blocks", 50)
+    if getattr(args, "top_k", None) is not None:
+        top_blocks = args.top_k
     uid_batch = cfg_get(qcfg, "uid_batch", 30)
     max_rounds = cfg_get(qcfg, "max_rounds", 5)
     query_max_expand = cfg_get(qcfg, "query_max_expand", 10)

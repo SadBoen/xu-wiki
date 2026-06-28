@@ -89,6 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--keywords", required=True, help="comma-separated keywords (LLM generates these)")
     sp.add_argument("--include-inactive", action="store_true")
+    sp.add_argument("--top-k", type=int, default=None,
+                    help="override query.blocks config (default: 50)")
     sp.set_defaults(func="query")
 
     sp = sub.add_parser("expand", help="fetch body + relations for specific UIDs (Path B)")

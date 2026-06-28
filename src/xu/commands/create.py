@@ -81,6 +81,7 @@ def _build_skeleton(target: Path, name: str) -> None:
     """Create full structure inside `target` (a fresh dir)."""
     (target / "raws").mkdir(parents=True)
     (target / "nodes" / "page").mkdir(parents=True)
+    (target / "nodes" / "entity").mkdir(parents=True)
     (target / "nodes" / "list").mkdir(parents=True)
     (target / "nodes" / "report").mkdir(parents=True)
     (target / ".xu").mkdir(parents=True)
@@ -176,8 +177,8 @@ def cmd_create(args) -> dict:
         "name": name,
         "path": str(target),
         "version": WIKI_FORMAT_VERSION,
-        "layout": ["raws/", "nodes/page/", "nodes/list/", "nodes/report/", ".xu/"],
-        "tables": ["nodes", "relations", "evidence", "list_members"],
+        "layout": ["raws/", "nodes/page/", "nodes/entity/", "nodes/list/", "nodes/report/", ".xu/"],
+        "structures": ["nodes/page/", "nodes/entity/", "nodes/list/", "nodes/report/", "raws/", ".xu/"],
     }
     if alias_warning:
         return warning(data, alias_warning, hints=["alias not bound; pick another"])

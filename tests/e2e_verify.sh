@@ -5,9 +5,8 @@ export XU_HOME=/tmp/xw_e2e_home
 WIKI=/tmp/xw_e2e/demo
 SAMPLES="${XU_SAMPLES:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/design-docs/测试用样例文件}"
 if [ ! -d "$SAMPLES" ]; then
-  echo "sample dir not found: $SAMPLES" >&2
-  echo "set XU_SAMPLES to the directory holding PDF/ DOCX/ etc. sample files" >&2
-  exit 1
+  echo "sample dir not found: $SAMPLES — skipping PDF/DOCX ingest tests" >&2
+  echo "(set XU_SAMPLES to a directory holding PDF/DOCX sample files to enable M2 tests)" >&2
 fi
 XU=".venv/bin/xu"
 
@@ -17,15 +16,18 @@ $XU create --name demo --path $WIKI --alias d 2>/dev/null | python3 -c "import s
 
 echo
 echo "################ M2: ingest (PDF + DOCX) + query + read ################"
-for f in "$SAMPLES/PDF/02_arxiv_resnet.pdf" "$SAMPLES/PDF/03_arxiv_bert.pdf"; do
-  base=$(basename "$f")
-  title=$(echo "$base" | sed 's/\.[^.]*$//')
-  out=$($XU ingest-file --wiki demo --file "$f" --node-path papers/ml 2>/dev/null)
-  pend=$(python3 -c "import sys,json;print(json.load(sys.stdin)['data'].get('temp',''))" <<< "$out")
-  echo "  parse $base: $(python3 -c "import sys,json;d=json.load(sys.stdin);print(d['status'],d['data'].get('parser'),d['data'].get('chars'),'chars')" <<< "$out")"
-  $XU ingest-commit --wiki demo --temp "$pend" --title "$title" --node-path papers/ml 2>/dev/null \
-    | python3 -c "import sys,json;d=json.load(sys.stdin);print('  commit',d['status'],d['data'].get('page_count'),'pages ->',[c['uid'] for c in d['data'].get('created',[])])"
-done
+if [ -d "$SAMPLES/PDF" ]; then
+  for f in "$SAMPLES/PDF/"*.pdf; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    title=$(echo "$base" | sed 's/\.[^.]*$//')
+    out=$($XU ingest-file --wiki demo --file "$f" --node-path papers/ml 2>/dev/null)
+    pend=$(python3 -c "import sys,json;print(json.load(sys.stdin)['data'].get('temp',''))" <<< "$out")
+    echo "  parse $base: $(python3 -c "import sys,json;d=json.load(sys.stdin);print(d['status'],d['data'].get('parser'),d['data'].get('chars'),'chars')" <<< "$out")"
+    $XU ingest-commit --wiki demo --temp "$pend" --title "$title" --node-path papers/ml 2>/dev/null \
+      | python3 -c "import sys,json;d=json.load(sys.stdin);print('  commit',d['status'],d['data'].get('page_count'),'pages ->',[c['uid'] for c in d['data'].get('created',[])])"
+  done
+fi
 
 echo
 echo "  --- query (multi-keyword, multi-round) ---"

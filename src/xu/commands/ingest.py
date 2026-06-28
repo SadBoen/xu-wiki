@@ -480,15 +480,16 @@ def cmd_ingest_commit(args) -> dict:
     if args.native:
         if not args.source:
             return error(
-                "--native requires --source <abs-path> (PRIN-ING-6: every ingested source must be copyable to raws/)",
+                "--native requires --source <abs-path or URL> (PRIN-ING-6: local sources must be copyable to raws/; URL sources are stored as-is)",
                 "MissingSource",
-                hints=["--source must be an absolute path to the source file"],
+                hints=["--source must be an absolute path to the source file, or a http:// / https:// URL"],
             )
         src_path = Path(args.source).expanduser()
-        if not src_path.is_file():
+        is_url = args.source.startswith(("http://", "https://"))
+        if not is_url and not src_path.is_file():
             return error(f"source file not found: {src_path}", "FileNotFound")
         content = args.native
-        raw_src_path = str(src_path)
+        raw_src_path = args.source  # URL stored as-is; local path stored as resolved string
         source_hash = sha256_text(args.native)
         node_path_arg = args.node_path
     elif args.temp:
