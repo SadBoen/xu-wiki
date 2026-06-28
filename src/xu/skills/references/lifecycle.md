@@ -121,14 +121,14 @@ xu update --no-redeploy      # only install latest, skip skill re-deploy
 ### Workflow
 
 1. `xu update --check` — reports `{status, data: {current, latest, latest_date, update_available}}`
-2. `xu update` — install from `git+https://github.com/SadBoen/xu-wiki.git@main#egg=xu-wiki[parse,vision]` + re-deploy skill bundles
+2. `xu update` — install from `xu-wiki[parse,vision] @ git+https://github.com/SadBoen/xu-wiki.git@main` + re-deploy skill bundles
 3. **Verify commit SHA** — read `direct_url.json` (see pitfall: pip VCS cache); confirm `commit_id` matches the SHA reported by `xu update --check`
 4. `xu selfcheck` — verify
 5. **Post-reinstall extras check** — if `xu update` needed `pipx reinstall` (extras wiped), re-inject: `pipx inject xu-wiki markitdown && pipx inject xu-wiki pillow`; then `xu deploy skill --target <target>` to re-link skill bundle
 
 ### How it works
 
-- **Install source**: always `git+https://github.com/SadBoen/xu-wiki.git@main#egg=xu-wiki[parse,vision]` (bypasses PyPI)
+- **Install source**: always `xu-wiki[parse,vision] @ git+https://github.com/SadBoen/xu-wiki.git@main` (bypasses PyPI)
 - **Version tracking**: current version = installed commit SHA (12 chars); detected from `direct_url.json` in site-packages
 - **Version check**: fetches latest commit SHA from GitHub API (`https://api.github.com/repos/SadBoen/xu-wiki/commits/main`)
 - **Skill re-deploy**: reads `~/.local/share/xu-wiki/manifest.json` → deploys updated skill files to each agent target
