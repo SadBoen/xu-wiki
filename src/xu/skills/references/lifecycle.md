@@ -5,9 +5,28 @@
 This SOP covers five operations across two concerns:
 
 | Concern | Operations |
-|---|---|
+|---|---|---|
 | Wiki instance lifecycle | `create`, `register`, `unregister` |
-| xu-wiki program lifecycle | `update`, `uninstall` |
+| xu-wiki program lifecycle | `version`, `update`, `uninstall` |
+
+---
+
+## version — check xu-wiki version
+
+```bash
+xu --version            # local version (commit SHA)
+xu update --check       # compare local vs remote, report if update available
+```
+
+| Command | Returns |
+|---|---|
+| `xu --version` | 4-key JSON with `version` field |
+| `xu update --check` | 4-key JSON with `{current, latest, update_available}` |
+
+### Workflow
+
+1. `xu --version` — get installed commit SHA
+2. `xu update --check` — get remote commit SHA + whether update is needed
 
 ---
 
