@@ -80,10 +80,10 @@ def _write_wiki_config(path: Path, name: str) -> None:
 def _build_skeleton(target: Path, name: str) -> None:
     """Create full structure inside `target` (a fresh dir)."""
     (target / "raws").mkdir(parents=True)
-    (target / "nodes" / "page").mkdir(parents=True)
-    (target / "nodes" / "entity").mkdir(parents=True)
-    (target / "nodes" / "list").mkdir(parents=True)
-    (target / "nodes" / "report").mkdir(parents=True)
+    (target / "nodes" / "pages").mkdir(parents=True)
+    (target / "nodes" / "entities").mkdir(parents=True)
+    (target / "nodes" / "lists").mkdir(parents=True)
+    (target / "nodes" / "reports").mkdir(parents=True)
     (target / ".xu").mkdir(parents=True)
 
     # wiki-internal config (CONST-CRT-6) — written with inline comments
@@ -177,8 +177,8 @@ def cmd_create(args) -> dict:
         "name": name,
         "path": str(target),
         "version": WIKI_FORMAT_VERSION,
-        "layout": ["raws/", "nodes/page/", "nodes/entity/", "nodes/list/", "nodes/report/", ".xu/"],
-        "structures": ["nodes/page/", "nodes/entity/", "nodes/list/", "nodes/report/", "raws/", ".xu/"],
+        "layout": ["raws/", "nodes/pages/", "nodes/entities/", "nodes/lists/", "nodes/reports/", ".xu/"],
+        "structures": ["nodes/pages/", "nodes/entities/", "nodes/lists/", "nodes/reports/", "raws/", ".xu/"],
     }
     if alias_warning:
         return warning(data, alias_warning, hints=["alias not bound; pick another"])

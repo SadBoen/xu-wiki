@@ -220,7 +220,7 @@ def cmd_ingest_file(args) -> dict:
         hints=[
             "review temp content, then run ingest-commit with --temp and --title",
             "Agent decides title/node_path/relations between phases (PRIN-ING-2)",
-            "if node_path is empty, all pages land at nodes/page/ root — consider passing --node-path to organize by category (e.g. certificates/qsa, contracts/ta)",
+            "if node_path is empty, all pages land at nodes/pages/ root — consider passing --node-path to organize by category (e.g. certificates/qsa, contracts/ta)",
         ],
     )
 
@@ -341,7 +341,7 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
 
     hints = [
         "review temp content, then run ingest-commit with --temp --title --content-type gallery",
-        "if node_path is empty, all pages land at nodes/page/ root",
+        "if node_path is empty, all pages land at nodes/pages/ root",
     ]
     if skipped:
         hints.insert(0, f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details")
@@ -575,8 +575,8 @@ def cmd_ingest_commit(args) -> dict:
         if source_hash:
             frontmatter[FM_SOURCE_HASH] = source_hash
 
-        rel_md = Path("nodes/page") / node_path / f"{slug}.md" if node_path \
-            else Path("nodes/page") / f"{slug}.md"
+        rel_md = Path("nodes/pages") / node_path / f"{slug}.md" if node_path \
+            else Path("nodes/pages") / f"{slug}.md"
         md_path = ctx.root / rel_md
         md_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -635,10 +635,10 @@ def cmd_ingest_commit(args) -> dict:
     hints = ["query to retrieve; read --uid for full body"]
     if parser_used == "native":
         hints.insert(0, "DEPRECATED: --native is deprecated; use --temp for external documents (PRIN-ING-6)")
-    if created and str(created[0]["md_path"]).startswith("nodes/page/"):
-        bare = str(created[0]["md_path"])[len("nodes/page/"):]
+    if created and str(created[0]["md_path"]).startswith("nodes/pages/"):
+        bare = str(created[0]["md_path"])[len("nodes/pages/"):]
         if "/" not in bare:
-            hints.append("node_path is empty — all pages are piling at nodes/page/ root; future ingest should pass --node-path to organize by category")
+            hints.append("node_path is empty — all pages are piling at nodes/pages/ root; future ingest should pass --node-path to organize by category")
     return success(data, f"committed {len(created)} Node_Page via {parser_used}", hints=hints)
 
 
@@ -732,8 +732,8 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
     }
 
     node_path_val = meta.get("node_path", "")
-    rel_md = Path("nodes/page") / node_path_val / f"{slug}.md" if node_path_val \
-        else Path("nodes/page") / f"{slug}.md"
+    rel_md = Path("nodes/pages") / node_path_val / f"{slug}.md" if node_path_val \
+        else Path("nodes/pages") / f"{slug}.md"
     md_path = ctx.root / rel_md
     md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, body))

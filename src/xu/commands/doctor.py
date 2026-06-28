@@ -271,7 +271,7 @@ def _suggest_node_path(title: str) -> str:
 
 
 def _check_node_path_organization(ctx, fix) -> dict:
-    """Detect pages at nodes/page/ root with no logical partition (PRIN-ARCH-24).
+    """Detect pages at nodes/pages/ root with no logical partition (PRIN-ARCH-24).
 
     Suggests target node_path per page by extracting dominant noun from title.
     --fix calls xu reorganize for each page.

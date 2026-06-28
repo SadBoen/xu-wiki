@@ -1,6 +1,6 @@
 """Node_List + Node_Report + Node_Entity — file-based upper layers (01-wiki-architecture.md).
 
-List: comparison/aggregation over existing nodes. Stored as .md in nodes/list/.
+List: comparison/aggregation over existing nodes. Stored as .md in nodes/lists/.
 Report: reasoning + conclusion + MANDATORY evidence chain (BAN-ARCH-5).
 Entity: first-class named concept extracted from Page content. Body is the Agent's
   notes on the entity; source_page links back to the originating Page.

@@ -22,19 +22,19 @@ class WikiContext:
 
     @property
     def page_dir(self) -> Path:
-        return self.root / "nodes" / "page"
+        return self.root / "nodes" / "pages"
 
     @property
     def list_dir(self) -> Path:
-        return self.root / "nodes" / "list"
+        return self.root / "nodes" / "lists"
 
     @property
     def report_dir(self) -> Path:
-        return self.root / "nodes" / "report"
+        return self.root / "nodes" / "reports"
 
     @property
     def entity_dir(self) -> Path:
-        return self.root / "nodes" / "entity"
+        return self.root / "nodes" / "entities"
 
     @property
     def xu_dir(self) -> Path:

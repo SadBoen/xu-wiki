@@ -16,10 +16,10 @@ DB, no lock, git-friendly.
 
 | 类型 | 存储位置 | 说明 |
 |---|---|---|
-| Page | `nodes/page/` | 原始知识切片，immutable，SHA256 去重 |
-| List | `nodes/list/` | 对 Page 的比较 / 聚合，frontmatter 含成员 UID |
-| Report | `nodes/report/` | 推理 + 结论，必须附 ≥1 证据 Page |
-| Entity | `nodes/entity/` | 实体描述符，一等公民节点 |
+| Page | `nodes/pages/` | 原始知识切片，immutable，SHA256 去重 |
+| List | `nodes/lists/` | 对 Page 的比较 / 聚合，frontmatter 含成员 UID |
+| Report | `nodes/reports/` | 推理 + 结论，必须附 ≥1 证据 Page |
+| Entity | `nodes/entities/` | 实体描述符，一等公民节点 |
 
 **关系**：每个节点有最多 50 条出边（LRU），`query-relation` 管理。
 

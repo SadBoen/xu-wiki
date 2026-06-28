@@ -1,7 +1,7 @@
 """reorganize — atomic node_path migration (PRIN-ARCH-25).
 
 Moves a Page from one node_path partition to another:
-- nodes/page/<old>/<slug>.md  →  nodes/page/<new>/<slug>.md
+- nodes/pages/<old>/<slug>.md  →  nodes/pages/<new>/<slug>.md
 - raws/<old>/<filename>        →  raws/<new>/<filename>
 - frontmatter node_path field updated
 
@@ -49,8 +49,8 @@ def cmd_reorganize(args) -> dict:
             f"node {args.uid} is already at node_path={old_node_path!r}; no move needed",
         )
 
-    new_rel_md = f"nodes/page/{new_node_path}/{slug}.md" if new_node_path \
-        else f"nodes/page/{slug}.md"
+    new_rel_md = f"nodes/pages/{new_node_path}/{slug}.md" if new_node_path \
+        else f"nodes/pages/{slug}.md"
     new_md_path = ctx.root / new_rel_md
 
     old_md_path = _find_node_path(ctx, args.uid)
