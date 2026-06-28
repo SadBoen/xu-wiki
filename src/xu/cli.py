@@ -71,8 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--temp", required=False, help="Phase 1 temp file to commit")
     sp.add_argument("--title", required=False, help="title (required unless --native with frontmatter)")
     sp.add_argument("--node-path", default="")
-    sp.add_argument("--content-type", default="article", choices=["article", "table", "gallery"],
-                    help="body form: article (prose) | table | gallery")
+    sp.add_argument("--content-type", default=None, choices=["article", "table", "gallery"],
+                    help="body form: article (prose) | table | gallery (auto-detected from file ext if omitted)")
     sp.add_argument("--relations", default="", help="JSON array of {to, relation_name, comment?}")
     sp.add_argument("--native", default="", help="raw markdown string (bypass parse, still validate)")
     sp.add_argument("--source", default="", help="abs path to source file (required when --native is used, for PRIN-ING-6 raws copy)")

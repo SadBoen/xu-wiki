@@ -85,6 +85,24 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
 
 
 # ---------------------------------------------------------------------------
+# Content-type auto-detection
+# ---------------------------------------------------------------------------
+
+_CONTENT_TYPE_TABLE_EXTS = {".xlsx", ".xls", ".csv"}
+
+
+def _detect_content_type(path: Path) -> str:
+    """Auto-detect content-type from file extension.
+
+    - PDF, DOCX, PPTX, MD, TXT → article
+    - XLSX, XLS, CSV → table
+    """
+    if path.suffix.lower() in _CONTENT_TYPE_TABLE_EXTS:
+        return "table"
+    return "article"
+
+
+# ---------------------------------------------------------------------------
 # Album/gallery helpers (shared between Phase 1 and Phase 2)
 # ---------------------------------------------------------------------------
 
@@ -201,9 +219,10 @@ def cmd_ingest_file(args) -> dict:
         dir=tempfile.gettempdir(), delete=False, encoding="utf-8"
     ) as f:
         text = _strip_frontmatter(res.text)
+        detected_ct = _detect_content_type(src)
         meta_header = (
             f"<!-- xu-temp source={src} parser={res.parser} "
-            f"source_hash={source_hash} -->\n\n"
+            f"source_hash={source_hash} content_type={detected_ct} -->\n\n"
         )
         f.write(meta_header + text)
         temp_path = Path(f.name)
@@ -214,6 +233,7 @@ def cmd_ingest_file(args) -> dict:
             "parser": res.parser,
             "source": str(src),
             "source_hash": source_hash,
+            "content_type": detected_ct,
             "chars": len(text),
         },
         f"parsed via {res.parser} → temp file (Phase 1). No node created yet.",
@@ -476,6 +496,7 @@ def cmd_ingest_commit(args) -> dict:
     raw_src_path = None
     parser_used = "native"
     temp_meta: dict = {}
+    effective_ct = "article"
     if args.native:
         if not args.source:
             return error(
@@ -491,6 +512,7 @@ def cmd_ingest_commit(args) -> dict:
         raw_src_path = args.source  # URL stored as-is; local path stored as resolved string
         source_hash = sha256_text(args.native)
         node_path_arg = args.node_path
+        effective_ct = args.content_type or "article"
     elif args.temp:
         temp_file_path = Path(args.temp).expanduser()
         if not temp_file_path.is_file():
@@ -501,6 +523,8 @@ def cmd_ingest_commit(args) -> dict:
         parser_used = temp_meta.get("parser", "unknown")
         raw_src_path = temp_meta.get("source")
         node_path_arg = args.node_path
+        # Auto-detected in Phase 1 from file ext; user override takes precedence
+        effective_ct = args.content_type or temp_meta.get("content_type", "article")
     else:
         return error("ingest-commit requires --temp or --native", "MissingInput")
 
@@ -512,8 +536,9 @@ def cmd_ingest_commit(args) -> dict:
     if not args.title:
         return error("ingest-commit requires --title (CONST-ING-4)", "MissingTitle",
                      data={"missing": ["title"]})
-    if args.content_type not in CONTENT_TYPES:
-        return error(f"invalid content-type: {args.content_type}", "InvalidContentType")
+
+    if effective_ct not in CONTENT_TYPES:
+        return error(f"invalid content-type: {effective_ct}", "InvalidContentType")
 
     # ---- Gallery mode (mode=album): delegate to dedicated handler ----
     if temp_meta.get("mode") == "album":
@@ -538,10 +563,10 @@ def cmd_ingest_commit(args) -> dict:
     for idx, page_body in enumerate(pages):
         page_body = page_body.rstrip()
 
-        body_err = _validate_body_format(page_body, args.content_type)
+        body_err = _validate_body_format(page_body, effective_ct)
         if body_err:
             hints = []
-            if args.content_type == "table":
+            if effective_ct == "table":
                 hints.append("table requires YAML list body; for PDF/DOCX text use --content-type article")
             return error(body_err, "BodyFormatMismatch", hints=hints)
 
@@ -565,7 +590,7 @@ def cmd_ingest_commit(args) -> dict:
             FM_UID: uid,
             FM_TITLE: title,
             FM_LAYER: "Page",
-            FM_CONTENT_TYPE: args.content_type,
+            FM_CONTENT_TYPE: effective_ct,
             FM_ACTIVE: True,
             FM_CREATED: ts,
             FM_CONTENT_HASH: content_hash,
