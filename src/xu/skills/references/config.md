@@ -52,6 +52,10 @@ xu config show
 # Skill bundle
 xu skills path
 xu skills list
+
+# Install
+xu selfcheck
+xu deploy skill --target <agent>   # hermes | trae | claude | cursor | auto
 ```
 
 ## Safety

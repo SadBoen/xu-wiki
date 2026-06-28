@@ -69,8 +69,9 @@ xu doctor-list-evidence --wiki <w> [--fix]
 xu doctor-report-evidence --wiki <w> [--fix]
 
 # Node management
-xu delete-node --wiki <w> --uid <uid> [--force]
+xu delete-node --wiki <w> --uid <uid> --force
 xu nodes --wiki <w> [--layer Page|List|Report|Entity] [--include-inactive]
+xu reorganize --wiki <w> --uid <uid> --new-node-path <p>
 
 # Rebuild
 xu rebuild --wiki <w> [--granularity keep-l1|keep-l1-l2|full]

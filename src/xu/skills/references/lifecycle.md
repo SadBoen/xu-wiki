@@ -70,6 +70,14 @@ xu unregister --name <n>
 # Program lifecycle
 xu update [--check]
 xu uninstall [--execute]
+xu selfcheck
+
+# Deploy skill bundle
+xu deploy skill --target <agent>   # hermes | trae | claude | cursor | auto
+
+# Skill bundle
+xu skills path
+xu skills list
 
 # Config
 xu config show
