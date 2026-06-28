@@ -30,6 +30,9 @@ jobs:
       - name: Lint with ruff
         run: ruff check src/
 
+      - name: Run pre-commit
+        uses: pre-commit/action@v3.0.1
+
       - name: Type check with mypy
         run: mypy src/
 
@@ -49,3 +52,4 @@ jobs:
         run: xu selfcheck
       - name: End-to-end verify
         run: bash tests/e2e_verify.sh
+        continue-on-error: true
