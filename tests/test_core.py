@@ -5,7 +5,7 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from xu.ingest.splitter import split_pages, extract_nouns  # noqa: E402
+from xu.ingest.splitter import split_pages  # noqa: E402
 from xu.query.slicing import make_slice, merge_slices  # noqa: E402
 from xu.utils import frontmatter as fm  # noqa: E402
 from xu.utils.paths import gen_uid, is_valid_uid, sha256_text  # noqa: E402
@@ -74,11 +74,6 @@ def test_merge_recomputes_text_from_document():
     assert merged[0]["text"] == doc[0:110]  # spans the whole merged region (PRIN-QRY-9)
 
 
-def test_extract_nouns_nonempty():
-    nouns = extract_nouns("convolutional neural network architecture design")
-    assert len(nouns) >= 1
-
-
 def test_lru_cap_50_and_eviction():
     fm = {"uid": "2026-N0000000", "relations": []}
     src = "2026-N0000000"
@@ -140,21 +135,6 @@ def test_touch_relation_advances_one_slot():
     touch_relation(fm, src, "2026-N0000003")
     order = [r["to_uid"] for r in list_relations(fm, src)]
     assert order == ["2026-N0000001", "2026-N0000003", "2026-N0000002"]  # c moved up one
-
-
-def test_extract_nouns_cjk_bigram_fallback(monkeypatch):
-    import builtins
-    real_import = builtins.__import__
-
-    def no_jieba(name, *a, **k):
-        if name.startswith("jieba"):
-            raise ImportError("blocked")
-        return real_import(name, *a, **k)
-
-    monkeypatch.setattr(builtins, "__import__", no_jieba)
-    nouns = extract_nouns("中文搜索词")
-    assert "中文" in nouns and "搜索" in nouns  # short CJK terms become findable (BUG-2)
-    assert "中文搜索词" not in nouns  # whole run is no longer swallowed
 
 
 def test_safe_node_path_blocks_traversal():

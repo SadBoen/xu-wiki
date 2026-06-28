@@ -14,9 +14,9 @@ dependencies = [
 [project.optional-dependencies]
 pdf   = ["markitdown[all]"]
 parse = ["markitdown[all]"]
-nlp   = ["jieba"]
+nlp   = []
 vision = ["Pillow>=12.0"]
-all   = ["markitdown[all]", "jieba", "Pillow>=12.0"]
+all   = ["markitdown[all]", "Pillow>=12.0"]
 
 [project.scripts]
 xu = "xu.cli:main"

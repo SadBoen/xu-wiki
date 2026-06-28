@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..ingest.relations_lru import list_relations
-from ..ingest.splitter import extract_nouns
 from ..utils import frontmatter as fm
 from ..utils.constants import FM_EVIDENCE, FM_MEMBERS, MAX_EDGES, REQUIRED_FM_FIELDS
 from ..utils.paths import sha256_text
@@ -255,33 +254,17 @@ def _check_report_evidence(ctx, fix) -> dict:
             "note": "--fix removes dangling/inactive refs from Report frontmatter; Report itself is never deleted (BAN-DOC-6)"}
 
 
-def _suggest_node_path(title: str) -> str:
-    """Heuristic: extract dominant noun from title → use as node_path category."""
-    try:
-        nouns = extract_nouns(title)
-        if not nouns:
-            return "uncategorized"
-        top = max(nouns, key=lambda k: nouns.get(k) or 0)
-        if len(top) < 2:
-            return "uncategorized"
-        safe = top.replace(" ", "-").lower()[:30]
-        return safe
-    except Exception:
-        return "uncategorized"
-
-
 def _check_node_path_organization(ctx, fix) -> dict:
     """Detect pages at nodes/pages/ root with no logical partition (PRIN-ARCH-24).
 
-    Suggests target node_path per page by extracting dominant noun from title.
-    --fix calls xu reorganize for each page.
+    Reports pages without node_path; LLM decides where to organize them.
+    --fix is not supported for this check — reorganization requires global context.
     """
     issues = []
-    fixed = []
 
     root_page_dir = ctx.page_dir
     if not root_page_dir.is_dir():
-        return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
+        return {"issue_count": 0, "issues": [], "at_root": 0}
 
     root_uids = set()
     for p in root_page_dir.glob("*.md"):
@@ -304,7 +287,7 @@ def _check_node_path_organization(ctx, fix) -> dict:
             root_uids.add(uid)
 
     if not root_uids:
-        return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
+        return {"issue_count": 0, "issues": [], "at_root": 0}
 
     for uid in sorted(root_uids):
         result = _find_node_fm(ctx, uid)
@@ -314,32 +297,19 @@ def _check_node_path_organization(ctx, fix) -> dict:
         if not fm_dict:
             continue
         title = fm_dict.get("title") or ""
-        suggested = _suggest_node_path(title)
         issues.append({
             "uid": uid,
             "title": title,
             "current_path": str(md_path.relative_to(ctx.root)) if md_path else "",
-            "suggested_node_path": suggested,
-            "suggest_reason": f"title contains noun: {suggested!r}",
             "layer": "Page",
-            "fixable": True,
+            "fixable": False,
         })
-        if fix:
-            from ..commands.reorganize import cmd_reorganize
-            class _FakeArgs:
-                wiki = ctx.name
-                uid = uid
-                new_node_path = suggested
-            r = cmd_reorganize(_FakeArgs())
-            fixed.append({"uid": uid, "result": r.get("status", "unknown"),
-                          "suggested": suggested})
 
     return {
         "issue_count": len(issues),
         "issues": issues,
-        "fixed": fixed,
         "at_root": len(issues),
-        "note": "--fix is mechanical but suggested_node_path is heuristic (from title noun extraction); review suggestions before applying",
+        "note": "organize decision requires LLM global view; use xu reorganize manually after LLM review",
     }
 
 
