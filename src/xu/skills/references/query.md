@@ -1,106 +1,103 @@
 # query — find knowledge
 
-> **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
+> 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
 
-CLI is purely a matcher — **it does not interpret free-text**. Agent grades query into comma-separated `--keywords` (internal step before CLI call).
+CLI is purely a matcher — **it does not interpret free-text**. Agent grades query into comma-separated `--keywords`.
 
-## Hard rule
+## Workflow
 
-> **Keyword grading is the Agent's job.** Pass `--keywords "kw1,kw2,..."` — the CLI does NOT split free-text. No `--core`, `--expansion`, `--q`, `--mode`.
+### Step 1 — Keyword grading (LLM internal, NOT a CLI call)
 
-## CLI palette
+Grade user query → comma-separated keyword list. Always include English forms.
+
+Example: `"现在库里面收录了几条船？"` → `--keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
+
+### Step 2 — Search
 
 ```bash
-# Keyword search
-xu query --wiki <w> --keywords <kw,kw,kw> [--top-k <n>] [--include-inactive]
-
-# Expand selected UIDs → full bodies + relations
-xu expand --wiki <w> --uids <uid,uid,...>
-xu expand --wiki <w> --uids <uid> --relation-names <name,name> --limit <n>
-
-# Read / list
-xu read --wiki <w> --uid <uid>
-xu nodes --wiki <w> [--layer Page|List|Report|Entity] [--include-inactive]
-
-# Relations
-xu query-relation list --wiki <w> --from-uid <uid>
-xu query-relation add --wiki <w> --from-uid <uid> --to-uid <uid> \
-  --relation-name <r> [--comment <c>]
-
-# List / Report / Entity
-xu list show --wiki <w> --uid <uid>
-xu list create --wiki <w> --title <t> --members <uid,uid,...> [--dimension <d>] [--node-path <p>]
-xu list modify --wiki <w> --uid <uid> [--title <t>] [--members <uids>] [--dimension <d>]
-xu report show --wiki <w> --uid <uid>
-xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [--node-path <p>]
-xu report modify --wiki <w> --uid <uid> [--title <t>] [--body <md>] [--references <uids>]
-xu entity show --wiki <w> --uid <uid>
-xu entity create --wiki <w> --title <t> [--source-page <uid>] [--body <md>] [--node-path <p>]
-xu entity modify --wiki <w> --uid <uid> [--title <t>] [--body <md>]
+xu query --wiki <w> --keywords "<kw1,kw2,..." [--top-k <n>] [--include-inactive]
 ```
 
-## Multi-round workflow
+Inspect `data.blocks` (uid/title/layer/text/score) + `data.total_hits` + `data.block_count`.
 
-**Round 1 — keyword search:**
-1. **LLM grades query internally** → comma-separated keyword list (always include English forms). This is NOT a CLI call.
-2. Call `xu query --wiki <w> --keywords "<kw1,kw2,..."`
-3. Inspect `data.blocks` (uid/title/layer/text/score) + `data.uid_batch` + `data.max_rounds` + `data.total_hits` + `data.block_count`
+### Step 3 — Expand (optional)
 
-**Path A — new keywords:** LLM grades new query internally → re-call `xu query` with different keywords
+Pick UIDs → `xu expand --wiki <w> --uids <uid1,uid2,...> [--relation-names <name,name>] [--limit <n>]`
 
-**Path B — expand:** pick UIDs → `xu expand --wiki W --uids uid1,uid2,...` → full bodies + relations. `--relation-names` filters by name (not direction). `--limit` caps relations per UID.
+### Step 4 — Reflection (auto-action, do NOT ask user)
 
-**Stopping:** conclusion reached · `max_rounds` exhausted · no more relations
+```
+IF data.reflection.suggest_extract_entities == true
+  AND nodes --layer Entity returns empty
+  THEN xu entity create --wiki <w> --title <t> [--source-page <uid>], do NOT ask user
 
-## Keyword grading rule
+IF data.reflection.suggest_create_list == true
+  THEN xu list modify --wiki <w> --uid <uid> --members <uid,uid,...>, do NOT ask user
 
-This is an **LLM-internal step** before calling `xu query`. Never pass raw user text to CLI.
+IF data.reflection.suggest_create_report == true
+  THEN xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...>, do NOT ask user
 
-Always add English forms. Example: `"现在库里面收录了几条船？"` → `--keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
+IF new entities or lists were created
+  THEN xu query-relation add --wiki <w> --from-uid <uid> --to-uid <uid> --relation-name <r>, do NOT ask user
+```
+
+Reflection fields: `suggest_extract_entities`, `suggest_create_list`, `suggest_create_report`, `hint`.
+
+Reflection triggers are **auto-actions**, not prompts. Never pause to ask "要不要建".
+
+### Step 5 — Wire relations
+
+Query first, then `xu query-relation add --wiki <w> --from-uid <uid> --to-uid <uid> --relation-name <r>`.
 
 ## Counting queries (e.g. "几条船", "how many X")
 
 - `xu query` returns PAGE blocks, **not entity counts** — do NOT use it to count
 - Required flow:
-  1. Call `xu nodes --wiki <w> --layer Entity`
+  1. `xu nodes --wiki <w> --layer Entity` → `data.count`
   2. If count > 0 → answer from `data.count`
   3. If count = 0 → answer from query blocks + invoke post-query reflection to extract entities
 
-## Post-query reflection (IF/THEN)
+## Stopping conditions
 
-Reflection fields: `suggest_extract_entities`, `suggest_create_list`, `suggest_create_report`, `hint` (auto-generated command suggestion).
+Conclusion reached · no more relations to expand · max_rounds exhausted
 
-```
-IF data.reflection.suggest_extract_entities == true
-  AND nodes --layer Entity returns empty
-  THEN entity create immediately, do NOT ask user
-
-IF data.reflection.suggest_create_list == true
-  THEN list modify --members <uid,uid,...>, do NOT ask user
-
-IF data.reflection.suggest_create_report == true
-  THEN report create --title <t> --body <md> --references <uid,uid,...>, do NOT ask user
-
-IF new entities or lists were created
-  THEN wire relations with query-relation add, do NOT ask user
-```
-
-Reflection triggers are **auto-actions**, not prompts. Never pause to ask "要不要建".
-
-## Example
+## CLI reference
 
 ```bash
-xu query --wiki research --keywords "BERT,transformer,pre-training"
-# → {"status":"success","data":{"blocks":[...],"uid_batch":30,"max_rounds":5,"total_hits":42,"block_count":15,...}}
+# Search
+xu query --wiki <w> --keywords <kw,kw,kw> [--top-k <n>] [--include-inactive]
 
-xu expand --wiki research --uids UID1,UID2,UID3 --relation-names cites --limit 5
+# Expand
+xu expand --wiki <w> --uids <uid,uid,...> [--relation-names <name,name>] [--limit <n>]
+
+# Read
+xu read --wiki <w> --uid <uid>
+xu nodes --wiki <w> [--layer Page|List|Report|Entity] [--include-inactive]
+
+# Relations
+xu query-relation list --wiki <w> --from-uid <uid>
+xu query-relation add --wiki <w> --from-uid <uid> --to-uid <uid> --relation-name <r> [--comment <c>]
+
+# Entity / List / Report
+xu entity create --wiki <w> --title <t> [--source-page <uid>] [--body <md>] [--node-path <p>]
+xu entity show --wiki <w> --uid <uid>
+xu entity modify --wiki <w> --uid <uid> [--title <t>] [--body <md>]
+
+xu list create --wiki <w> --title <t> --members <uid,uid,...> [--dimension <d>] [--node-path <p>]
+xu list show --wiki <w> --uid <uid>
+xu list modify --wiki <w> --uid <uid> [--title <t>] [--members <uids>]
+
+xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [--node-path <p>]
+xu report show --wiki <w> --uid <uid>
+xu report modify --wiki <w> --uid <uid> [--title <t>] [--body <md>] [--references <uids>]
 ```
 
 ## Pitfalls
 
 | Pitfall | Fix |
 |---|---|
-| Forgetting multi-round | Block count configurable via `query.blocks` (default 50); use `max_rounds` |
-| Path B without relation filter | `--relation-names` prevents chain explosion |
-| Auto-creating on hint | `reflection` is a starting point, not a mandate |
+| Passing raw text to `xu query` | Always grade into `--keywords` first |
+| Using `xu query` to count entities | Use `xu nodes --layer Entity` |
+| Skipping `suggest_create_report` in IF/THEN | Missing trigger — add it |
+| Expanding without `--relation-names` | Risk of chain explosion |
 | 50-edge limit | 51st relation evicts the tail |
