@@ -1,5 +1,7 @@
 # config — wiki registry, aliases & global settings
 
+> **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
+
 Everything that isn't wiki data: registry, aliases, MinerU key.
 
 ## CLI palette

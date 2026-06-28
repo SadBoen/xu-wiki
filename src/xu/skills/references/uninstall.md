@@ -1,5 +1,7 @@
 # uninstall — uninstall xu-wiki
 
+> **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
+
 Remove xu-wiki from the system: pip package + skill bundles + optional config.
 
 **Wiki data is NEVER deleted. No flag, no branch, no surface ever touches it.**

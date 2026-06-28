@@ -5,6 +5,8 @@ description: "Manage a relation-driven wiki via 7 SOPs. Deterministic CLI, no LL
 
 # xu-wiki
 
+> **Important:** All wiki operations must be invoked via CLI (`xu ...`) in a shell terminal. Do NOT use `execute_code`, `run_python`, or any sandboxed Python tool — those environments do not inherit the host's `PATH` (including `~/.local/bin` where pipx installs live). Environment variables (e.g., `MINERU_API_KEY`) can be passed through the shell command prefix.
+
 Relation-driven wiki for AI agents. All content is `.md` files on disk — no
 DB, no lock, git-friendly.
 

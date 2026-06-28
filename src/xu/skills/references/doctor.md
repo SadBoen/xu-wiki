@@ -1,5 +1,7 @@
 # doctor — check / repair / destructive ops
 
+> **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
+
 Read-mostly health-check SOP. Default is read-only; `--fix` enables safe auto-repair only. Destructive ops (`delete-node`, `rebuild`) are explicit commands.
 
 ## CLI palette

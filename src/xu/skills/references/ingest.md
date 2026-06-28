@@ -1,5 +1,7 @@
 # ingest — add content to a wiki
 
+> **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
+
 Page is immutable. Body form must match content type.
 
 ## Content routing (before Phase 1)

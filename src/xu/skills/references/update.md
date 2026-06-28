@@ -1,5 +1,7 @@
 # update — upgrade xu-wiki
 
+> **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
+
 Upgrade xu-wiki to the latest version and re-deploy skill bundles.
 
 **Wiki data is NEVER touched.** pip upgrade is in-place; `~/.xu-wiki/` config is preserved.
