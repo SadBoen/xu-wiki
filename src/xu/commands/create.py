@@ -171,10 +171,11 @@ def cmd_create(args) -> dict:
         shutil.rmtree(tmp, ignore_errors=True)
         return error(f"create failed, rolled back: {e}", "CreateFailed")
 
-    alias_warning = _register(name, target, args.alias)
+    alias_warning, bound_alias = _register(name, target, args.alias)
 
     data = {
         "name": name,
+        "alias": bound_alias,
         "path": str(target),
         "version": WIKI_FORMAT_VERSION,
         "layout": ["raws/", "nodes/pages/", "nodes/entities/", "nodes/lists/", "nodes/reports/", ".xu/"],
@@ -197,8 +198,8 @@ def cmd_create(args) -> dict:
     )
 
 
-def _register(name: str, target: Path, alias: str | None) -> str | None:
-    """Add/update registry entry. Returns a warning string if alias conflicts."""
+def _register(name: str, target: Path, alias: str | None) -> tuple[str | None, str | None]:
+    """Add/update registry entry. Returns (warning_or_None, bound_alias_or_None)."""
     reg = load_registry()
     reg.setdefault("wikis", {})
     alias_msg = None
@@ -215,4 +216,4 @@ def _register(name: str, target: Path, alias: str | None) -> str | None:
         "created_at": now_ts(),
     }
     save_registry(reg)
-    return alias_msg
+    return alias_msg, bound_alias

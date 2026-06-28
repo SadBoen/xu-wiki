@@ -42,12 +42,20 @@ xu create --name <n> --path <abs> [--alias <a>]
 | `--path` | yes | Absolute dir; `~` OK; relative refused |
 | `--alias` | no | Shortcut for `--wiki <alias>` |
 
-### Workflow
+### Happy path compact template (3 tool calls)
 
-1. **Ask if no path** — "create a wiki" without path → ask; CLI refuses guessed paths
-2. **Confirm path empty or not exist** — `PathNotEmpty` returns conflicting entries
-3. **Call `create`** — writes template, registers under `--name`
-4. **Verify** — `xu wikis`
+```bash
+# Round 1 — bootstrap check (one shell)
+xu --version && xu wikis && xu config path
+
+# Round 2 — execute
+xu create --name <n> --path <abs> [--alias <a>]
+
+# Round 3 — verify layout (one shell, checks all 6 subdirs)
+xu wikis && ls <abs>/ && ls <abs>/nodes/
+```
+
+`xu create` 返回的 `data.alias` 字段可直接确认 alias 是否落库，无需额外 `alias show` 调用。
 
 ### Error responses
 
