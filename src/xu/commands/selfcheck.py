@@ -16,7 +16,7 @@ Checks performed:
  3. **skill_bundle_readable** — can we resolve the 8 skill files?
   4. **global_dir_writable** — can we create `~/.xu-wiki/`?
  5. **global_config_chmod** — if mineru.api_key present, is mode 600?
- 6. **optional_extras** — are `markitdown` / `jieba` / `Pillow` installed?
+  6. **optional_extras** — are `markitdown` / `jieba` / `Pillow>=12` installed?
  7. **ripgrep** — is `rg` on PATH (or fallback scanner is fine)?
  8. **agent_skill_deployment_hint** — print the bash template so the
     agent can self-deploy to ~/.hermes/skills/xu-wiki/
@@ -125,9 +125,7 @@ def _check_global_config_chmod() -> dict:
 def _check_optional_extras() -> dict:
     # (name, import_name) — Pillow's import name is PIL, not Pillow.
     extras = (
-        ("pypdf",      "pypdf",      "pdf (PDF text extraction)"),
-        ("pdfplumber", "pdfplumber", "pdf (PDF table extraction)"),
-        ("markitdown", "markitdown", "parse (DOCX/PPTX parsing)"),
+        ("markitdown", "markitdown", "parse (DOCX/PPTX/PDF parsing)"),
         ("jieba",      "jieba",      "nlp (Chinese noun extraction)"),
         ("Pillow",     "PIL",        "vision (image EXIF for albums)"),
     )

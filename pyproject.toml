@@ -12,11 +12,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pdf   = ["pypdf", "pdfplumber"]
+pdf   = ["markitdown[all]"]
 parse = ["markitdown[all]"]
 nlp   = ["jieba"]
-vision = ["Pillow>=10.0"]
-all   = ["pypdf", "pdfplumber", "markitdown[all]", "jieba", "Pillow>=10.0"]
+vision = ["Pillow>=12.0"]
+all   = ["markitdown[all]", "jieba", "Pillow>=12.0"]
 
 [project.scripts]
 xu = "xu.cli:main"
