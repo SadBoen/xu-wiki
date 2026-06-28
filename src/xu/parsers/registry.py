@@ -103,7 +103,8 @@ class CsvParser:
         return path.suffix.lower() in self.SUPPORTED
 
     def parse(self, path: Path, **kw) -> ParseResult | None:
-        import csv, yaml
+        import csv
+        import yaml
         try:
             with open(str(path), encoding="utf-8", newline="") as f:
                 rows = list(csv.reader(f))
@@ -141,7 +142,8 @@ class VisionParser:
         return path.suffix.lower() in self.SUPPORTED
 
     def parse(self, path: Path, **kw) -> ParseResult | None:
-        import os, yaml
+        import os
+        import yaml
         p = Path(path)
         if not p.is_file():
             return None

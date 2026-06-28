@@ -133,7 +133,7 @@ def _redeploy_skills(targets: list[str]) -> dict:
 
 def _redeploy_one(target: str) -> dict:
     from .deploy_skill import _resolve_target, _filter_bundle_files, _write_manifest
-    from ..skills import ALL_SKILL_FILES, SKILL_NAME, SKILL_SRC_DIR
+    from ..skills import ALL_SKILL_FILES, SKILL_SRC_DIR
 
     try:
         target_name, desc, dest = _resolve_target(target)

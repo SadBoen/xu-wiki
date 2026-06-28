@@ -16,7 +16,7 @@ from pathlib import Path
 from ..utils.frontmatter import parse as fm_parse, render as fm_render
 from ..utils.paths import atomic_write_text, safe_node_path
 from ..utils.response import error, success, warning
-from ..utils.wiki import resolve_wiki, find_node_md, write_node_frontmatter
+from ..utils.wiki import resolve_wiki, find_node_md
 
 
 def cmd_reorganize(args) -> dict:
@@ -52,7 +52,7 @@ def cmd_reorganize(args) -> dict:
 
     old_md_path = _find_node_path(ctx, args.uid)
     if not old_md_path or not old_md_path.exists():
-        return error(f"node file missing", "FileNotFound")
+        return error("node file missing", "FileNotFound")
 
     if new_md_path.exists():
         return error(f"destination already exists: {new_rel_md}", "DstExists")

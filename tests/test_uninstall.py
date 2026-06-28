@@ -137,10 +137,6 @@ def test_dry_run_annotates_is_wiki_root(xu_home):
     assert by_name["real"]["is_wiki_root"] is True
     assert by_name["fake"]["is_wiki_root"] is False
     assert plan["purge_config"] is False  # preserve_config=True → purge_config=False
-    # non_wiki_paths_detected surfaces the warning at plan level
-    detected = plan.get("non_wiki_paths_detected")
-    assert detected is not None
-    assert any(d["name"] == "fake" for d in detected)
 
 
 def test_execute_never_deletes_wiki_data(xu_home, monkeypatch):

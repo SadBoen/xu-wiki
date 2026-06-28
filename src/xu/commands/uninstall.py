@@ -38,7 +38,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..utils.config import GLOBAL_DIR, load_registry, save_registry
+from ..utils.config import GLOBAL_DIR, load_registry
 from ..utils.response import error, success, warning
 from ..utils.wiki import is_wiki_root
 
@@ -291,11 +291,11 @@ def _format_dry_run(plan: dict) -> str:
     lines = ["Proposed uninstall plan:", f"  Program:  xu-wiki ({plan['installer']})"]
     if plan["pip_uninstall"]:
         if plan["installer"] == "pipx":
-            lines.append(f"           → pipx uninstall xu-wiki")
+            lines.append("           → pipx uninstall xu-wiki")
         else:
-            lines.append(f"           → pip uninstall xu-wiki")
+            lines.append("           → pip uninstall xu-wiki")
     else:
-        lines.append(f"           (kept — --keep-pip)")
+        lines.append("           (kept — --keep-pip)")
 
     skill_deps = plan.get("skill_deployments", [])
     if skill_deps:

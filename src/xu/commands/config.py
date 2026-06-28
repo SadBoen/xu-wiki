@@ -41,7 +41,6 @@ from ..utils.config import (
 )
 from ..utils.paths import now_ts
 from ..utils.response import error, success, warning
-from ..utils.wiki import is_wiki_root
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
