@@ -181,7 +181,15 @@ def cmd_create(args) -> dict:
         "structures": ["nodes/pages/", "nodes/entities/", "nodes/lists/", "nodes/reports/", "raws/", ".xu/"],
     }
     if alias_warning:
-        return warning(data, alias_warning, hints=["alias not bound; pick another"])
+        return error(
+            alias_warning,
+            "AliasConflict",
+            data=data,
+            hints=[
+                "pick another alias: xu alias set --wiki <name> --alias <new_alias>",
+                "check existing aliases: xu config show",
+            ],
+        )
     return success(
         data,
         f"created empty wiki '{name}' at {target}",

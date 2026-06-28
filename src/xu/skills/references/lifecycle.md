@@ -30,10 +30,23 @@ xu create --name <n> --path <abs> [--alias <a>]
 3. **Call `create`** — writes template, registers under `--name`
 4. **Verify** — `xu wikis`
 
+### Error responses
+
+| Condition | Status | Error class | Recovery |
+|---|---|---|---|
+| `--alias` already bound to another wiki | `error` | `AliasConflict` | `xu alias set --wiki <name> --alias <new>` |
+| Wiki name already registered at different path | `error` | `NameConflict` | Pick another `--name` |
+| Target dir exists and non-empty | `error` | `DirNotEmpty` | Use `register` or clear dir |
+
 ### Example
 
 ```bash
+# Happy path
 xu create --name research --path ~/Wikis/research --alias r
+
+# Alias conflict → pick another
+# CLI: error "AliasConflict"; hints: [recovery command]
+xu alias set --wiki research --alias new_alias
 ```
 
 ### Pitfalls
@@ -44,6 +57,7 @@ xu create --name research --path ~/Wikis/research --alias r
 | Relative path | `./foo` rejected at parse time |
 | Name collision | `NameConflict`; pick another name |
 | `create` for existing dir | Use `register` instead |
+| `--alias` conflict | CLI returns `AliasConflict` error; agent must pick another alias and bind via `xu alias set` |
 
 ---
 
