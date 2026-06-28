@@ -26,11 +26,17 @@ def _rel_add(args) -> dict:
     if args.from_uid == args.to_uid:
         return error("a node cannot relate to itself", "SelfRelation")
 
-    from_fm, _ = find_node_md(ctx, args.from_uid)
+    from_result = find_node_md(ctx, args.from_uid)
+    if not from_result:
+        return error(f"node not found: {args.from_uid}", "NodeNotFound")
+    from_fm, _ = from_result
     if not from_fm:
         return error(f"node not found: {args.from_uid}", "NodeNotFound")
 
-    to_fm, _ = find_node_md(ctx, args.to_uid)
+    to_result = find_node_md(ctx, args.to_uid)
+    if not to_result:
+        return error(f"node not found: {args.to_uid}", "NodeNotFound")
+    to_fm, _ = to_result
     if not to_fm:
         return error(f"node not found: {args.to_uid}", "NodeNotFound")
 
@@ -64,13 +70,17 @@ def _rel_list(args) -> dict:
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
-    from_fm, _ = find_node_md(ctx, args.from_uid)
+    from_result = find_node_md(ctx, args.from_uid)
+    if not from_result:
+        return error(f"node not found: {args.from_uid}", "NodeNotFound")
+    from_fm, _ = from_result
     if not from_fm:
         return error(f"node not found: {args.from_uid}", "NodeNotFound")
 
     rels = list_relations(from_fm, args.from_uid)
     for r in rels:
-        to_fm, _ = find_node_md(ctx, r["to_uid"])
+        to_result = find_node_md(ctx, r["to_uid"])
+        to_fm = to_result[0] if to_result else None
         r["to_title"] = to_fm.get("title", "(missing)") if to_fm else "(missing)"
         r["to_layer"] = to_fm.get("layer") if to_fm else None
     return success(

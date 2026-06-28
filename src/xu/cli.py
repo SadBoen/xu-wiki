@@ -371,12 +371,12 @@ def main(argv: list[str] | None = None) -> int:
     def _parser_error(message):
         raise _ArgParseError(message)
 
-    parser.error = _parser_error
+    parser.error = _parser_error  # type: ignore[method-assign]
     # Subparsers have their own .error method; override on every subparser too.
     for action in parser._actions:
         if isinstance(action, __import__("argparse")._SubParsersAction):
             for sub in action.choices.values():
-                sub.error = _parser_error
+                sub.error = _parser_error  # type: ignore[method-assign]
     try:
         args = parser.parse_args(argv)
     except _ArgParseError as e:

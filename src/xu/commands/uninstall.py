@@ -42,7 +42,8 @@ from ..utils.config import GLOBAL_DIR, load_registry
 from ..utils.response import error, success, warning
 from ..utils.wiki import is_wiki_root
 
-MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
+from .deploy_skill import MANIFEST_PATH, _read_manifest
+
 XU_SHARE_DIR = MANIFEST_PATH.parent
 
 
@@ -73,9 +74,9 @@ def _plan(args, *, mode: str | None = None) -> dict:
     keep_skill = bool(getattr(args, "keep_skill", False))
     targets = getattr(args, "targets", None) or []
     manifest = _read_manifest()
-    skill_deployments = manifest.get("deployments", []) if manifest else []
+    skill_deployments = manifest.deployments if manifest else []
     if targets:
-        skill_deployments = [d for d in skill_deployments if d.get("agent") in targets]
+        skill_deployments = [d for d in skill_deployments if d.agent in targets]
 
     plan = {
         "mode": resolved_mode,
@@ -83,8 +84,12 @@ def _plan(args, *, mode: str | None = None) -> dict:
         "pip_uninstall": not bool(getattr(args, "keep_pip", False)),
         "purge_skill": not keep_skill,
         "purge_config": not bool(getattr(args, "preserve_config", False)),
-        "targets": targets or [d["agent"] for d in skill_deployments],
-        "skill_deployments": skill_deployments,
+        "targets": targets or [d.agent for d in skill_deployments],
+        "skill_deployments": [
+            {"agent": d.agent, "skill_path": d.skill_path,
+             "mode": d.mode, "installed_at": d.installed_at}
+            for d in skill_deployments
+        ],
         "wikis_found": annotated,
         "global_dir": str(GLOBAL_DIR),
         "global_dir_exists": GLOBAL_DIR.exists(),
@@ -96,13 +101,7 @@ def _plan(args, *, mode: str | None = None) -> dict:
     return plan
 
 
-def _read_manifest() -> dict | None:
-    if not MANIFEST_PATH.exists():
-        return None
-    try:
-        return json.loads(MANIFEST_PATH.read_text())
-    except Exception:
-        return None
+
 
 
 
@@ -240,35 +239,44 @@ def _purge_skill_bundles(targets: list[str] | None = None) -> dict:
         return {"removed": [], "skipped": True,
                 "reason": "no manifest found; nothing to clean"}
 
-    deployments = manifest.get("deployments", [])
+    deployments = manifest.deployments
     if targets:
-        deployments = [d for d in deployments if d.get("agent") in targets]
+        deployments = [d for d in deployments if d.agent in targets]
 
     removed = []
     failures = []
     remaining = []
 
     for d in deployments:
-        skill_path = d.get("skill_path")
-        if not skill_path:
-            failures.append({"agent": d.get("agent"), "error": "no skill_path in manifest"})
+        if not d.skill_path:
+            failures.append({"agent": d.agent, "error": "no skill_path in manifest"})
             continue
-        p = Path(skill_path)
+        p = Path(d.skill_path)
         try:
             if p.is_symlink():
                 p.unlink()
             elif p.exists():
                 shutil.rmtree(p)
-            removed.append({"agent": d.get("agent"), "path": skill_path,
-                            "mode": d.get("mode", "unknown")})
+            removed.append({"agent": d.agent, "path": d.skill_path,
+                            "mode": d.mode})
         except Exception as e:
-            failures.append({"agent": d.get("agent"), "path": skill_path, "error": str(e)})
+            failures.append({"agent": d.agent, "path": d.skill_path, "error": str(e)})
         remaining.append(d)
 
     if remaining and not failures:
-        manifest["deployments"] = remaining
+        manifest.deployments = remaining
         try:
-            MANIFEST_PATH.write_text(json.dumps(manifest, indent=2))
+            MANIFEST_PATH.write_text(json.dumps({
+                "version": manifest.version,
+                "deployments": [
+                    {"agent": d.agent, "skill_path": d.skill_path,
+                     "mode": d.mode, "link_target": d.link_target,
+                     "installed_at": d.installed_at}
+                    for d in manifest.deployments
+                ],
+                "pip_installer": manifest.pip_installer,
+                "pip_package": manifest.pip_package,
+            }, indent=2))
         except Exception:
             pass
     elif not remaining or (not remaining and failures):

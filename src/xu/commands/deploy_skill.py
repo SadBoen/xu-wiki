@@ -46,12 +46,61 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from ..skills import ALL_SKILL_FILES, SKILL_NAME, SKILL_SRC_DIR
 from ..utils.response import error, success
 from .skills import _filter_bundle_files
+
+
+@dataclass
+class Deployment:
+    agent: str
+    skill_path: str
+    mode: str = "copy"
+    link_target: str | None = None
+    installed_at: str = ""
+
+
+@dataclass
+class Manifest:
+    version: str = "0.1.0"
+    deployments: list[Deployment] = field(default_factory=list)
+    pip_installer: str = "unknown"
+    pip_package: str = "xu-wiki"
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "Manifest":
+        deployments = []
+        for d in data.get("deployments", []):
+            if isinstance(d, dict):
+                deployments.append(Deployment(
+                    agent=str(d.get("agent", "")),
+                    skill_path=str(d.get("skill_path", "")),
+                    mode=str(d.get("mode", "copy")),
+                    link_target=d.get("link_target"),
+                    installed_at=str(d.get("installed_at", "")),
+                ))
+        return cls(
+            version=str(data.get("version", "0.1.0")),
+            deployments=deployments,
+            pip_installer=str(data.get("pip_installer", "unknown")),
+            pip_package=str(data.get("pip_package", "xu-wiki")),
+        )
+
+
+def _read_manifest() -> Manifest | None:
+    """Read and validate manifest.json. Returns None if absent or corrupt."""
+    if not MANIFEST_PATH.exists():
+        return None
+    try:
+        data = json.loads(MANIFEST_PATH.read_text())
+        return Manifest.from_json(data)
+    except Exception:
+        return None
 
 CANONICAL_SKILLS = Path("~/.local/share/xu-wiki/skills").expanduser()
 MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
@@ -231,28 +280,34 @@ def _deploy_one(target: str, use_copy: bool, src: Path) -> dict:
 
 def _write_manifest(target: str, dest: Path, mode: str, link_target: str | None) -> None:
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if MANIFEST_PATH.exists():
-        try:
-            m = json.loads(MANIFEST_PATH.read_text())
-        except Exception:
-            m = {"version": "0.1.0", "deployments": [],
-                 "pip_installer": "unknown", "pip_package": "xu-wiki"}
-    else:
-        m = {"version": "0.1.0", "deployments": [],
-             "pip_installer": "unknown", "pip_package": "xu-wiki"}
+    manifest = _read_manifest() or Manifest()
+    manifest.pip_installer = _detect_installer_for_manifest()
 
-    m["pip_installer"] = _detect_installer_for_manifest()
-    existing = [i for i in m.get("deployments", []) if i.get("agent") == target]
-    for old in existing:
-        m["deployments"].remove(old)
-    m["deployments"].append({
-        "agent": target,
-        "skill_path": str(dest),
-        "mode": mode,
-        "link_target": link_target,
-        "installed_at": datetime.now(timezone.utc).isoformat(),
-    })
-    MANIFEST_PATH.write_text(json.dumps(m, indent=2))
+    manifest.deployments = [d for d in manifest.deployments if d.agent != target]
+    manifest.deployments.append(Deployment(
+        agent=target,
+        skill_path=str(dest),
+        mode=mode,
+        link_target=link_target,
+        installed_at=datetime.now(timezone.utc).isoformat(),
+    ))
+
+    data = {
+        "version": manifest.version,
+        "deployments": [
+            {
+                "agent": d.agent,
+                "skill_path": d.skill_path,
+                "mode": d.mode,
+                "link_target": d.link_target,
+                "installed_at": d.installed_at,
+            }
+            for d in manifest.deployments
+        ],
+        "pip_installer": manifest.pip_installer,
+        "pip_package": manifest.pip_package,
+    }
+    MANIFEST_PATH.write_text(json.dumps(data, indent=2))
 
 
 def _detect_installer_for_manifest() -> str:

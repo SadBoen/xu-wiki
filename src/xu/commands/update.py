@@ -24,16 +24,7 @@ from pathlib import Path
 from .. import __version__
 from ..utils.response import error, success, warning
 
-MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
-
-
-def _read_manifest() -> dict | None:
-    if not MANIFEST_PATH.exists():
-        return None
-    try:
-        return json.loads(MANIFEST_PATH.read_text())
-    except Exception:
-        return None
+from .deploy_skill import _read_manifest
 
 
 def _detect_installer() -> str:
@@ -205,7 +196,7 @@ def cmd_update(args) -> dict:
     if redeploy:
         manifest = _read_manifest()
         if manifest:
-            targets = [d["agent"] for d in manifest.get("deployments", [])]
+            targets = [d.agent for d in manifest.deployments]
             if targets:
                 redeploy_result = _redeploy_skills(targets)
 

@@ -29,7 +29,10 @@ def cmd_reorganize(args) -> dict:
     except ValueError as e:
         return error(str(e), "BadNodePath")
 
-    fm_dict, body = find_node_md(ctx, args.uid)
+    result = find_node_md(ctx, args.uid)
+    if not result:
+        return error(f"node not found: {args.uid}", "NodeNotFound")
+    fm_dict, body = result
     if not fm_dict:
         return error(f"node not found: {args.uid}", "NodeNotFound")
 

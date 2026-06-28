@@ -10,6 +10,8 @@ Position = list index (head = 0). No SQLite; frontmatter is the sole store.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from ..utils.constants import FM_RELATIONS, MAX_EDGES
 from ..utils.paths import now_ts
 
@@ -32,7 +34,7 @@ def add_relation(
     relation_name: str,
     comment: str = "",
     max_edges: int = MAX_EDGES,
-) -> dict:
+) -> dict[str, Any]:
     """Insert/refresh a relation at the head. Returns {created|refreshed, evicted}.
 
     Matches OLD SQLite semantics: bulk position+1 on all existing edges,
@@ -71,8 +73,8 @@ def add_relation(
 
     if len(raw) > max_edges:
         evicted = raw.pop()
-        result = {"action": "refreshed" if existing_idx is not None else "created",
-                  "evicted": {"to_uid": evicted["to_uid"], "relation_name": evicted["relation_name"]}}
+        result: dict[str, Any] = {"action": "refreshed" if existing_idx is not None else "created",
+                                   "evicted": {"to_uid": evicted["to_uid"], "relation_name": evicted["relation_name"]}}
     else:
         result = {"action": "refreshed" if existing_idx is not None else "created", "evicted": None}
 

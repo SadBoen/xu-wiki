@@ -86,7 +86,7 @@ def _do_mineru(path: str, key: str) -> str:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"[mineru] HTTP {e.code}: {e.read()[:500]}")
+        raise RuntimeError(f"[mineru] HTTP {e.code}: {e.read()[:500].decode(errors='replace')}")
     except urllib.error.URLError as e:
         raise RuntimeError(f"[mineru] network error: {e}")
 

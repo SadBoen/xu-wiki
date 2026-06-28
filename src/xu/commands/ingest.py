@@ -635,8 +635,8 @@ def cmd_ingest_commit(args) -> dict:
     hints = ["query to retrieve; read --uid for full body"]
     if parser_used == "native":
         hints.insert(0, "DEPRECATED: --native is deprecated; use --temp for external documents (PRIN-ING-6)")
-    if created and created[0]["md_path"].startswith("nodes/page/"):
-        bare = created[0]["md_path"][len("nodes/page/"):]
+    if created and str(created[0]["md_path"]).startswith("nodes/page/"):
+        bare = str(created[0]["md_path"])[len("nodes/page/"):]
         if "/" not in bare:
             hints.append("node_path is empty — all pages are piling at nodes/page/ root; future ingest should pass --node-path to organize by category")
     return success(data, f"committed {len(created)} Node_Page via {parser_used}", hints=hints)

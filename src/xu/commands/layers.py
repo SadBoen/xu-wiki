@@ -108,7 +108,7 @@ def _list_show(args) -> dict:
             continue
     if frontmatter is None:
         return error(f"List not found: {args.uid}", "ListNotFound")
-    members = []
+    members: list = []
     if body.strip():
         try:
             members = yaml.safe_load(body) or []
