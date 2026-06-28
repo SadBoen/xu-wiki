@@ -15,13 +15,7 @@ Page is immutable. Body form must match content type.
 | user explicitly says "表格" / "table" | `table` | Trust user intent |
 
 **Rule: PDF/DOCX/PPTX/XLSX → always `article` unless user explicitly says `table`.**
-markitdown 输出的是 markdown prose，不兼容 `table` 的 YAML list 格式要求。
-
-| User says | Route to | Agent action |
-|---|---|---|
-| PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` → `ingest-verify` | Use default content-type from table above |
-| N images, one theme | `ingest-file --files <paths>` Phase1 → `ingest-commit --content-type gallery` Phase2 | Ask "vision per-photo?" first |
-| code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article` |
+markitdown outputs markdown prose, incompatible with `table`'s YAML list requirement.
 
 ## CLI palette
 
