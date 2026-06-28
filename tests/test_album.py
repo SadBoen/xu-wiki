@@ -109,7 +109,6 @@ def test_album_happy_table(wiki, tmp_path):
                    node_path="船舶/SGW001/照片", layout="table")
     assert r["status"] == "success", r
     data = r["data"]
-    assert data["layout"] == "table"
     assert data["count"] == 3
 
     # raws/ copied
@@ -126,7 +125,6 @@ def test_album_happy_table(wiki, tmp_path):
     assert front["content_type"] == "gallery"
     assert front["source_hashes"]
     assert len(front["source_hashes"]) == 3
-    assert front["attrs"]["album"]["layout"] == "table"
     assert front["attrs"]["album"]["count"] == 3
     assert front["attrs"]["album"]["vision"] is False
     assert len(front["attrs"]["album"]["sources"]) == 3
@@ -137,19 +135,6 @@ def test_album_happy_table(wiki, tmp_path):
     assert len(items) == 3
     assert [i["filename"] for i in items] == ["001.jpeg", "002.jpeg", "003.jpeg"]
     assert items[0]["raw_rel_path"] == "raws/船舶/SGW001/照片/001.jpeg"
-
-
-def test_album_happy_list(wiki, tmp_path):
-    name, _ = wiki
-    for n in ("a.png", "b.png"):
-        p = tmp_path / "pics" / n
-        _write_fake_jpeg(p, body=f"img-{n}".encode())
-    files_str = ",".join(str(tmp_path / "pics" / n) for n in ("a.png", "b.png"))
-
-    r = _two_phase(name, "List layout album", files_str, layout="list")
-    assert r["status"] == "success", r
-    assert r["data"]["layout"] == "list"
-    assert r["data"]["count"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -203,19 +188,6 @@ def test_album_phase1_file_not_found(wiki, tmp_path):
     ))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "FileNotFound"
-
-
-def test_album_phase1_invalid_layout(wiki, tmp_path):
-    name, _ = wiki
-    p = tmp_path / "x.jpeg"
-    _write_fake_jpeg(p)
-    r = ingest_mod.cmd_ingest_file(_args(
-        wiki=name, title="t", files=str(p),
-        node_path="", layout="yaml", vision=False, captions="",
-        author="agent", file=None,
-    ))
-    assert r["status"] == "error"
-    assert r["data"]["error_class"] == "InvalidLayout"
 
 
 # ---------------------------------------------------------------------------

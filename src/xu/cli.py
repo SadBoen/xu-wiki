@@ -57,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--files", help="comma-separated absolute image paths (for gallery/album content)")
     sp.add_argument("--title", required=False, help="title for the node (used in Phase 2 commit)")
     sp.add_argument("--node-path", default="", help="logical partition path")
-    sp.add_argument("--layout", default="table", choices=["table", "list"],
+    sp.add_argument("--layout", default="table", choices=["table"],
                     help="body layout for gallery content (default table)")
     sp.add_argument("--vision", action="store_true",
                     help="mark vision intent (per-photo captions); SOP should ask user first")

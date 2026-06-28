@@ -106,9 +106,6 @@ def _detect_content_type(path: Path) -> str:
 # Album/gallery helpers (shared between Phase 1 and Phase 2)
 # ---------------------------------------------------------------------------
 
-ALBUM_LAYOUTS = ("table", "list")
-
-
 def _parse_captions(raw: str) -> dict[str, str]:
     """Parse --captions JSON: {filename: description_string}."""
     if not raw:
@@ -127,7 +124,7 @@ def _parse_captions(raw: str) -> dict[str, str]:
     return out
 
 
-def _render_body(rows: list[dict[str, Any]], layout: str = "table") -> str:
+def _render_body(rows: list[dict[str, Any]]) -> str:
     items = []
     for r in rows:
         w, h = r.get("width"), r.get("height")
@@ -253,10 +250,6 @@ def cmd_ingest_file(args) -> dict:
 
 def _cmd_ingest_file_album(ctx, args) -> dict:
     """Phase 1 for gallery mode: copy raws + extract meta + write temp file."""
-    layout = (args.layout or "table").lower()
-    if layout not in ALBUM_LAYOUTS:
-        return error(f"invalid layout: {args.layout!r}; must be one of {ALBUM_LAYOUTS}",
-                     "InvalidLayout")
     vision = bool(getattr(args, "vision", False))
 
     raw_files = [p.strip() for p in args.files.split(",") if p.strip()]
@@ -345,13 +338,12 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         if not dst.exists():
             shutil.copy2(src, dst)
 
-    body = _render_body(new_rows, layout)
+    body = _render_body(new_rows)
 
     frontmatter_dict = {
         "mode": "album",
         "title": title,
         "node_path": node_path,
-        "layout": layout,
         "vision": vision,
     }
     yaml_header = yaml.dump(frontmatter_dict, allow_unicode=True, default_flow_style=False)
@@ -722,8 +714,7 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         )
 
     # Re-render body with only new (non-duplicate) images
-    layout = meta.get("layout", "table")
-    body = _render_body(new_body_items, layout)
+    body = _render_body(new_body_items)
     content_hash = sha256_text(body)
 
     uid = gen_uid()
@@ -745,7 +736,6 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         FM_SOURCE_HASHES: [item["sha256"] for item in new_body_items],
         "attrs": {
             "album": {
-                "layout": layout,
                 "count": len(new_body_items),
                 "vision": bool(meta.get("vision", False)),
                 "sources": [
@@ -783,7 +773,6 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         "uid": uid,
         "title": args.title,
         "node_path": node_path_val,
-        "layout": layout,
         "count": len(new_body_items),
         "skipped": skipped,
         "md_path": str(rel_md).replace("\\", "/"),

@@ -37,7 +37,7 @@ xu ingest-commit --wiki <w> --temp <f> --title <t> \
 
 # Album single-shot
 xu ingest-album --wiki <w> --title <t> --files <abs1,abs2,...> \
-  [--node-path <p>] [--layout table|list] [--vision] \
+  [--node-path <p>] [--layout table] [--vision] \
   [--captions '<json>'] [--author <a>]
 
 # Phase 3
@@ -65,7 +65,7 @@ xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [
 ## Workflow — album
 
 1. **Ask vision intent** — "need per-photo AI captions?" → set `--vision` if yes
-2. **`ingest-album`** — one Page with table/list. Album theme = `--title`
+2. **`ingest-album`** — one Page with table layout. Album theme = `--title`
 3. **`ingest-verify`**
 4. **(Optional) Wire relations**
 
