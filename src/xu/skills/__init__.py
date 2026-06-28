@@ -18,13 +18,11 @@ SKILL_SRC = SKILL_SRC_DIR / "SKILL.md"                   # entry-point (always p
 # Per-SOP task files. SKILL.md is the index; SOPs are self-contained
 # (no cross-references between them). All in references/.
 SOP_TASK_FILES = (
-    "references/create.md",
+    "references/lifecycle.md",
     "references/ingest.md",
     "references/query.md",
     "references/doctor.md",
     "references/config.md",
-    "references/uninstall.md",
-    "references/update.md",
 )
 # Reference files. Empty by design — their existence signals to the Agent
 # "this kind of content lives here, do not scatter ad-hoc files".

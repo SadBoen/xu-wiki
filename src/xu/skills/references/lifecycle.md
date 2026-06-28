@@ -70,18 +70,25 @@ Wiki files are untouched; only the registry entry is removed.
 ## update — upgrade xu-wiki
 
 ```bash
-xu update                    # upgrade pip package + re-deploy skills to all manifest targets
-xu update --check            # check PyPI for newer version, no side effects
-xu update --no-redeploy      # only upgrade pip package, skip skill re-deploy
+xu update                    # install latest from GitHub main + re-deploy skills to all manifest targets
+xu update --check            # check GitHub for latest commit SHA, no side effects
+xu update --no-redeploy      # only install latest, skip skill re-deploy
 ```
 
 **Wiki data is NEVER touched.**
 
 ### Workflow
 
-1. `xu update --check` — reports `{status, data: {current, latest, update_available}}`
-2. `xu update` — pip upgrade + re-deploy skill bundles
+1. `xu update --check` — reports `{status, data: {current, latest, latest_date, update_available}}`
+2. `xu update` — install from `git+https://github.com/SadBoen/xu-wiki.git@main` + re-deploy skill bundles
 3. `xu selfcheck` — verify
+
+### How it works
+
+- **Install source**: always `git+https://github.com/SadBoen/xu-wiki.git@main` (bypasses PyPI)
+- **Version tracking**: current version = installed commit SHA (12 chars); detected from `direct_url.json` in site-packages
+- **Version check**: fetches latest commit SHA from GitHub API (`https://api.github.com/repos/SadBoen/xu-wiki/commits/main`)
+- **Skill re-deploy**: reads `~/.local/share/xu-wiki/manifest.json` → deploys updated skill files to each agent target
 
 ### Safety
 

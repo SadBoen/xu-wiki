@@ -1,13 +1,11 @@
 """`xu update` — upgrade xu-wiki program body and re-deploy skill bundles.
 
-Update = pip upgrade + skill re-deploy. No wiki data is touched (BAN-UNINST-1).
+Update = install from GitHub main + skill re-deploy. No wiki data is touched (BAN-UNINST-1).
 
---check mode: fetch latest version from PyPI and compare with installed version.
+--check mode: fetch latest commit SHA from GitHub main and compare with installed version.
   Returns {status, data: {current, latest, update_available}, message}.
-  Works for both PyPI-installed and git-installed packages.
 
-Default mode (no --check): upgrade the pip package in-place, then re-deploy
-  skill bundles to every target recorded in the manifest.
+Default mode (no --check): upgrade from GitHub main, then re-deploy skill bundles.
 
 Flags:
   --check       Only check for updates; do not install anything.
@@ -26,6 +24,9 @@ from ..utils.response import error, success, warning
 
 from .deploy_skill import _read_manifest
 
+GITHUB_REPO = "SadBoen/xu-wiki"
+GIT_INSTALL_URL = f"git+https://github.com/{GITHUB_REPO}.git@main"
+
 
 def _detect_installer() -> str:
     prefix = Path(sys.prefix).resolve()
@@ -38,8 +39,38 @@ def _detect_installer() -> str:
     return "unknown"
 
 
+def _current_commit() -> str | None:
+    try:
+        import re
+        spec_file = None
+        for p in (Path(sys.prefix) / "xu_wiki-*.dist-info" / "direct_url.json").parent.glob("xu_wiki-*.dist-info"):
+            spec_file = p / "direct_url.json"
+            break
+        if spec_file is None:
+            for p in (Path(sys.prefix) / "xu-wiki-*.dist-info" / "direct_url.json").parent.glob("xu-wiki-*.dist-info"):
+                spec_file = p / "direct_url.json"
+                break
+        if spec_file and spec_file.exists():
+            d = json.loads(spec_file.read_text())
+            url = d.get("url", "")
+            m = re.search(r"[a-f0-9]{40}", url)
+            if m:
+                return m.group(0)[:12]
+    except Exception:
+        pass
+    return None
+
+
 def _pipx_upgrade() -> dict:
-    cmd = ["python3", "-m", "pipx", "upgrade", "xu-wiki"]
+    pipx_python = Path(sys.prefix) / "bin" / "python3"
+    if not pipx_python.exists():
+        pipx_python = Path(sys.prefix) / "bin" / "python"
+    cmd = [
+        str(pipx_python), "-m", "pip", "install", "--upgrade",
+        f"git+https://github.com/{GITHUB_REPO}.git@main",
+    ]
+    if not sys.stdout.isatty():
+        cmd.append("--quiet")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
         return {
@@ -55,21 +86,20 @@ def _pipx_upgrade() -> dict:
         return {"command": " ".join(cmd), "error": str(e), "ok": False}
 
 
-def _pip_upgrade(extra_index: str | None = None) -> dict:
-    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "xu-wiki"]
-    if extra_index:
-        cmd.extend(["--extra-index-url", extra_index])
+def _pip_upgrade() -> dict:
+    cmd = [
+        sys.executable, "-m", "pip", "install", "--upgrade",
+        f"git+https://github.com/{GITHUB_REPO}.git@main",
+    ]
     if not sys.stdout.isatty():
         cmd.append("--quiet")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-        stdout_tail = (proc.stdout or "")[-500:]
-        stderr_tail = (proc.stderr or "")[-500:]
         return {
             "command": " ".join(cmd),
             "returncode": proc.returncode,
-            "stdout_tail": stdout_tail,
-            "stderr_tail": stderr_tail,
+            "stdout_tail": (proc.stdout or "")[-500:],
+            "stderr_tail": (proc.stderr or "")[-500:],
             "ok": proc.returncode == 0,
         }
     except subprocess.TimeoutExpired:
@@ -78,31 +108,35 @@ def _pip_upgrade(extra_index: str | None = None) -> dict:
         return {"command": " ".join(cmd), "error": str(e), "ok": False}
 
 
-def _fetch_pypi_version() -> str | None:
+def _fetch_github_version() -> tuple[str | None, str | None]:
     try:
         import urllib.request
-        url = "https://pypi.org/pypi/xu-wiki/json"
-        with urllib.request.urlopen(url, timeout=10) as r:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/commits/main"
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
             data = json.loads(r.read())
-        return data.get("info", {}).get("version")
+        sha = data.get("sha", "")[:12]
+        date = data.get("commit", {}).get("committer", {}).get("date", "")
+        return sha, date
     except Exception:
-        return None
+        return None, None
 
 
 def _check_update() -> dict:
-    current = __version__
-    latest = _fetch_pypi_version()
+    current = _current_commit() or __version__
+    latest, latest_date = _fetch_github_version()
     if latest is None:
         return {
             "current": current,
             "latest": None,
             "update_available": None,
-            "note": "could not fetch latest version from PyPI",
+            "note": "could not fetch latest commit from GitHub",
         }
     update_available = latest != current
     return {
         "current": current,
         "latest": latest,
+        "latest_date": latest_date,
         "update_available": update_available,
     }
 
@@ -172,7 +206,7 @@ def cmd_update(args) -> dict:
         if info["update_available"] is None:
             return warning(
                 info,
-                f"could not determine latest version (PyPI unreachable); "
+                f"could not determine latest commit (GitHub unreachable); "
                 f"installed: {info['current']}",
             )
         if info["update_available"]:
@@ -180,7 +214,7 @@ def cmd_update(args) -> dict:
                 info,
                 f"update available: {info['current']} → {info['latest']}",
             )
-        return success(info, f"up to date (v{info['current']})")
+        return success(info, f"up to date ({info['current']})")
 
     # --- execute update ---
     installer = _detect_installer()
@@ -202,8 +236,9 @@ def cmd_update(args) -> dict:
 
     # 3) emit result
     all_ok = pip_result.get("ok", False)
+    installed = _current_commit() or __version__
     if all_ok:
-        parts = [f"upgraded (v{__version__})"]
+        parts = [f"upgraded ({installed})"]
         if redeploy_result:
             parts.append(
                 f"skills re-deployed ({redeploy_result['succeeded']}/{redeploy_result['total']} targets)"
