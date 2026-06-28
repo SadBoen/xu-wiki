@@ -51,6 +51,9 @@ bash tests/e2e_verify.sh
 ```bash
 xu deploy skill --target <agent>   # hermes, trae, claude, cursor, auto
 xu selfcheck                       # verify install is complete
+xu update                          # upgrade xu-wiki + re-deploy skills to all manifest targets
+xu update --check                  # only check if update is available
+xu update --no-redeploy            # upgrade pip package only, skip skill re-deploy
 ```
 
 Skill files are in `src/xu/skills/` (SKILL.md + references/).

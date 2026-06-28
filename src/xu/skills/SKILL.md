@@ -42,6 +42,8 @@ DB, no lock, git-friendly.
 | `/xu-wiki ingest` | 导入内容（PDF/DOCX/图片/相册） | `ingest.md` |
 | `/xu-wiki query` | 搜索 + 多轮展开 + 反射 | `query.md` |
 | `/xu-wiki doctor` | 一致性检查 / 修复 / 重建 | `doctor.md` |
-| `/xu-wiki config` | 别名 / 注册表 / 卸载 | `config.md` |
+| `/xu-wiki config` | 别名 / 注册表 / MinerU key | `config.md` |
+| `/xu-wiki update` | 升级 xu-wiki + 重新部署 skill bundle | `update.md` |
+| `/xu-wiki uninstall` | 卸载 xu-wiki（默认 dry-run） | `uninstall.md` |
 
 每个 SOP 的详细步骤、flag 说明、常见陷阱均在对应的 `references/*.md` 中。

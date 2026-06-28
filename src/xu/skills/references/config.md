@@ -1,6 +1,6 @@
-# config — wiki config & software lifecycle
+# config — wiki registry, aliases & global settings
 
-Everything that isn't wiki data: registry, aliases, MinerU key, uninstall.
+Everything that isn't wiki data: registry, aliases, MinerU key.
 
 ## CLI palette
 
@@ -22,12 +22,8 @@ xu config set-mineru-key   # reads MINERU_API_KEY env (safer)
 xu config show             # secrets masked
 
 # Skill bundle
-xu skills path             # source dir of xu-wiki skill bundle
-xu skills list             # list files in bundle
-
-# Uninstall (dry-run first, then --execute)
-xu uninstall
-xu uninstall --execute [--preserve-config] [--keep-pip] [--keep-skill] [--target <agent>]
+xu skills path             # source dir of the xu-wiki skill bundle
+xu skills list             # list files in the bundle
 ```
 
 ## Safety table
@@ -39,34 +35,6 @@ xu uninstall --execute [--preserve-config] [--keep-pip] [--keep-skill] [--target
 | `register` / `unregister` | no (registry only) | no | yes | yes |
 | `config set-mineru-key` | no | no | yes | yes |
 | `skills path` / `skills list` | no | no | no | n/a |
-| `uninstall` (dry-run) | never | no | no | n/a |
-| `uninstall --execute` | **never** | yes | only without `--preserve-config` | **no** |
-
-## Unworkflow — uninstall
-
-**Step 1 — dry-run:**
-```bash
-xu uninstall
-```
-Read `data.plan`, present to user. **Wiki data is NEVER touched.**
-
-**Step 2 — confirm:**
-User must explicitly confirm before `--execute`.
-
-**Step 3 — execute:**
-```bash
-xu uninstall --execute [--flags]
-```
-
-Scope options:
-
-| Scope | Flags |
-|---|---|
-| (a) Standard | `--execute` |
-| (b) Keep config | `--execute --preserve-config` |
-| (c) Keep pip | `--execute --keep-pip` (test escape hatch) |
-| (d) Keep skill | `--execute --keep-skill` |
-| (e) Target specific | `--execute --target <agent>` |
 
 ## Setup workflow
 
@@ -94,5 +62,4 @@ xu register --name legacy --path /abs/path/to/existing/wiki --alias lg
 | `create` for existing dir | Use `register` instead |
 | Hardcoding MinerU key | Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml` |
 | `xu install` | Doesn't exist — use `pip install` |
-| `--keep-pip` in user flow | Test escape hatch — never in normal flows |
 

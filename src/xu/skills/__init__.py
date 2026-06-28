@@ -23,6 +23,8 @@ SOP_TASK_FILES = (
     "references/query.md",
     "references/doctor.md",
     "references/config.md",
+    "references/uninstall.md",
+    "references/update.md",
 )
 # Reference files. Empty by design — their existence signals to the Agent
 # "this kind of content lives here, do not scatter ad-hoc files".

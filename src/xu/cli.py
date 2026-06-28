@@ -243,7 +243,14 @@ def build_parser() -> argparse.ArgumentParser:
     csub.add_parser("show", help="show global config (secrets masked)").set_defaults(func="config_show")
     csub.add_parser("path", help="print global config file paths").set_defaults(func="config_path")
 
-    # ---- M7: software lifecycle (only uninstall lives here; install = pip) ----
+    # ---- M7: software lifecycle (install = pip; update / uninstall = CLI) ----
+    sp = sub.add_parser("update", help="upgrade xu-wiki in-place (pip) and re-deploy skill bundles")
+    sp.add_argument("--check", action="store_true",
+                    help="only check for updates; do not install anything")
+    sp.add_argument("--no-redeploy", action="store_true",
+                    help="skip skill re-deploy step after pip upgrade")
+    sp.set_defaults(func="update")
+
     sp = sub.add_parser("uninstall", help="dry-run by default; --execute to actually uninstall xu-wiki")
     g_dry = sp.add_mutually_exclusive_group()
     g_dry.add_argument("--dry-run", dest="dry_run", action="store_true",
@@ -319,6 +326,7 @@ _DISPATCH_TABLE: dict[str, tuple[str, str]] = {
     "config_show": ("commands.config", "cmd_config_show"),
     "config_path": ("commands.config", "cmd_config_path"),
     "uninstall": ("commands.uninstall", "cmd_uninstall"),
+    "update": ("commands.update", "cmd_update"),
     "selfcheck": ("commands.selfcheck", "cmd_selfcheck"),
     "deploy_skill": ("commands.deploy_skill", "cmd_deploy_skill"),
 }

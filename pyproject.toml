@@ -25,15 +25,17 @@ xu = "xu.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"xu.skills" = [
-    "SKILL.md",
-    "references/create.md",
-    "references/ingest.md",
-    "references/query.md",
-    "references/doctor.md",
-    "references/config.md",
-    "references/error-catalog.md",
-]
+    "xu.skills" = [
+        "SKILL.md",
+        "references/create.md",
+        "references/ingest.md",
+        "references/query.md",
+        "references/doctor.md",
+        "references/config.md",
+        "references/uninstall.md",
+        "references/update.md",
+        "references/error-catalog.md",
+    ]
 
 [tool.xu-wiki]
 marker = "xu-wiki-project"
