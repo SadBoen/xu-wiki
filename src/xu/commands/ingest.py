@@ -821,14 +821,14 @@ def _raw_path_checks(ctx, frontmatter) -> list[dict]:
         for src in album_sources:
             raw_rel = src.get("raw_rel_path", "") if isinstance(src, dict) else ""
             if not raw_rel:
-                add_check("raw_file_exists", "fail", "source missing raw_rel_path")
+                add_check("raw_file_exists", "warning", "source missing raw_rel_path")
                 continue
             raw_file = ctx.root / raw_rel
             try:
                 file_ok = raw_file.exists()
             except OSError:
                 file_ok = False
-            add_check("raw_file_exists", "pass" if file_ok else "fail", str(raw_file))
+            add_check("raw_file_exists", "pass" if file_ok else "warning", str(raw_file))
             if node_path:
                 expected_prefix = f"raws/{node_path}"
                 ok = raw_rel.startswith(expected_prefix + "/") or raw_rel == expected_prefix
@@ -843,7 +843,7 @@ def _raw_path_checks(ctx, frontmatter) -> list[dict]:
             file_ok = raw_file.exists()
         except OSError:
             file_ok = False
-        add_check("raw_file_exists", "pass" if file_ok else "fail", str(raw_file))
+        add_check("raw_file_exists", "pass" if file_ok else "warning", str(raw_file))
         if node_path:
             expected_prefix = f"raws/{node_path}"
             ok = raw_path_str.startswith(expected_prefix + "/") or raw_path_str == expected_prefix
