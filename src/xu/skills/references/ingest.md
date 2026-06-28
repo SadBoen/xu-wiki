@@ -98,6 +98,8 @@ If `data.page_count > 1`: tell user "文档较长，已自动按容量分片为 
 
 ## Ingest verify — 6 checks (gallery skips content_hash_match)
 
+Run: `xu ingest-verify --wiki <w> --uid <uid>`
+
 `nodes_file_exists` · `frontmatter_complete` · `content_hash_match` (non-gallery) · `content_type_body_match` · `raw_file_exists` · `raw_path_node_path_mirror`
 
 ## Pitfalls
