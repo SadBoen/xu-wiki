@@ -11,7 +11,7 @@ import importlib
 import json
 import shutil
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 from pathlib import Path
@@ -386,7 +386,6 @@ def _parse_temp_header(text: str) -> tuple[dict, str]:
           raw_rel_path: raws/events/2026wwc/001.jpeg
           ...
     """
-    import re
     meta: dict = {}
 
     # HTML-comment style (single-file / legacy)
@@ -697,7 +696,6 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
     base_slug = safe_slug(args.title)
     slug = f"{base_slug}-{uid}"
     ts = now_ts()
-    author = getattr(args, "author", None) or "agent"
 
     frontmatter: dict[str, Any] = {
         FM_UID: uid,

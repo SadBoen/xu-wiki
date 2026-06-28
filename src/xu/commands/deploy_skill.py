@@ -51,14 +51,10 @@ from pathlib import Path
 
 from ..skills import ALL_SKILL_FILES, SKILL_NAME, SKILL_SRC_DIR
 from ..utils.response import error, success
+from .skills import _filter_bundle_files
 
 CANONICAL_SKILLS = Path("~/.local/share/xu-wiki/skills").expanduser()
 MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
-
-# Reuse the same filter the `xu skills list` command uses, so the
-# deploy output is provably the same set as what the agent sees in
-# `xu skills list`.
-from .skills import _filter_bundle_files
 
 
 # Target → (description, path template, project_local_bool)
