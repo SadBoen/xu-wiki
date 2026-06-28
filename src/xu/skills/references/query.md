@@ -56,11 +56,29 @@ xu entity modify --wiki <w> --uid <uid> [--title <t>] [--body <md>]
 
 Always add English forms. Example: `"现在库里面收录了几条船？"` → `--keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
 
-## Post-query reflection
+## Counting queries (e.g. "几条船", "how many X")
 
-1. Inspect `data.reflection` — it scans existing Entity/List/Report for keyword matches and suggests whether to create new ones
-2. Extend existing if found; else LLM decides to create
-3. Wire relations with `query-relation add`
+- `xu query` returns PAGE blocks, **not entity counts** — do NOT use it to count
+- Required flow:
+  1. Call `xu nodes --wiki <w> --layer Entity`
+  2. If count > 0 → answer from `data.nodes`
+  3. If count = 0 → answer from query blocks + invoke post-query reflection to extract entities
+
+## Post-query reflection (IF/THEN)
+
+```
+IF data.reflection.suggest_extract_entities == true
+  AND nodes --layer Entity returns empty
+  THEN entity create immediately, do NOT ask user
+
+IF data.reflection.suggest_extend_list == true
+  THEN list modify --add-members, do NOT ask user
+
+IF new entities or lists were created
+  THEN wire relations with query-relation add, do NOT ask user
+```
+
+Reflection triggers are **auto-actions**, not prompts. Never pause to ask "要不要建".
 
 ## Example
 

@@ -36,6 +36,8 @@ DB, no lock, git-friendly.
 
 **不对称创建偏好**：ingest 后倾向于扩展 List，query 后倾向于生成 Report。Agent 自主决定，不需用户确认。创建前先 query 是否已有相似的，有则扩展，无则新建。
 
+**Hard rule：SOP 内部决策不向用户确认。** Reflection → create → wire 是原子循环，用户只看最终结果。
+
 ## SOP 入口
 
 5 个 SOP，覆盖 wiki 内容操作和生命周期管理：
