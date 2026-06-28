@@ -1,6 +1,6 @@
 ---
 name: "xu-wiki"
-description: "Manage a relation-driven wiki via 7 SOPs. Deterministic CLI, no LLM calls."
+description: "Manage a relation-driven wiki via 5 SOPs. Deterministic CLI, no LLM calls."
 ---
 
 # xu-wiki
@@ -38,14 +38,14 @@ DB, no lock, git-friendly.
 
 ## SOP 入口
 
+5 个 SOP，覆盖 wiki 内容操作和生命周期管理：
+
 | 命令 | 职责 | 详情 |
 |---|---|---|
-| `/xu-wiki create` | 创建空 wiki | `create.md` |
+| `/xu-wiki lifecycle` | wiki 创建/注册/注销 + 程序更新/卸载 | `lifecycle.md` |
+| `/xu-wiki config` | 别名 / 注册表 / MinerU key | `config.md` |
 | `/xu-wiki ingest` | 导入内容（PDF/DOCX/图片/相册） | `ingest.md` |
 | `/xu-wiki query` | 搜索 + 多轮展开 + 反射 | `query.md` |
 | `/xu-wiki doctor` | 一致性检查 / 修复 / 重建 | `doctor.md` |
-| `/xu-wiki config` | 别名 / 注册表 / MinerU key | `config.md` |
-| `/xu-wiki update` | 升级 xu-wiki + 重新部署 skill bundle | `update.md` |
-| `/xu-wiki uninstall` | 卸载 xu-wiki（默认 dry-run） | `uninstall.md` |
 
 每个 SOP 的详细步骤、flag 说明、常见陷阱均在对应的 `references/*.md` 中。

@@ -1,14 +1,14 @@
 # 08 — `SOP` 层设计原则
 
 > **目的**：本文是面向开发者的设计原则文档，用于定义 xu-wiki 在 Agent 工作流中的 SOP（Standard Operating Procedure）层——用户/Agent 层的 5 类意图动词如何映射到 CLI 层的原子命令。
-> **范围**：覆盖 SOP 与 CLI 的边界关系、5 大 SOP 的定义、SOP → CLI 的映射规则、以及 install/uninstall 与 SOP 的切割。
+> **范围**：覆盖 SOP 与 CLI 的边界关系、5 大 SOP 的定义、SOP → CLI 的映射规则、以及 install/uninstall 与 SOP 的切割（SOP 只负责内容操作，lifecycle 操作由单独 SOP 统一管理）。
 > **风格**：每条原则标 `[PRIN-SOP-N]` / `[BAN-SOP-N]` / `[CONST-SOP-N]` / `[DESIGN-SOP-N]`。
 
 ---
 
 ## 一、一句话定位
 
-SOP 层是 xu-wiki skill 暴露给 Agent 的**5 个意图动词**（create / ingest / query / doctor / config），每个动词在内部编排一组 CLI 原子命令完成工作流。Agent 与 SOP 交互，**不与 CLI 子命令直接交互**——slash command `/xu-wiki <verb>` 是 SOP 入口，**不是** `xu-wiki <subcmd>` 的别名。
+SOP 层是 xu-wiki skill 暴露给 Agent 的**5 个意图动词**（lifecycle / config / ingest / query / doctor），每个动词在内部编排一组 CLI 原子命令完成工作流。Agent 与 SOP 交互，**不与 CLI 子命令直接交互**——slash command `/xu-wiki <verb>` 是 SOP 入口，**不是** `xu-wiki <subcmd>` 的别名。
 
 调用链的三个角色：
 
@@ -74,7 +74,7 @@ SOP 不是「这一组 CLI 的别名」，而是「**这一类用户意图**的�
 正确框架（按意图归类）：
 - **破坏性 / 修复性意图**（删、改、查后修、移位）→ doctor SOP
 - **配置性意图**（注册、别名、密钥、路径）→ config SOP
-- **构建性意图**（建库、入库、建关系）→ create / ingest SOP
+- **构建性意图**（建库、入库、建关系）→ lifecycle / ingest SOP
 - **检索性意图**（找内容、列节点、读全文）→ query SOP
 
 反例（按 CLI 归类，是错误的）：
