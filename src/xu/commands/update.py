@@ -28,6 +28,15 @@ GITHUB_REPO = "SadBoen/xu-wiki"
 GIT_INSTALL_URL = f"git+https://github.com/{GITHUB_REPO}.git@main"
 
 
+def _is_installed() -> bool:
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec("xu")
+        return spec is not None
+    except Exception:
+        return False
+
+
 def _detect_installer() -> str:
     prefix = Path(sys.prefix).resolve()
     base = Path(sys.base_prefix).resolve()
@@ -199,15 +208,17 @@ def _redeploy_one(target: str) -> dict:
 def cmd_update(args) -> dict:
     check_only = bool(getattr(args, "check", False))
     redeploy = not bool(getattr(args, "no_redeploy", False))
+    first_install = not _is_installed()
 
     # --check: only version report, no side effects
     if check_only:
         info = _check_update()
         if info["update_available"] is None:
+            note = " (first install — will fetch from GitHub)" if first_install else ""
             return warning(
                 info,
                 f"could not determine latest commit (GitHub unreachable); "
-                f"installed: {info['current']}",
+                f"installed: {info['current']}{note}",
             )
         if info["update_available"]:
             return success(
@@ -237,19 +248,22 @@ def cmd_update(args) -> dict:
     # 3) emit result
     all_ok = pip_result.get("ok", False)
     installed = _current_commit() or __version__
+    result_data: dict = {"pip": pip_result, "redeploy": redeploy_result}
+    if first_install:
+        result_data["first_install"] = True
     if all_ok:
-        parts = [f"upgraded ({installed})"]
+        parts = [f"upgraded ({installed})" if not first_install else f"first-time installed ({installed})"]
         if redeploy_result:
             parts.append(
                 f"skills re-deployed ({redeploy_result['succeeded']}/{redeploy_result['total']} targets)"
             )
         return success(
-            {"pip": pip_result, "redeploy": redeploy_result},
+            result_data,
             "; ".join(parts),
         )
     return error(
         f"pip upgrade failed (returncode={pip_result.get('returncode')}); "
         f"see result.pip for details",
         "UpgradeFailed",
-        data={"pip": pip_result, "redeploy": redeploy_result},
+        data=result_data,
     )
