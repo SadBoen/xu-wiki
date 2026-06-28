@@ -6,9 +6,20 @@ Page is immutable. Body form must match content type.
 
 ## Content routing (before Phase 1)
 
+| Source file | Default `--content-type` | Notes |
+|---|---|---|
+| PDF, DOCX, PPTX, MD, TXT | `article` | markitdown outputs markdown prose |
+| XLSX, CSV (structured table) | `table` | markitdown outputs CSV; body must be YAML list |
+| N images, one theme | `ingest-album` | Ask "vision per-photo?" first |
+| code block / terminal output | `--native --content-type article` | Direct body, no Phase 1 |
+| user explicitly says "表格" / "table" | `table` | Trust user intent |
+
+**Rule: PDF/DOCX/PPTX/XLSX → always `article` unless user explicitly says `table`.**
+markitdown 输出的是 markdown prose，不兼容 `table` 的 YAML list 格式要求。
+
 | User says | Route to | Agent action |
 |---|---|---|
-| PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` → `ingest-verify` | Auto-fill `--content-type` from map |
+| PDF / DOCX / XLSX / MD / text / single image | `ingest-file` → `ingest-commit` → `ingest-verify` | Use default content-type from table above |
 | N images, one theme | `ingest-album` | Ask "vision per-photo?" first |
 | code block / terminal output | `ingest-commit --native` | Auto-fill `--content-type=article` |
 
@@ -97,3 +108,5 @@ If `data.page_count > 1`: tell user "文档较长，已自动按容量分片为 
 | Empty raws/ despite Page nodes | Used `--native` on document → re-ingest via `--temp` |
 | Skipping `ingest-verify` | Always run after commit |
 | Phase 1 temp not deleted after success | Bug — re-run `ingest-commit` with same temp |
+| `BodyFormatMismatch` on PDF/DOCX | markitdown outputs markdown (article), not YAML list — use `--content-type article` |
+| User says "PDF" but LLM picked `--content-type table` | PDF is always `article` unless user explicitly says otherwise |

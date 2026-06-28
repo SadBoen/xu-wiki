@@ -540,7 +540,10 @@ def cmd_ingest_commit(args) -> dict:
 
         body_err = _validate_body_format(page_body, args.content_type)
         if body_err:
-            return error(body_err, "BodyFormatMismatch")
+            hints = []
+            if args.content_type == "table":
+                hints.append("table requires YAML list body; for PDF/DOCX text use --content-type article")
+            return error(body_err, "BodyFormatMismatch", hints=hints)
 
         content_hash = sha256_text(page_body)
         if content_hash in content_index:
