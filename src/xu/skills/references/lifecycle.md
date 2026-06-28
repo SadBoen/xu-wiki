@@ -1,180 +1,89 @@
-# lifecycle — wiki and program lifecycle management
+# lifecycle — wiki & program lifecycle
 
-> **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
+> 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
 
-This SOP covers five operations across two concerns:
+Everything that touches wiki creation/deletion and the xu-wiki program lifecycle.
 
-| Concern | Operations |
-|---|---|---|
-| Wiki instance lifecycle | `create`, `register`, `unregister` |
-| xu-wiki program lifecycle | `version`, `update`, `uninstall` |
+## Workflow
 
----
-
-## version — check xu-wiki version
-
-```bash
-xu --version            # local version (commit SHA)
-xu update --check       # compare local vs remote, report if update available
-```
-
-| Command | Returns |
-|---|---|
-| `xu --version` | 4-key JSON with `version` field |
-| `xu update --check` | 4-key JSON with `{current, latest, update_available}` |
-
-### Workflow
-
-1. `xu --version` — get installed commit SHA
-2. `xu update --check` — get remote commit SHA + whether update is needed
-
----
-
-## create — build a new empty wiki
+### Step 1 — Create wiki
 
 ```bash
 xu create --name <n> --path <abs> [--alias <a>]
 ```
 
-| Flag | Required | Purpose |
-|---|---|---|
-| `--name` | yes | Registry key (lowercase, unique) |
-| `--path` | yes | Absolute dir; `~` OK; relative refused |
-| `--alias` | no | Shortcut for `--wiki <alias>` |
+Registers in `~/.xu-wiki/registry.yaml`. Wiki data lives at `<path>/`.
 
-### Happy path compact template (3 tool calls)
+Use `xu install` for first-time setup (pip/pipx). `xu create` only registers existing directories.
 
-```bash
-# Round 1 — bootstrap check (one shell)
-xu --version && xu wikis && xu config path
-
-# Round 2 — execute
-xu create --name <n> --path <abs> [--alias <a>]
-
-# Round 3 — verify layout (one shell, checks all 6 subdirs)
-xu wikis && ls <abs>/ && ls <abs>/nodes/
-```
-
-`xu create` 返回的 `data.alias` 字段可直接确认 alias 是否落库，无需额外 `alias show` 调用。
-
-### Error responses
-
-| Condition | Status | Error class | Recovery |
-|---|---|---|---|
-| `--alias` already bound to another wiki | `error` | `AliasConflict` | `xu alias set --wiki <name> --alias <new>` |
-| Wiki name already registered at different path | `error` | `NameConflict` | Pick another `--name` |
-| Target dir exists and non-empty | `error` | `DirNotEmpty` | Use `register` or clear dir |
-
-### Example
-
-```bash
-# Happy path
-xu create --name research --path ~/Wikis/research --alias r
-
-# Alias conflict → pick another
-# CLI: error "AliasConflict"; hints: [recovery command]
-xu alias set --wiki research --alias new_alias
-```
-
-### Pitfalls
-
-| Pitfall | Fix |
-|---|---|
-| Guessed path | CLI refuses; round-trip wastes time — always ask |
-| Relative path | `./foo` rejected at parse time |
-| Name collision | `NameConflict`; pick another name |
-| `create` for existing dir | Use `register` instead |
-| `--alias` conflict | CLI returns `AliasConflict` error; agent must pick another alias and bind via `xu alias set` |
-
----
-
-## register — register an existing wiki directory
+### Step 2 — Register existing wiki
 
 ```bash
 xu register --name <n> --path <abs> [--alias <a>]
 ```
 
-Adds an existing wiki directory to the registry without writing any files.
+Use `register` for existing directories (different from `create` — `create` writes the wiki scaffold).
 
----
-
-## unregister — remove a wiki from the registry
+### Step 3 — Update program
 
 ```bash
+xu update
+```
+
+Installs from `git+https://github.com/SadBoen/xu-wiki.git@main`. Re-deploys skills to all manifest targets.
+
+**Update process:**
+1. `xu update --check` → compare installed SHA vs GitHub HEAD
+2. pip install with `--force-reinstall`
+3. skill re-deploy to manifest targets
+
+If first install (no prior SHA): warning emitted, pip install still runs — this is correct first-time path.
+
+### Step 4 — Uninstall
+
+```bash
+xu uninstall --execute
+```
+
+Removes skill bundle + pip/pipx package. **Wiki data is NEVER deleted** (BAN-UNINST-1).
+
+### Step 5 — Config
+
+```bash
+xu config path
+xu config show
+xu alias set --wiki <w> --alias <new>
+xu alias unset --wiki <w>
+xu alias show --wiki <w>
+xu register --name <n> --path <abs> [--alias <a>]
 xu unregister --name <n>
 ```
 
-Wiki files are untouched; only the registry entry is removed.
-
----
-
-## update — upgrade xu-wiki
+## CLI reference
 
 ```bash
-xu update                    # install latest from GitHub main + re-deploy skills to all manifest targets
-xu update --check            # check GitHub for latest commit SHA, no side effects
-xu update --no-redeploy      # only install latest, skip skill re-deploy
+# Wiki lifecycle
+xu create --name <n> --path <abs> [--alias <a>]
+xu register --name <n> --path <abs> [--alias <a>]
+xu unregister --name <n>
+
+# Program lifecycle
+xu update [--check]
+xu uninstall [--execute]
+
+# Config
+xu config show
+xu config path
+xu alias set --wiki <w> --alias <new>
+xu alias unset --wiki <w>
+xu alias show --wiki <w>
 ```
 
-**Wiki data is NEVER touched.**
-
-### Workflow
-
-1. `xu update --check` — reports `{status, data: {current, latest, latest_date, update_available}}`
-2. `xu update` — install from `xu-wiki[parse,vision] @ git+https://github.com/SadBoen/xu-wiki.git@main` + re-deploy skill bundles
-3. **Verify commit SHA** — read `direct_url.json` (see pitfall: pip VCS cache); confirm `commit_id` matches the SHA reported by `xu update --check`
-4. `xu selfcheck` — verify
-5. **Post-reinstall extras check** — if `xu update` needed `pipx reinstall` (extras wiped), re-inject: `pipx inject xu-wiki markitdown && pipx inject xu-wiki pillow`; then `xu deploy skill --target <target>` to re-link skill bundle
-
-### How it works
-
-- **Install source**: always `xu-wiki[parse,vision] @ git+https://github.com/SadBoen/xu-wiki.git@main` (bypasses PyPI)
-- **Version tracking**: current version = installed commit SHA (12 chars); detected from `direct_url.json` in site-packages
-- **Version check**: fetches latest commit SHA from GitHub API (`https://api.github.com/repos/SadBoen/xu-wiki/commits/main`)
-- **Skill re-deploy**: reads `~/.local/share/xu-wiki/manifest.json` → deploys updated skill files to each agent target
-
-### Safety
-
-| Command | Wiki data? | pip pkg? | Skill bundles? | ~/.xu-wiki/? |
-|---|---|---|---|---|
-| `update --check` | never | never | never | never |
-| `update` | never | upgraded | re-deployed | preserved |
-| `update --no-redeploy` | never | upgraded | skipped | preserved |
-
----
-
-## uninstall — uninstall xu-wiki
-
-```bash
-xu uninstall                  # dry-run (default)
-xu uninstall --execute       # actually uninstall
-xu uninstall --execute --preserve-config   # keep ~/.xu-wiki/
-xu uninstall --execute --keep-pip           # test escape hatch
-xu uninstall --execute --keep-skill         # keep skill bundles
-xu uninstall --execute --target <agent>     # target specific agent(s)
-```
-
-**Wiki data is NEVER deleted. No flag, no branch, no surface ever touches it.**
-
-### Workflow
-
-1. **Dry-run** — `xu uninstall` → read `data.plan`, present to user
-2. **Confirm** — user must explicitly confirm before `--execute`
-3. **Execute** — `xu uninstall --execute`
-
-### Safety
+## Safety
 
 | Command | Wiki data? | pip pkg? | ~/.xu-wiki/? | Reversible? |
 |---|---|---|---|---|
-| `uninstall` (dry-run) | never | no | no | n/a |
-| `uninstall --execute` | **never** | yes | only without `--preserve-config` | **no** |
-
-### Pitfalls
-
-| Pitfall | Fix |
-|---|---|---|
-| `xu install` | Doesn't exist — use `pip install` |
-| `--keep-pip` in user flow | Test escape hatch — never in normal flows |
-| **pip VCS cache is stale** — `xu update` reports success but pip used cached old source; `direct_url.json` commit_id won't match GitHub latest | After any `xu update`, always verify: `cat .../xu_wiki-*.dist-info/direct_url.json | grep commit_id` and compare to GitHub API. Mismatch → `pipx reinstall xu-wiki` to force fresh fetch |
-| **`pipx reinstall` wipes all injected extras** — pillow / markitdown / etc. are gone; `xu selfcheck` reports `optional_extras` failure | Re-inject all needed extras after `pipx reinstall`: `pipx inject xu-wiki markitdown` + `pipx inject xu-wiki pillow` + any others, then `xu selfcheck` |
-| **`pipx reinstall` also breaks skill bundle symlinks** — `/root/.local/share/xu-wiki/skills/<target>/` symlinks or files may be stale/severed after reinstall | After `pipx reinstall`, run `xu selfcheck`; if skill deploy check fails, run `xu deploy skill --target <target>` to re-deploy |
+| `create` / `register` | no (registry only) | no | yes | yes |
+| `unregister` | no (registry only) | no | yes | yes |
+| `update` | no | yes | no | yes (reinstall old SHA) |
+| `uninstall --execute` | **never deleted** | yes | yes | no (pkg removed) |
