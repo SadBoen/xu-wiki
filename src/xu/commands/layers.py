@@ -79,9 +79,11 @@ def _list_create(args) -> dict:
         "updated_at": ts,
     }
 
-    md_path = ctx.list_dir / f"{node_path}.md"
+    slug = safe_slug(args.title)
+    md_path = ctx.list_dir / node_path / f"{slug}.md" if node_path else ctx.list_dir / f"{slug}.md"
+    md_path.parent.mkdir(parents=True, exist_ok=True)
     body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    atomic_write_text(md_path, fm.render(frontmatter, body))  # type: ignore[arg-type]  # md_path set when frontmatter found
+    atomic_write_text(md_path, fm.render(frontmatter, body))
 
     return success(
         {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_items],
@@ -97,7 +99,7 @@ def _list_show(args) -> dict:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
     frontmatter, body = None, ""
-    for p in ctx.list_dir.glob("*.md"):
+    for p in ctx.list_dir.rglob("*.md"):
         try:
             text = p.read_text(encoding="utf-8")
             fm_dict, bd = fm.parse(text)
@@ -130,7 +132,7 @@ def _list_modify(args) -> dict:
 
     md_path = None
     frontmatter, body = None, ""
-    for p in ctx.list_dir.glob("*.md"):
+    for p in ctx.list_dir.rglob("*.md"):
         try:
             text = p.read_text(encoding="utf-8")
             fm_dict, bd = fm.parse(text)
@@ -242,7 +244,9 @@ def _entity_create(args) -> dict:
         "content_hash": sha256_text(args.body or ""),
     }
 
-    md_path = ctx.entity_dir / f"{node_path}.md"
+    slug = safe_slug(args.title)
+    md_path = ctx.entity_dir / node_path / f"{slug}.md" if node_path else ctx.entity_dir / f"{slug}.md"
+    md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, args.body or ""))
 
     hints = [f"read --uid {uid} to view"]
@@ -262,7 +266,7 @@ def _entity_show(args) -> dict:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
     frontmatter, body = None, ""
-    for p in ctx.entity_dir.glob("*.md"):
+    for p in ctx.entity_dir.rglob("*.md"):
         try:
             text = p.read_text(encoding="utf-8")
             fm_dict, bd = fm.parse(text)
@@ -290,7 +294,7 @@ def _entity_modify(args) -> dict:
 
     md_path = None
     frontmatter, body = None, ""
-    for p in ctx.entity_dir.glob("*.md"):
+    for p in ctx.entity_dir.rglob("*.md"):
         try:
             text = p.read_text(encoding="utf-8")
             fm_dict, bd = fm.parse(text)
@@ -369,7 +373,9 @@ def _report_create(args) -> dict:
         "updated_at": ts,
     }
 
-    md_path = ctx.report_dir / f"{node_path}.md"
+    slug = safe_slug(args.title)
+    md_path = ctx.report_dir / node_path / f"{slug}.md" if node_path else ctx.report_dir / f"{slug}.md"
+    md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, args.body or ""))
 
     return success(
@@ -386,7 +392,7 @@ def _report_show(args) -> dict:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
     frontmatter, body = None, ""
-    for p in ctx.report_dir.glob("*.md"):
+    for p in ctx.report_dir.rglob("*.md"):
         try:
             text = p.read_text(encoding="utf-8")
             fm_dict, bd = fm.parse(text)
@@ -416,7 +422,7 @@ def _report_modify(args) -> dict:
 
     md_path = None
     frontmatter, body = None, ""
-    for p in ctx.report_dir.glob("*.md"):
+    for p in ctx.report_dir.rglob("*.md"):
         try:
             text = p.read_text(encoding="utf-8")
             fm_dict, bd = fm.parse(text)

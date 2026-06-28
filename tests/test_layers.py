@@ -71,7 +71,7 @@ def test_list_create_body_is_yaml_list(wiki):
     list_uid = r["data"]["uid"]
     node_path = "my-list"
 
-    text = (ctx.list_dir / f"{node_path}.md").read_text()
+    text = (ctx.list_dir / node_path / f"{node_path}.md").read_text()
     _, body = fm_parse(text)
     body = body.strip()
     assert body.startswith("- "), f"body should be YAML list, got: {body[:60]}"
@@ -97,7 +97,7 @@ def test_list_create_frontmatter_has_no_members_array(wiki):
     list_uid = r["data"]["uid"]
     node_path = "list-no-members"
 
-    text = (ctx.list_dir / f"{node_path}.md").read_text()
+    text = (ctx.list_dir / node_path / f"{node_path}.md").read_text()
     frontmatter, _ = fm_parse(text)
     assert "members" not in frontmatter
     assert frontmatter["uid"] == list_uid
