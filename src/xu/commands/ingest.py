@@ -932,8 +932,9 @@ def cmd_ingest_verify(args) -> dict:
     checks, passed, failed = _verify_committed(ctx, md_path, args.uid)
 
     status = "success" if not failed else "error"
+    passed_all = len(checks) - len(failed)
     msgs = {"uid": args.uid, "wiki": args.wiki, "passed": passed, "failed": failed, "checks": checks}
-    detail = f"{len(passed)}/{len(checks)} checks passed"
+    detail = f"{passed_all}/{len(checks)} checks passed"
     if failed:
         detail += f"; FAILED: {failed}"
     return make_response(status, msgs, detail)
