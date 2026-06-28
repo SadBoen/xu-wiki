@@ -333,10 +333,10 @@ def cmd_uninstall(args) -> dict:
     execute = bool(getattr(args, "execute", False))
 
     if not execute:
-        print(_format_dry_run(plan))
         return success(
             plan,
             "dry-run — pass --execute to actually uninstall",
+            hints=[_format_dry_run(plan)],
         )
 
     # ----- execute branch -----
