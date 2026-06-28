@@ -10,7 +10,7 @@ Everything that isn't wiki data: registry, aliases, MinerU key. Wiki data is NEV
 
 ```bash
 export MINERU_API_KEY="..."
-xu config set-mineru-key
+xu config set_mineru_key
 ```
 
 Use `MINERU_API_KEY` env or `~/.xu-wiki/config.yaml`. Never hardcode the key.
@@ -46,7 +46,7 @@ xu register --name <n> --path <abs> [--alias <a>]
 xu unregister --name <n>
 
 # MinerU key
-xu config set-mineru-key
+xu config set_mineru_key
 xu config show
 
 # Skill bundle
@@ -65,5 +65,5 @@ xu deploy skill --target <agent>   # hermes | trae | claude | cursor | auto
 | `wikis` / `config show` / `config path` | no | no | no | n/a |
 | `alias set/unset/show` | no | no | yes (registry) | yes |
 | `register` / `unregister` | no (registry only) | no | yes | yes |
-| `config set-mineru-key` | no | no | yes | yes |
+| `config set_mineru_key` | no | no | yes | yes |
 | `skills path` / `skills list` | no | no | no | n/a |

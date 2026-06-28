@@ -50,7 +50,7 @@ def save_global_config(cfg: dict) -> None:
 
     (3.4 fix): the README has long told users to `chmod 600` their
     config.yaml after writing the MinerU key, but the CLI never
-    enforced it — every subsequent `xu config set-mineru-key` would
+    enforced it — every subsequent `xu config set_mineru_key` would
     silently reset the file to umask-default permissions (644 on most
     systems), exposing the API key to other local users. We now
     auto-chmod 600 if the saved config contains a non-empty

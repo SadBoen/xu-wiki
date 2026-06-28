@@ -401,7 +401,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 - **查看注册表** → `xu-wiki wikis`（只读）
 - **注册已有目录** → `xu-wiki register --name <n> --path <abs> [--alias <a>]`（不写文件）
 - **取消注册** → `xu-wiki unregister --name <n>`（不动 wiki 本体）
-- **设置 MinerU key** → `xu-wiki config set-mineru-key`（从 `MINERU_API_KEY` 环境变量读）
+- **设置 MinerU key** → `xu-wiki config set_mineru_key`（从 `MINERU_API_KEY` 环境变量读）
 - **查看全局配置** → `xu-wiki config show`（密钥 masked）
 - **查全局配置路径** → `xu-wiki config path`
 
@@ -441,7 +441,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | | `alias set / unset / show` | 别名管理 |
 | | `register` | 注册已有目录（不写文件） |
 | | `unregister` | 取消注册（不动 wiki 本体） |
-| | `config set-mineru-key / show / path` | 全局配置读写 |
+| | `config set_mineru_key / show / path` | 全局配置读写 |
 | | `nodes` | 看 DB 内容（config 也可检视 DB） |
 | | `delete-node` | 未来若 SOP-config 加「清空数据」子意图，可嵌入 |
 | **不属于 SOP** | (none — install/uninstall 由 pip 处理) | pip 包管理，不属于 CLI 范畴 |

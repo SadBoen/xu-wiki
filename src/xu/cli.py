@@ -245,7 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("config", help="manage global config (MinerU key, paths)")
     csub = sp.add_subparsers(dest="config_action", required=True)
-    csub.add_parser("set-mineru-key", help="set MinerU key from MINERU_API_KEY env").set_defaults(func="config_set_mineru_key")
+    csub.add_parser("set_mineru_key", help="set MinerU key from MINERU_API_KEY env").set_defaults(func="config_set_mineru_key")
     csub.add_parser("show", help="show global config (secrets masked)").set_defaults(func="config_show")
     csub.add_parser("path", help="print global config file paths").set_defaults(func="config_path")
 

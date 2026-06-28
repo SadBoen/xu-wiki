@@ -268,7 +268,7 @@ def test_cli_dispatch_routes_new_commands():
         ["alias", "show", "--wiki", "A"],
         ["register", "--name", "A", "--path", "/tmp/x"],
         ["unregister", "--name", "A"],
-        ["config", "set-mineru-key"],
+        ["config", "set_mineru_key"],
         ["config", "show"],
         ["config", "path"],
     ]

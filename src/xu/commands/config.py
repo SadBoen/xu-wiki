@@ -8,7 +8,7 @@ design-docs/08-sop-architecture.md §5.5 / §六:
   xu-wiki alias show  --wiki <name|alias>
   xu-wiki register    --name <n> --path <abs> [--alias <a>]
   xu-wiki unregister  --name <n>
-  xu-wiki config set-mineru-key   # reads from MINERU_API_KEY env
+  xu-wiki config set_mineru_key   # reads from MINERU_API_KEY env
   xu-wiki config show             # secrets masked
   xu-wiki config path             # global config locations
 
@@ -240,7 +240,7 @@ def cmd_config_set_mineru_key(args):
             "set it before running this command (safer than passing key on CLI)",
             "MissingKey",
             data={
-                "hint": "export MINERU_API_KEY=...; xu-wiki config set-mineru-key",
+                "hint": "export MINERU_API_KEY=...; xu-wiki config set_mineru_key",
             },
         )
     cfg = load_global_config()
