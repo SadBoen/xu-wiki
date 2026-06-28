@@ -128,7 +128,6 @@ def _purge_global_dir() -> dict:
             "note": "global dir did not exist; nothing to remove",
         }
     try:
-        # Count entries BEFORE rmtree — shutil.rmtree doesn't report.
         count = sum(1 for _ in GLOBAL_DIR.iterdir())
         shutil.rmtree(GLOBAL_DIR)
         return {
@@ -145,6 +144,64 @@ def _purge_global_dir() -> dict:
             "ok": False,
             "error": str(e),
         }
+
+
+# ---- known temp artifact paths that accumulate during xu-wiki use ----
+_TEMP_ARTIFACT_PATHS = (
+    Path("/tmp/xu-wiki"),
+)
+
+
+def _purge_temp_artifacts() -> dict:
+    """Remove xu-wiki runtime temp artifacts: /tmp/xu-wiki/ and uv cache entries.
+
+    Only removes /tmp/xu-wiki if it contains a .venv/ subdir (the bootstrapped
+    project venv).  uv cache entries (~/.cache/uv/archive-v0/) are pruned only
+    when they match xu-wiki's known dependency names (httpx, yarl, markupsafe,
+    pillow, markitdown) and are not pinned by any other package.
+
+    Returns a dict with 'removed' (list of paths) and 'skipped' (list of reasons).
+    """
+    removed = []
+    skipped = []
+
+    # /tmp/xu-wiki/
+    tmp_project = Path("/tmp/xu-wiki")
+    if tmp_project.exists():
+        if (tmp_project / ".venv").is_dir() or (tmp_project / "xu_wiki.venv").is_dir():
+            try:
+                shutil.rmtree(tmp_project)
+                removed.append(str(tmp_project))
+            except Exception as e:
+                skipped.append(f"/tmp/xu-wiki: {e}")
+        else:
+            skipped.append("/tmp/xu-wiki: no .venv/ found, skipping (not a xu-wiki project)")
+
+    # uv cache pruning
+    uv_cache_base = Path.home() / ".cache" / "uv" / "archive-v0"
+    if uv_cache_base.is_dir():
+        # xu-wiki runtime deps that land in uv cache when installed via pip
+        known_deps = {"httpx", "yarl", "markupsafe", "pillow", "markitdown",
+                      "charset_normalizer", "idna", "certifi", "urllib3",
+                      "frozenlist", "multidict", "anyio"}
+        for entry in uv_cache_base.iterdir():
+            if not entry.is_dir():
+                continue
+            name_file = entry / "METADATA"
+            if name_file.is_file():
+                try:
+                    content = name_file.read_text(errors="replace")
+                    if any(dep in content for dep in known_deps):
+                        shutil.rmtree(entry)
+                        removed.append(str(entry))
+                        continue
+                except Exception:
+                    pass
+            skipped.append(f"uv:{entry.name}: not a xu-wiki dep or read error")
+    else:
+        skipped.append("uv cache not found")
+
+    return {"removed": removed, "skipped": skipped, "ok": not removed}
 
 
 def _detect_installer() -> str:
@@ -325,6 +382,8 @@ def _format_dry_run(plan: dict) -> str:
         lines.append("  Wiki data:")
         for w in plan["wikis_found"]:
             lines.append(f"    - {w['name']:<8} {w['path']}  (preserved — wiki data NEVER deleted)")
+
+    lines.append("  Temp artifacts: /tmp/xu-wiki/ + uv cache entries (always removed)")
     return "\n".join(lines)
 
 
@@ -341,7 +400,8 @@ def cmd_uninstall(args) -> dict:
 
     # ----- execute branch -----
     result: dict = {"mode": "execute", "pip": None, "wikis": None,
-                    "config_dir": None, "skill_bundles": None, "installer": None}
+                    "config_dir": None, "skill_bundles": None,
+                    "temp_artifacts": None, "installer": None}
 
     # 0) detect installer context. Already in plan via _plan(); re-read
     # here so the pipx guard is a single local reference.
@@ -375,6 +435,9 @@ def cmd_uninstall(args) -> dict:
     else:
         result["pip"] = {"skipped": True,
                          "reason": "--keep-pip set; pip uninstall not run"}
+
+    # 5) temp artifacts: /tmp/xu-wiki/ and uv cache entries for xu-wiki deps
+    result["temp_artifacts"] = _purge_temp_artifacts()
 
     pip_ok = (result["pip"] or {}).get("ok", True)
     cfg_ok = (result["config_dir"] or {}).get("ok", True)
