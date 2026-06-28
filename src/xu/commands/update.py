@@ -61,10 +61,13 @@ def _current_commit() -> str | None:
                 break
         if spec_file and spec_file.exists():
             d = json.loads(spec_file.read_text())
-            url = d.get("url", "")
-            m = re.search(r"[a-f0-9]{40}", url)
-            if m:
-                return m.group(0)[:12]
+            sha = d.get("vcs_info", {}).get("commit_id", "")[:12]
+            if not sha:
+                m = re.search(r"[a-f0-9]{40}", d.get("url", ""))
+                if m:
+                    sha = m.group(0)[:12]
+            if sha:
+                return sha
     except Exception:
         pass
     return None
@@ -75,8 +78,8 @@ def _pipx_upgrade() -> dict:
     if not pipx_python.exists():
         pipx_python = Path(sys.prefix) / "bin" / "python"
     cmd = [
-        str(pipx_python), "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--no-deps",
-        f"git+https://github.com/{GITHUB_REPO}.git@main#egg=xu-wiki[parse,vision]",
+        str(pipx_python), "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "--no-deps",
+        f"xu-wiki[parse,vision] @ git+https://github.com/{GITHUB_REPO}.git@main",
     ]
     if not sys.stdout.isatty():
         cmd.append("--quiet")
@@ -97,8 +100,8 @@ def _pipx_upgrade() -> dict:
 
 def _pip_upgrade() -> dict:
     cmd = [
-        sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--no-deps",
-        f"git+https://github.com/{GITHUB_REPO}.git@main#egg=xu-wiki[parse,vision]",
+        sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "--no-deps",
+        f"xu-wiki[parse,vision] @ git+https://github.com/{GITHUB_REPO}.git@main",
     ]
     if not sys.stdout.isatty():
         cmd.append("--quiet")
