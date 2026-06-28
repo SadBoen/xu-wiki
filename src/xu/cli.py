@@ -85,6 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--uid", required=True, help="uid of the node to verify")
     sp.set_defaults(func="ingest_verify")
 
+    sp = sub.add_parser("ingest-album",
+                        help="[DEPRECATED] Use ingest-file + ingest-commit instead")
+    sp.set_defaults(func="ingest_album")
+
     sp = sub.add_parser("query", help="search wiki: returns top N indexed blocks (UID/title/layer/position)")
     sp.add_argument("--wiki", required=True)
     sp.add_argument("--keywords", required=True, help="comma-separated keywords (LLM generates these)")
@@ -307,6 +311,7 @@ _DISPATCH_TABLE: dict[str, tuple[str, str]] = {
     "ingest_file": ("commands.ingest", "cmd_ingest_file"),
     "ingest_commit": ("commands.ingest", "cmd_ingest_commit"),
     "ingest_verify": ("commands.ingest", "cmd_ingest_verify"),
+    "ingest_album": ("commands.album", "cmd_ingest_album"),
     "query": ("commands.query", "cmd_query"),
     "expand": ("commands.query", "cmd_expand"),
     "read": ("commands.query", "cmd_read"),

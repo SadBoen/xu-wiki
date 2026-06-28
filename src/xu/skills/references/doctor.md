@@ -33,7 +33,7 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 |---|---|---|---|
 | `doctor-all` | report | safe auto-repair | no |
 | `doctor-fields` | report | frontmatter + file existence | no |
-| `doctor-files` | report | rename/link missing files | no |
+| `doctor-files` | report | n/a (read-only) | no |
 | `doctor-relations` | report | rebuild LRU table | no |
 | `doctor-l1-immutable` | report | n/a (always refuses) | no |
 | `doctor-report-evidence` | report | reject orphaned reports | no |
@@ -70,7 +70,7 @@ xu doctor-all --wiki research
 
 # delete referenced node
 xu delete-node --wiki research --uid WXYZ5678
-# → {"status": "error", "data": {"error_class": "ReferencedByList", ...}, ...}
+# → {"status": "error", "data": {"error_class": "NodeReferenced", ...}, ...}
 xu delete-node --wiki research --uid WXYZ5678 --force
 # → {"status": "success", ...}
 ```

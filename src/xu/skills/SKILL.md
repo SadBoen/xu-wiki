@@ -1,6 +1,6 @@
 ---
 name: "xu-wiki"
-description: "Manage a relation-driven wiki via 5 SOPs. Deterministic CLI, no LLM calls."
+description: "Manage a relation-driven wiki via 7 SOPs. Deterministic CLI, no LLM calls."
 ---
 
 # xu-wiki
