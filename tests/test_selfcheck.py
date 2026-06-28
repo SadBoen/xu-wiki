@@ -145,7 +145,7 @@ def test_global_config_chmod_secret_with_600_passes(xu_home):
 def test_optional_extras_pillow_uses_PIL_import_name(xu_home):
     """Bug 1: the import name for Pillow is PIL, not Pillow. Ensure
     the check passes when Pillow is installed."""
-    # In a venv with `pip install -e .[parse,nlp,vision]` all three
+    # In a venv with `pip install -e .[parse,vision]` all
     # are installed; this test verifies the check sees them as such.
     check = cmd_mod._check_optional_extras()
     # Result: ok=True if all 3 installed; ok=False only if some are missing.

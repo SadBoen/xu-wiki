@@ -56,7 +56,7 @@ storage stay with the engine.
 
 ```bash
 # 1. Install
-pipx install "xu-wiki[pdf,parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+pipx install "xu-wiki[parse,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
 
 # 2. Create a wiki
 xu create --name my-wiki --path ~/wikis/my-wiki --alias mine
@@ -82,17 +82,17 @@ xu selfcheck
 PEP 668-safe, one command:
 
 ```bash
-pipx install "xu-wiki[pdf,parse,nlp,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
+pipx install "xu-wiki[parse,vision] @ git+https://github.com/SadBoen/xu-wiki.git"
 ```
 
 **Optional extras:**
 
 | Extra | Packages | Required for |
 |---|---|---|
-| `pdf` | `pypdf`, `pdfplumber` | PDF text extraction |
-| `parse` | `markitdown[all]` | DOCX / PPTX text extraction |
-| `nlp` | `jieba` | Chinese query segmentation |
-| `vision` | `Pillow>=10.0` | Image EXIF metadata for albums |
+| `parse` | `markitdown[all]` | PDF / DOCX / PPTX text extraction |
+| `vision` | `Pillow>=12.0` | Image EXIF metadata for albums |
+
+`pdf` is an alias for `parse` (both install markitdown[all]). `nlp` is no longer needed.
 
 **Missing any extra → `MissingExtra` error at first use, no silent fall-back.**
 

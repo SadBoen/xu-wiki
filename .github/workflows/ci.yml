@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[pdf,parse,nlp,vision]"
+          pip install -e ".[parse,vision]"
           pip install pytest ruff mypy
 
       - name: Lint with ruff

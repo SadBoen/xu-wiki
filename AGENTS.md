@@ -16,7 +16,7 @@ python3 -m pytest tests/
 python3 -m pytest tests/ -q
 
 # End-to-end M1->M6 run (requires .venv; sample files at design-docs/测试用样例文件/)
-.venv/bin/xu create ...     # bootstrap .venv first: pip install -e ".[pdf,parse,nlp,vision]"
+.venv/bin/xu create ...     # bootstrap .venv first: pip install -e ".[parse,vision]"
 # or run via the wrapper script that manages .venv internally:
 bash tests/e2e_verify.sh
 

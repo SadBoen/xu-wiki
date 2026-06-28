@@ -1,6 +1,6 @@
 """`xu selfcheck` — post-install / runtime environment health check.
 
-(坑 6 fix): After `pip install "xu-wiki[parse,nlp,vision]"`, there was
+(坑 6 fix): After `pip install "xu-wiki[parse,vision]"`, there was
 no agent-friendly command to verify the install is healthy. Agents had
 to assemble checks manually:
 
@@ -288,7 +288,7 @@ def cmd_selfcheck(_args) -> dict:
     if not checks["skill_bundle_readable"]["ok"]:
         next_actions.append(
             "reinstall xu-wiki: `pip install --force-reinstall "
-            "\"xu-wiki[parse,nlp,vision]\"` (or `pipx reinstall xu-wiki`)."
+            "\"xu-wiki[parse,vision]\"` (or `pipx reinstall xu-wiki`)."
         )
     if not checks["agent_skill_deployed"]["ok"]:
         next_actions.append(

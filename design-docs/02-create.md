@@ -74,9 +74,9 @@ symlink 逃逸 → error。
 
 | 节点类型 | 文件位置 | 创建命令 |
 |---|---|---|
-| Page | `nodes/page/<node_path>/<slug>.md` | `ingest-commit` |
-| List | `nodes/list/<node_path>.md` | `list create` |
-| Report | `nodes/report/<node_path>.md` | `report create` |
+| Page | `nodes/pages/<node_path>/<slug>.md` | `ingest-commit` |
+| List | `nodes/lists/<node_path>.md` | `list create` |
+| Report | `nodes/reports/<node_path>.md` | `report create` |
 
 ## 相关命令边界
 

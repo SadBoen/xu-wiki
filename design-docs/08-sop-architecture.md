@@ -218,7 +218,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 | 操作 | 谁负责 | 为什么 |
 |---|---|---|
-| **install** | `pip install xu-wiki[parse,nlp,vision]` | pip 一行就能装上；不需要 CLI 包装。User 或任何 Agent 用 bash tool 调一次 pip 即可。 |
+| **install** | `pip install xu-wiki[parse,vision]` | pip 一行就能装上；不需要 CLI 包装。User 或任何 Agent 用 bash tool 调一次 pip 即可。 |
 | **uninstall** | `xu uninstall` 全包（skill bundle + 程序本体 + config） | 见下。 | |
 
 **为什么 uninstall 必须有 CLI 命令**（不能也走 pip）：
@@ -268,7 +268,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 **意图**：用户说「我要建一个知识库」。
 
 **调用步骤**：
-1. （隐含前置）机器上已 `pip install xu-wiki[parse,nlp,vision]`（[PRIN-CRT-1]）
+1. （隐含前置）机器上已 `pip install xu-wiki[parse,vision]`（[PRIN-CRT-1]）
 2. Agent 必须先问齐 `--name` 与 `--path`（hard rule 8）
 3. 调用 `xu create --name <n> --path <abs> [--alias <a>]`
 4. （可选）调用 `xu wikis` 验证注册成功
@@ -454,7 +454,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 ## 七、与 pip 的边界（install / uninstall 由 pip 处理）
 
-`pip install xu-wiki[parse,nlp,vision]` 是安装入口；程序本体的卸载通过 `xu uninstall --execute`（不走 pip）。CLI 的职责边界：管理 wiki 数据（通过 5 SOP）；程序本体的卸载（`xu uninstall --execute`）；不动 venv / symlink / 任何「让 CLI 自身能跑起来」的东西。**注意**：wiki 数据（用户的知识）是用户自己的，Agent 在 uninstall 时不得提出或执行删除 wiki 数据的操作。
+`pip install xu-wiki[parse,vision]` 是安装入口；程序本体的卸载通过 `xu uninstall --execute`（不走 pip）。CLI 的职责边界：管理 wiki 数据（通过 5 SOP）；程序本体的卸载（`xu uninstall --execute`）；不动 venv / symlink / 任何「让 CLI 自身能跑起来」的东西。**注意**：wiki 数据（用户的知识）是用户自己的，Agent 在 uninstall 时不得提出或执行删除 wiki 数据的操作。
 
 ---
 
