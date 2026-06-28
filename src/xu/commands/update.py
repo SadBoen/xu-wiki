@@ -51,21 +51,29 @@ def _detect_installer() -> str:
 def _current_commit() -> str | None:
     try:
         import re
-        spec_file = None
-        for p in (Path(sys.prefix) / "xu_wiki-*.dist-info" / "direct_url.json").parent.glob("xu_wiki-*.dist-info"):
-            spec_file = p / "direct_url.json"
-            break
-        if spec_file is None:
-            for p in (Path(sys.prefix) / "xu-wiki-*.dist-info" / "direct_url.json").parent.glob("xu-wiki-*.dist-info"):
-                spec_file = p / "direct_url.json"
-                break
-        if spec_file and spec_file.exists():
+        import importlib.metadata
+        dist_path = importlib.metadata.distribution("xu-wiki")._path  # type: ignore[attr-defined]
+        spec_file = dist_path / "direct_url.json"
+        if spec_file.exists():
             d = json.loads(spec_file.read_text())
             sha = d.get("vcs_info", {}).get("commit_id", "")[:12]
             if not sha:
-                m = re.search(r"[a-f0-9]{40}", d.get("url", ""))
-                if m:
-                    sha = m.group(0)[:12]
+                url = d.get("url", "")
+                if url.startswith("file://"):
+                    src_path = Path(url.replace("file://", ""))
+                    try:
+                        git_sha = subprocess.run(
+                            ["git", "-C", str(src_path), "rev-parse", "--short=12", "HEAD"],
+                            capture_output=True, text=True, timeout=5,
+                        )
+                        if git_sha.returncode == 0:
+                            return git_sha.stdout.strip()
+                    except Exception:
+                        pass
+                else:
+                    m = re.search(r"[a-f0-9]{40}", url)
+                    if m:
+                        sha = m.group(0)[:12]
             if sha:
                 return sha
     except Exception:
