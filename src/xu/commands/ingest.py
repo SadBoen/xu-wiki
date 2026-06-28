@@ -177,17 +177,22 @@ def cmd_ingest_file(args) -> dict:
     if not src.is_file():
         return error(f"source file not found: {src}", "FileNotFound")
 
-    rich_exts = {".pdf", ".docx", ".pptx", ".xlsx", ".xls"}
-    if src.suffix.lower() in rich_exts:
+    # PDF/DOCX/PPTX: markitdown only required as fallback when MinerU unavailable
+    # XLSX/XLS: ExcelParser only, no markitdown involved
+    _needs_markitdown = src.suffix.lower() in {".pdf", ".docx", ".pptx"}
+    if _needs_markitdown:
         try:
             importlib.import_module("markitdown")
         except ImportError:
-            return error(
-                f"cannot parse {src.suffix} files: 'markitdown' is not installed",
-                "MissingExtra",
-                data={"extra": "parse", "file_ext": src.suffix},
-                hints=["pip install xu-wiki[parse] to enable PDF/DOCX/PPTX parsing"],
-            )
+            from ..parsers.mineru_parser import mineru_available
+            if not mineru_available():
+                return error(
+                    f"cannot parse {src.suffix}: markitdown not installed and MinerU not configured",
+                    "MissingExtra",
+                    data={"extra": "parse", "file_ext": src.suffix},
+                    hints=["pip install xu-wiki[parse] or configure MinerU key"],
+                )
+            # MinerU available → markitdown is optional fallback, proceed
 
     source_hash = sha256_file(src)
     dup_fm = find_by_source_hash(ctx, source_hash)

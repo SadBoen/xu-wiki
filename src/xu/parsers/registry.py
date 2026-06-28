@@ -271,6 +271,7 @@ def parse_file(path: str | Path, **kw) -> ParseResult:
             attempts.append(f"{parser.name}: {e}")
             continue
         if res and res.ok:
+            res.parser = parser.name
             return res
         reason = res.skipped_reason if res else "empty result"
         attempts.append(f"{parser.name}: {reason}")

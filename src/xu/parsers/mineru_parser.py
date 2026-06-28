@@ -40,6 +40,11 @@ def _resolve_mineru_key(api_key: str) -> str:
         return ""
 
 
+def mineru_available() -> bool:
+    """True if any MinerU key source is configured (arg, env, or config)."""
+    return bool(_resolve_mineru_key(""))
+
+
 def mineru_parse(path: str, api_key: str = "") -> str:
     """Return parsed markdown, or "" to trigger fallback.
 
