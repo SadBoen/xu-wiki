@@ -53,7 +53,7 @@ Phase 2 成功 → 立即删除；失败 → 保留供 debug。
 
 单文件串行 ingest。
 
-### [PRIN-ING-10] patches 表初值是 commit 的副产物
+### [PRIN-ING-10] patches frontmatter 字段初值是 commit 的副产物
 
 ingest-commit 成功后写 version=1 的 create 记录。
 

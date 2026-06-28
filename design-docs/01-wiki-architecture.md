@@ -143,4 +143,4 @@ Page 生成后不直接修改 Markdown。修订走 frontmatter 内嵌 patches �
 | 读 Page | `read --uid` |
 | 删节点 | `delete-node` |
 | 建关系 | `query-relation add` |
-| 重建 | `rebuild --granularity keep-page\|keep-page-list\|full` |
+| 重建 | `rebuild --granularity keep-l1\|keep-l1-l2\|full` |

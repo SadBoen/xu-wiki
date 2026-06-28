@@ -346,7 +346,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 | 「修了再告诉我」（自动修） | `doctor-all --wiki <w> --fix`（先告诉用户再应用） |
 | 「删节点 X」 | `delete-node --wiki <w> --uid X`（若被 List/Report 引用则先确认 `--force`） |
 | 「移位 / 移动 节点 X 到 Y」 | **当前无对应 CLI** → SOP 拒绝并解释（见下） |
-| 「重衍生层」「重建 LRU」 | `rebuild --wiki <w> --granularity keep-page`（默认不动 Page） |
+| 「重衍生层」「重建 LRU」 | `rebuild --wiki <w> --granularity keep-l1`（Page 永远不动） |
 
 **意图不可达的显式拒绝**（[PRIN-SOP-7]）：
 

@@ -60,7 +60,7 @@ DB 记录 ↔ 文件存在 ↔ raw_path 存在。
 
 ### [CONST-DOC-2] Page 不变性检查
 
-patches v1 存在 + SHA256 匹配。
+content_hash 匹配 frontmatter 中存储的值。
 
 ### [CONST-DOC-3] Report 证据链检查
 

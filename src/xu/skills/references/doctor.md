@@ -23,10 +23,10 @@ xu ingest-verify --wiki <w> --uid <uid>
 
 # Destructive (explicit, never auto)
 xu delete-node --wiki <w> --uid <uid> [--force]
-xu rebuild --wiki <w> --granularity keep-page|keep-page-list|full
+xu rebuild --wiki <w> --granularity keep-l1|keep-l1-l2|full
 
 # Discovery
-xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
+xu nodes --wiki <w> [--layer Page|List|Report|Entity] [--include-inactive]
 ```
 
 ## Safety table
@@ -37,10 +37,10 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 | `doctor-fields` | report | frontmatter + file existence | no |
 | `doctor-files` | report | n/a (read-only) | no |
 | `doctor-relations` | report | rebuild LRU table | no |
-| `doctor-l1-immutable` | report | n/a (always refuses) | no |
+| `doctor-l1-immutable` | report | n/a — runs as no-op, returns fixable=False | no |
 | `doctor-report-evidence` | report | reject orphaned reports | no |
-| `doctor-node-path-organization` | report | calls `reorganize` | no |
-| `delete-node` | n/a | n/a | **yes** — `--force` ignores refs |
+| `doctor-node-path-organization` | report | n/a — run `xu reorganize` manually | no |
+| `delete-node` | n/a | n/a | **yes** — `--force` removes dangling relation refs |
 | `rebuild` | n/a | n/a | **yes** — granularity controls blast |
 
 ## Workflow — health check
@@ -62,7 +62,7 @@ IF findings include orphan reports (evidence UIDs missing)
   THEN doctor-report-evidence --wiki <w> --fix
 
 IF rebuild needed (inconsistent derived layers)
-  THEN rebuild --wiki <w> --granularity keep-page
+  THEN rebuild --wiki <w> --granularity keep-l1
   THEN if still issues, consider full
 ```
 
@@ -70,11 +70,11 @@ Never pause to ask user for permission. Run the IF branch, report the result.
 
 ## Granularity
 
-| Value | Destroys |
+| Value | Effect |
 |---|---|
-| `keep-page` | List/Report rebuilt from Page (safe) |
-| `keep-page-list` | Report only rebuilt |
-| `full` | Everything from raw markdown — destructive |
+| `keep-l1` | Renumbers relation positions only (safe) |
+| `keep-l1-l2` | Same as keep-l1; List/Report never touched |
+| `full` | Same as keep-l1; skips DB reconciliation |
 
 ## Example
 
@@ -95,5 +95,5 @@ xu delete-node --wiki research --uid WXYZ5678 --force
 |---|---|
 | `--fix` on `doctor-l1-immutable` | Not supported — Page is immutable; restore from backup or rebuild |
 | Auto-running destructive ops | Never invoke without explicit user confirmation |
-| `rebuild --granularity full` | Destructive for List/Report edits; default is `keep-page` |
+| `rebuild --granularity full` | Same effect as keep-l1; default is `keep-l1` |
 | `ingest` temp file not deleted | Re-run `ingest-commit` with same temp → triggers deletion |

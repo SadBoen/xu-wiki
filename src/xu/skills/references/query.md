@@ -12,7 +12,7 @@ CLI is purely a matcher — **it does not interpret free-text**. Agent grades qu
 
 ```bash
 # Keyword search
-xu query --wiki <w> --keywords <kw,kw,kw>
+xu query --wiki <w> --keywords <kw,kw,kw> [--top-k <n>] [--include-inactive]
 
 # Expand selected UIDs → full bodies + relations
 xu expand --wiki <w> --uids <uid,uid,...>
@@ -20,7 +20,7 @@ xu expand --wiki <w> --uids <uid> --relation-names <name,name> --limit <n>
 
 # Read / list
 xu read --wiki <w> --uid <uid>
-xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
+xu nodes --wiki <w> [--layer Page|List|Report|Entity] [--include-inactive]
 
 # Relations
 xu query-relation list --wiki <w> --from-uid <uid>
@@ -44,11 +44,11 @@ xu entity modify --wiki <w> --uid <uid> [--title <t>] [--body <md>]
 **Round 1 — keyword search:**
 1. Grade user query → keyword list (always include English forms)
 2. Call `xu query`
-3. Inspect `data.blocks` (uid/title/layer/text/score) + `data.uid_batch` (default 30) + `data.max_rounds` (default 5)
+3. Inspect `data.blocks` (uid/title/layer/text/score) + `data.uid_batch` + `data.max_rounds` + `data.total_hits` + `data.block_count`
 
 **Path A — new keywords:** re-call `xu query` with different keywords
 
-**Path B — expand:** pick UIDs → `xu expand --wiki W --uids uid1,uid2,...` → full bodies + relations. Use `--relation-names` to filter direction. `--limit` caps per UID.
+**Path B — expand:** pick UIDs → `xu expand --wiki W --uids uid1,uid2,...` → full bodies + relations. `--relation-names` filters by name (not direction). `--limit` caps relations per UID.
 
 **Stopping:** conclusion reached · `max_rounds` exhausted · no more relations
 
@@ -61,18 +61,23 @@ Always add English forms. Example: `"现在库里面收录了几条船？"` → 
 - `xu query` returns PAGE blocks, **not entity counts** — do NOT use it to count
 - Required flow:
   1. Call `xu nodes --wiki <w> --layer Entity`
-  2. If count > 0 → answer from `data.nodes`
+  2. If count > 0 → answer from `data.count`
   3. If count = 0 → answer from query blocks + invoke post-query reflection to extract entities
 
 ## Post-query reflection (IF/THEN)
+
+Reflection fields: `suggest_extract_entities`, `suggest_create_list`, `suggest_create_report`, `hint` (auto-generated command suggestion).
 
 ```
 IF data.reflection.suggest_extract_entities == true
   AND nodes --layer Entity returns empty
   THEN entity create immediately, do NOT ask user
 
-IF data.reflection.suggest_extend_list == true
-  THEN list modify --add-members, do NOT ask user
+IF data.reflection.suggest_create_list == true
+  THEN list modify --members <uid,uid,...>, do NOT ask user
+
+IF data.reflection.suggest_create_report == true
+  THEN report create --title <t> --body <md> --references <uid,uid,...>, do NOT ask user
 
 IF new entities or lists were created
   THEN wire relations with query-relation add, do NOT ask user
@@ -84,7 +89,7 @@ Reflection triggers are **auto-actions**, not prompts. Never pause to ask "要�
 
 ```bash
 xu query --wiki research --keywords "BERT,transformer,pre-training"
-# → {"status":"success","data":{"blocks":[...],"uid_batch":30,"max_rounds":5,...}}
+# → {"status":"success","data":{"blocks":[...],"uid_batch":30,"max_rounds":5,"total_hits":42,"block_count":15,...}}
 
 xu expand --wiki research --uids UID1,UID2,UID3 --relation-names cites --limit 5
 ```
@@ -93,7 +98,7 @@ xu expand --wiki research --uids UID1,UID2,UID3 --relation-names cites --limit 5
 
 | Pitfall | Fix |
 |---|---|
-| Forgetting multi-round | Up to 50 blocks per round; use `max_rounds` |
+| Forgetting multi-round | Block count configurable via `query.blocks` (default 50); use `max_rounds` |
 | Path B without relation filter | `--relation-names` prevents chain explosion |
 | Auto-creating on hint | `reflection` is a starting point, not a mandate |
 | 50-edge limit | 51st relation evicts the tail |
