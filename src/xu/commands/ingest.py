@@ -49,7 +49,7 @@ from ..utils.paths import (
     sha256_text,
 )
 from ..utils.response import error, success, warning, make_response
-from ..utils.wiki import resolve_wiki, find_node_md, find_by_source_hash
+from ..utils.wiki import resolve_wiki, find_by_source_hash
 
 
 def _scan_fm_index(ctx) -> tuple[dict, dict]:
@@ -907,11 +907,21 @@ def cmd_ingest_verify(args) -> dict:
     if not ctx:
         return error(f"wiki not found: {args.wiki!r}", "WikiNotFound")
 
-    md_path = ctx.root / "nodes" / "page" / f"{args.uid}.md"
+    md_path = ctx.page_dir / f"{args.uid}.md"
     if not md_path.exists():
-        result = find_node_md(ctx, args.uid)
-        if result:
-            md_path = Path(result[1])
+        # Fallback: rglob scan by UID in frontmatter
+        md_path = None
+        for p in ctx.page_dir.rglob("*.md"):
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+                fm_dict, _ = fm.parse(text)
+                if fm_dict.get("uid") == args.uid:
+                    md_path = p
+                    break
+            except Exception:
+                continue
+        if md_path is None:
+            md_path = ctx.root / "nodes" / "pages" / f"{args.uid}.md"
 
     checks, passed, failed = _verify_committed(ctx, md_path, args.uid)
 
