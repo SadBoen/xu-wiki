@@ -2,7 +2,7 @@
 
 > **注意：** 所有知识库操作必须通过 shell 中的 CLI 命令调用（如 `xu ...`），禁止使用 `execute_code`、`run_python` 等沙箱 Python 工具执行 xu 命令，因为这些环境不继承宿主 PATH。
 
-CLI is purely a matcher — **it does not interpret free-text**. Agent grades query into comma-separated `--keywords`.
+CLI is purely a matcher — **it does not interpret free-text**. Agent grades query into comma-separated `--keywords` (internal step before CLI call).
 
 ## Hard rule
 
@@ -42,17 +42,19 @@ xu entity modify --wiki <w> --uid <uid> [--title <t>] [--body <md>]
 ## Multi-round workflow
 
 **Round 1 — keyword search:**
-1. Grade user query → keyword list (always include English forms)
-2. Call `xu query`
+1. **LLM grades query internally** → comma-separated keyword list (always include English forms). This is NOT a CLI call.
+2. Call `xu query --wiki <w> --keywords "<kw1,kw2,..."`
 3. Inspect `data.blocks` (uid/title/layer/text/score) + `data.uid_batch` + `data.max_rounds` + `data.total_hits` + `data.block_count`
 
-**Path A — new keywords:** re-call `xu query` with different keywords
+**Path A — new keywords:** LLM grades new query internally → re-call `xu query` with different keywords
 
 **Path B — expand:** pick UIDs → `xu expand --wiki W --uids uid1,uid2,...` → full bodies + relations. `--relation-names` filters by name (not direction). `--limit` caps relations per UID.
 
 **Stopping:** conclusion reached · `max_rounds` exhausted · no more relations
 
 ## Keyword grading rule
+
+This is an **LLM-internal step** before calling `xu query`. Never pass raw user text to CLI.
 
 Always add English forms. Example: `"现在库里面收录了几条船？"` → `--keywords "船舶,IMO,MMSI,船名,船只,舰船,货轮,ship,vessel,boat"`
 
