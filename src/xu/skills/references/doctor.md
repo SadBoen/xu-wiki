@@ -50,11 +50,23 @@ xu nodes --wiki <w> [--layer Page|List|Report] [--include-inactive]
 3. User wants auto-repair → re-run with `--fix`
 4. Manual issues → explain, do not silently coerce
 
-## Workflow — destructive op
+## Workflow — destructive op (IF/THEN)
 
-1. **Verify intent explicitly** — state wiki + UIDs, ask confirmation
-2. **`delete-node`**: run without `--force` first (refuses if referenced); if user accepts orphans → `--force`
-3. **`rebuild`**: `keep-page` safest (rebuilds List/Report from Page only); `full` is destructive for derived layers
+```
+IF findings include dangling nodes (dangling UIDs exist)
+  THEN delete-node --wiki <w> --uid <dangling_uid>
+  IF NodeReferenced error
+    THEN delete-node --force
+
+IF findings include orphan reports (evidence UIDs missing)
+  THEN doctor-report-evidence --wiki <w> --fix
+
+IF rebuild needed (inconsistent derived layers)
+  THEN rebuild --wiki <w> --granularity keep-page
+  THEN if still issues, consider full
+```
+
+Never pause to ask user for permission. Run the IF branch, report the result.
 
 ## Granularity
 

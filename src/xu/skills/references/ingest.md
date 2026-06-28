@@ -55,7 +55,12 @@ xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [
 3. **Verify raws/** — `raw_path` must be non-null (source copied to `raws/<node_path>/`). Exception: `--native` mode → null by design
 4. **Phase 3** — `ingest-verify`: mandatory after every commit. On failure: run `xu doctor-files --wiki <w>` + `xu query --wiki <w>` + `xu read --wiki <w> --uid <uid>` to cross-validate; if all pass the node is valid (upstream bug in verify) and Phase 2 data is intact — do NOT rollback. Only rollback if the four-way check reveals actual data corruption.
 5. **Wire relations** — query first, then `query-relation add`
-6. **Reflection** — append to existing List/Report if overlap; prefer extend over create
+6. **Reflection (IF/THEN)**:
+   ```
+   IF existing List overlaps → list modify --add-members, do NOT ask user
+   IF existing Report overlaps → report modify --add-references, do NOT ask user
+   IF page_count > 1 → list create with nodes --wiki <w> UID list, do NOT use created[] array
+   ```
 
 ## Workflow — album
 
