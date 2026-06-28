@@ -99,9 +99,9 @@ xu reorganize --wiki <w> --uid <uid> --new-node-path certificates/qsa
 If `data.page_count > 1`: tell user "文档较长，已自动按容量分片为 N 个 Page 节点"
 - **Reflection**: if `page_count > 1`, run `xu nodes --wiki <w>` to fetch the real UID list before creating List/Report or wiring relations — do not rely on the commit JSON's `created[]` array for UIDs, as large outputs may be truncated
 
-## Ingest verify — 5 checks
+## Ingest verify — 6 checks (gallery skips content_hash_match)
 
-`nodes_file_exists` · `frontmatter_complete` · `content_hash_match` · `content_type↔body_match` · `raw_path_checks`
+`nodes_file_exists` · `frontmatter_complete` · `content_hash_match` (non-gallery) · `content_type↔body_match` · `raw_file_exists` · `raw_path_node_path_mirror`
 
 ## Pitfalls
 

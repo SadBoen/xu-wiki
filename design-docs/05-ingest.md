@@ -83,7 +83,7 @@ Agent 第一步问用户内容形态。
 
 ### [PRIN-ING-16] ingest 后必须运行 `xu ingest-verify`
 
-5 项检查：nodes 文件存在 / frontmatter 完整 / content_hash 匹配 / content_type↔body 匹配 / raw_path 校验。
+6 项检查：nodes 文件存在 / frontmatter 完整（gallery 无 content_hash）/ content_hash 匹配（非 gallery）/ content_type↔body 匹配 / raw 文件存在 / raw_path 镜像。
 
 ## 禁令
 

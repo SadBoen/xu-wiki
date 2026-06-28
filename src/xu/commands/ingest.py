@@ -678,7 +678,6 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
 
     Phase 2 here:
     - Level-2 dedup: skip images whose source_hash already exists
-    - content_hash: based on deduplicated body
     - render frontmatter with attrs.album.sources (only new images)
     - write .md
     """
@@ -715,7 +714,6 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
 
     # Re-render body with only new (non-duplicate) images
     body = _render_body(new_body_items)
-    content_hash = sha256_text(body)
 
     uid = gen_uid()
     base_slug = safe_slug(args.title)
@@ -729,9 +727,8 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         FM_CONTENT_TYPE: "gallery",
         FM_ACTIVE: True,
         FM_CREATED: ts,
-        FM_CONTENT_HASH: content_hash,
         FM_NODE_PATH: meta.get("node_path", ""),
-        FM_PATCHES: [{"op": "create", "delta": content_hash,
+        FM_PATCHES: [{"op": "create", "delta": "gallery",
                       "created_at": ts}],
         FM_SOURCE_HASHES: [item["sha256"] for item in new_body_items],
         "attrs": {
@@ -876,19 +873,22 @@ def _verify_committed(ctx, md_path, uid) -> tuple[list[dict], list[str], list[st
 
     frontmatter: dict[str, Any] = {}
     body = ""
+    ct = "article"
     if md_path and md_path.exists():
         text = md_path.read_text(encoding="utf-8")
         frontmatter, body = fm.parse(text)
-        required = ["uid", "title", "layer", "content_type", "active", "created_at", "content_hash"]
+        ct = frontmatter.get("content_type", "article")
+        required = ["uid", "title", "layer", "content_type", "active", "created_at"]
+        if ct != "gallery":
+            required.append("content_hash")
         missing = [f for f in required if f not in frontmatter]
         check("frontmatter_complete", len(missing) == 0,
               f"missing: {missing}" if missing else "")
-        if body:
+        if body and ct != "gallery":
             actual_hash = sha256_text(body)
             stored_hash = frontmatter.get("content_hash", "")
             check("content_hash_match", actual_hash == stored_hash,
                   f"stored={stored_hash[:8]}... actual={actual_hash[:8]}...")
-        ct = frontmatter.get("content_type", "article")
         fmt_err = _validate_body_format(body, ct) if body else None
         check("content_type_body_match", fmt_err is None, fmt_err or "" if fmt_err else "")
     else:
