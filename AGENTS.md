@@ -19,9 +19,12 @@ python3 -m pytest tests/ -q
 .venv/bin/xu create ...     # bootstrap .venv first: pip install -e ".[pdf,parse,nlp,vision]"
 # or run via the wrapper script that manages .venv internally:
 bash tests/e2e_verify.sh
+
+# Local pre-commit hooks (also run in CI)
+pre-commit run --all-files
 ```
 
-**CI pipeline**: `ruff check` → `mypy` → `pytest` on Python 3.10–3.13.
+**CI pipeline**: `ruff check` → `mypy` → `pytest` on Python 3.10–3.13. Pre-commit (`ruff --fix` + `ruff-format`) runs alongside lint in CI.
 
 ## Architecture
 
