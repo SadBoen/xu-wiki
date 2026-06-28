@@ -75,7 +75,7 @@ def _pipx_upgrade() -> dict:
     if not pipx_python.exists():
         pipx_python = Path(sys.prefix) / "bin" / "python"
     cmd = [
-        str(pipx_python), "-m", "pip", "install", "--upgrade",
+        str(pipx_python), "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--no-deps",
         f"git+https://github.com/{GITHUB_REPO}.git@main",
     ]
     if not sys.stdout.isatty():
@@ -97,7 +97,7 @@ def _pipx_upgrade() -> dict:
 
 def _pip_upgrade() -> dict:
     cmd = [
-        sys.executable, "-m", "pip", "install", "--upgrade",
+        sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--no-deps",
         f"git+https://github.com/{GITHUB_REPO}.git@main",
     ]
     if not sys.stdout.isatty():

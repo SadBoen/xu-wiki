@@ -114,7 +114,9 @@ xu update --no-redeploy      # only install latest, skip skill re-deploy
 
 1. `xu update --check` — reports `{status, data: {current, latest, latest_date, update_available}}`
 2. `xu update` — install from `git+https://github.com/SadBoen/xu-wiki.git@main` + re-deploy skill bundles
-3. `xu selfcheck` — verify
+3. **Verify commit SHA** — read `direct_url.json` (see pitfall: pip VCS cache); confirm `commit_id` matches the SHA reported by `xu update --check`
+4. `xu selfcheck` — verify
+5. **Post-reinstall extras check** — if `xu update` needed `pipx reinstall` (extras wiped), re-inject: `pipx inject xu-wiki markitdown && pipx inject xu-wiki pillow`; then `xu deploy skill --target <target>` to re-link skill bundle
 
 ### How it works
 
@@ -162,6 +164,9 @@ xu uninstall --execute --target <agent>     # target specific agent(s)
 ### Pitfalls
 
 | Pitfall | Fix |
-|---|---|
+|---|---|---|
 | `xu install` | Doesn't exist — use `pip install` |
 | `--keep-pip` in user flow | Test escape hatch — never in normal flows |
+| **pip VCS cache is stale** — `xu update` reports success but pip used cached old source; `direct_url.json` commit_id won't match GitHub latest | After any `xu update`, always verify: `cat .../xu_wiki-*.dist-info/direct_url.json | grep commit_id` and compare to GitHub API. Mismatch → `pipx reinstall xu-wiki` to force fresh fetch |
+| **`pipx reinstall` wipes all injected extras** — pillow / markitdown / etc. are gone; `xu selfcheck` reports `optional_extras` failure | Re-inject all needed extras after `pipx reinstall`: `pipx inject xu-wiki markitdown` + `pipx inject xu-wiki pillow` + any others, then `xu selfcheck` |
+| **`pipx reinstall` also breaks skill bundle symlinks** — `/root/.local/share/xu-wiki/skills/<target>/` symlinks or files may be stale/severed after reinstall | After `pipx reinstall`, run `xu selfcheck`; if skill deploy check fails, run `xu deploy skill --target <target>` to re-deploy |
