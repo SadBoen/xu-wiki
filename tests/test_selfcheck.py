@@ -314,6 +314,12 @@ def test_agent_skill_not_deployed_returns_warning(xu_home, monkeypatch):
     monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
                         lambda: {"ok": True, "path": "/tmp/.xu-wiki",
                                  "hint": "global dir writable (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_optional_extras",
+                        lambda: {"ok": True, "extras": {},
+                                 "hint": "optional extras (test mock)"})
+    monkeypatch.setattr(cmd_mod, "_check_agent_skill_deployed",
+                        lambda: {"ok": False, "found": [], "missing": [],
+                                 "hint": "skill not deployed (test mock)"})
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "warning"
     assert "agent_skill_deployed" in r["data"]["failed_noncritical"]
