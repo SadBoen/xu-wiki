@@ -14,15 +14,15 @@ install = 雇图书馆管理员；create = 建一座新图书馆；register = �
 
 三件套目录 + `.xu/config.yaml` + 注册表项。空就是空。
 
-### [PRIN-CRT-3] 三层边界清晰
+### [PRIN-CRT-3] 两层边界清晰
 
 ✅ 动：raws/ nodes/ .xu/ 目录、库内 config、注册表项
 ❌ 不动：CLI/venv/SKILL（install 领域）
 ❌ 不动：已存在的 wiki 实例（delete-node 领域）
 
-### [PRIN-CRT-4] 为三层节点预留位置
+### [PRIN-CRT-4] 为两层节点预留位置
 
-目录结构和 DB schema 必须为 Page/List/Report 预留位置。
+目录结构和 DB schema 必须为 Page/Entity/List/Report 预留位置。
 
 ### [PRIN-CRT-5] 为弹性 Rebuild 预留粒度开关
 

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Relation-driven three-layer wiki engine for AI agents. Python CLI, fully deterministic — no LLM calls.
+Relation-driven wiki engine for AI agents: Page (knowledge) + Entity/List/Report (learning). Python CLI, fully deterministic — no LLM calls.
 
 ## Developer Commands
 

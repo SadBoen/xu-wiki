@@ -25,7 +25,7 @@ from .utils.response import emit, error
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="xu",
-        description="Relation-driven three-layer wiki engine (xu-wiki)",
+        description="Relation-driven wiki engine: Page (knowledge) + Entity/List/Report (learning)",
     )
     # Bug 3 fix: every reasonable CLI has `--version`. Without it the
     # agent (and the user) has no way to confirm "did pip actually

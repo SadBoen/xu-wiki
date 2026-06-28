@@ -6,29 +6,24 @@
 
 | # | 模块 | 核心问题 |
 |---|---|
-| 01 | [01-wiki-architecture.md](01-wiki-architecture.md) | 三层架构 + 50 条关系 |
-| 02 | [02-create.md](02-create.md) | 建空库骨架 |
-| 03 | [03-install.md](03-install.md) | 装能力不装数据 |
-| 04 | [04-uninstall.md](04-uninstall.md) | 卸载软件不动知识 |
-| 05 | [05-ingest.md](05-ingest.md) | Page 不可变 + 两阶段入库 |
-| 06 | [06-query.md](06-query.md) | 三层介入检索 |
-| 07 | [07-doctor.md](07-doctor.md) | 三层不变量检查 |
+| 01 | [01-wiki-architecture.md](01-wiki-architecture.md) | 两层节点架构 + 50 条关系 |
+| 06 | [06-query.md](06-query.md) | 两层介入检索 |
+| 07 | [07-doctor.md](07-doctor.md) | 两层节点不变量检查 |
 | 08 | [08-sop-architecture.md](08-sop-architecture.md) | 意图→CLI 编排 |
 | 09 | [09-skill-architecture.md](09-skill-architecture.md) | Agent skill 文档架构 |
 
 ## 核心架构
 
-> **面向 AI Agent 的关系驱动型三层 wiki 引擎**——图书管理员管理知识，不写书。
+> **面向 AI Agent 的关系驱动型 wiki 引擎**——Page（知识层/藏书）+ Entity/List/Report（学习层/笔记）。
 
-## 三层节点
+## 两层节点
 
 | 层 | 职责 | 可变性 |
 |---|---|---|
-| **Page** | 物理事实切片 | 不可变（修订走 patches） |
-| **List** | 横向聚合 | 可改 |
-| **Report** | 逻辑推演 | 可改、可重建 |
+| **Page** | 物理事实切片（知识层/藏书） | 不可变（修订走 patches） |
+| **Entity/List/Report** | 逻辑聚合/对比/推理（学习层/笔记） | 可改、可重建 |
 
-Page 不评价，List 不推演，Report 不生产原始事实。
+Page 不生产原始事实之外的评价；学习层不生产原始事实（由 Page 提供）。
 
 ## 50 条关系上限
 

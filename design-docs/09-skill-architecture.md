@@ -218,7 +218,7 @@ Agent 通过 `Read` 工具或 `cat` 加载文件时，**整文件加载**。不�
 
 | 现有原则 | 关系 |
 |---|---|
-| [PRIN-ARCH-26] 元数据三层 | process-layer audit 的细节在 01-wiki-architecture.md，SKILL.md 只放 Agent 操作级的一句话 |
+| [PRIN-ARCH-26] 元数据三层 | process-layer audit 的细节在 01-wiki-architecture.md，SKILL.md 只放 Agent 操作级的一句话（注：三层指内容/修订/过程三层元数据，非节点类型三层） |
 | [PRIN-SOP-1~7] | 5 个 SOP 任务文件实现 SOP 编排的"导航"；SKILL.md 是 SOP 入口的索引 |
 | [CONST-ARCH-6] | process-layer audit 的双路写入由 CLI 保证；Skill 文档只描述 Agent 视角的观察 |
 

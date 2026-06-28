@@ -462,7 +462,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 | 文档 | 关系 |
 |---|---|
-| 01-wiki-architecture.md | SOP 层建立在三层节点 + 50 条关系架构之上 |
+| 01-wiki-architecture.md | SOP 层建立在两层节点架构 + 50 条关系之上 |
 | 02-create.md | 是 SOP-create 的 CLI 实现文档 |
 | 03-install.md | install 由 pip 处理（见该文档） |
 | 04-uninstall.md | uninstall 原则见本文 [CONST-SOP-3]；程序本体由 `xu uninstall` 卸，skill bundle 由 Agent 自删，wiki 数据永不删除 |

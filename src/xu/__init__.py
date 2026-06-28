@@ -1,2 +1,2 @@
-"""xu-wiki: relation-driven three-layer wiki engine for AI agents."""
+"""xu-wiki: relation-driven wiki engine — Page (knowledge) + Entity/List/Report (learning)."""
 __version__ = "0.1.0"

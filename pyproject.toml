@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xu-wiki"
 version = "0.1.0"
-description = "Relation-driven three-layer wiki engine for AI agents"
+description = "Relation-driven wiki engine for AI agents: Page (knowledge) + Entity/List/Report (learning)"
 requires-python = ">=3.10"
 dependencies = [
     "PyYAML>=6.0",

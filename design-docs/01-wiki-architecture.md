@@ -1,4 +1,4 @@
-# 01 — Wiki 三层架构设计原则
+# 01 — Wiki 两层节点架构设计原则
 
 ## 安全总纲
 
@@ -11,25 +11,23 @@
 
 **边界**：「判断一个值」（内容归哪个分区）= 本职；「猜意图」（写错库名就建新库）= 必须停。
 
-## 三层节点架构
+## 两层节点架构
 
 ```
-Report — 主观智能（为什么/怎么办/如果…）
-List  — 严谨对比（同属于/同类设备）
-Page  — 冷冰冰客观（这页说了什么）
+知识层（Page）    — 图书层，原始切片，immutable，SHA256 去重
+学习层（Entity/List/Report）— 笔记层，Agent 生成的聚合/推理/实体
 ```
 
-### [PRIN-ARCH-1] 三层各司其职
+### [PRIN-ARCH-1] 两层各司其职
 
 | 层 | 做 | 不做 |
 |---|---|---|
-| Page | 物理事实切片、原文留痕 | 不评价、不对比、不推演 |
-| List | 横向聚合、YAML 成员 | 不评价、不推演 |
-| Report | 逻辑推演、因果总结 | 不生产原始事实 |
+| Page | 物理事实切片、原文留痕、版本可控 | 不评价、不对比、不推演 |
+| Entity/List/Report | 逻辑聚合、因果总结、对比分析 | 不生产原始事实（由 Page 提供） |
 
 ### [PRIN-ARCH-2] 图书馆哲学
 
-Page = 书，List = 索引，Report = 导读。Page 永远是 ground truth；List/Report 可重建。
+Page = 藏书，Entity/List/Report = 读书笔记。Page 永远是 ground truth；学习层可重建。
 
 ### [PRIN-ARCH-3] Page 不可变 + 修订表
 
@@ -53,7 +51,7 @@ Page 生成后不直接修改 Markdown。修订走 frontmatter 内嵌 patches �
 
 ## 检索工作流
 
-### [PRIN-ARCH-11] 三层介入：Page 物理定位 → List 结构对齐 → Report 逻辑提炼
+### [PRIN-ARCH-11] 两层介入：Page 物理定位 → 学习层结构对齐 / 逻辑提炼
 
 ### [PRIN-ARCH-12] 关键词由 Agent 生成（含中英文），CLI 不做语义判断
 
@@ -81,7 +79,7 @@ Page 生成后不直接修改 Markdown。修订走 frontmatter 内嵌 patches �
 
 ### [PRIN-ARCH-26] 过程层（audit.jsonl）只用于诊断 SOP，不参与内容/修订
 
-三层各司其职：内容层在 nodes/.md，修订层在 patches 表，过程层在 audit.jsonl。
+两层各司其职：内容层在 nodes/.md，修订层在 patches 表，过程层在 audit.jsonl。
 
 ## 模板与节点身份
 
