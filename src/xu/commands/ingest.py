@@ -604,7 +604,7 @@ def cmd_ingest_commit(args) -> dict:
 
     verify_failed = []
     for item in created:
-        md_p = ctx.root / item["md_path"]
+        md_p = ctx.root / str(item["md_path"])
         v_checks, v_passed, v_failed = _verify_committed(ctx, md_p, item["uid"])
         if v_failed:
             verify_failed.append({"uid": item["uid"], "failed": v_failed, "checks": v_checks})
@@ -841,7 +841,8 @@ def _verify_committed(ctx, md_path, uid) -> tuple[list[dict], list[str], list[st
     check("nodes_file_exists", md_path is not None and md_path.exists(),
           str(md_path) if md_path else "")
 
-    frontmatter, body = {}, ""
+    frontmatter: dict[str, Any] = {}
+    body = ""
     if md_path and md_path.exists():
         text = md_path.read_text(encoding="utf-8")
         frontmatter, body = fm.parse(text)
@@ -874,7 +875,7 @@ def cmd_ingest_verify(args) -> dict:
     if not md_path.exists():
         result = find_node_md(ctx, args.uid)
         if result:
-            md_path = result[1]
+            md_path = Path(result[1])
 
     checks, passed, failed = _verify_committed(ctx, md_path, args.uid)
 

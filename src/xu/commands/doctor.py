@@ -18,7 +18,7 @@ from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
 
 
-_LAYER_TAG = {}
+_LAYER_TAG: dict[str, str] = {}
 
 
 def _all_frontmatter_nodes(ctx):
@@ -106,11 +106,10 @@ def cmd_doctor(args) -> dict:
                       f"(Page={summary['by_layer']['Page']} List={summary['by_layer']['List']} "
                       f"Report={summary['by_layer']['Report']} Entity={summary['by_layer']['Entity']} "
                       f"cross={summary['by_layer']['cross']})",
-                      hints=hints)
-    fn = checks.get(kind)
-    if not fn:
+                       hints=hints)
+    if kind not in checks:
         return error(f"unknown doctor check: {kind}", "UnknownCheck")
-    r = fn(ctx, fix)
+    r = checks[kind](ctx, fix)
     summary = _summarize({kind: r})
     data = {kind: r, "fix_applied": fix, **summary}
     if fix:
@@ -127,7 +126,7 @@ def cmd_doctor(args) -> dict:
 def _check_fields(ctx, fix) -> dict:
     """Frontmatter completeness + file existence (CONST-DOC-1)."""
     issues = []
-    fixed = []
+    fixed: list[dict] = []
     for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
         uid = fm_dict.get("uid", "")
         lyr = fm_dict.get("layer", "cross")
@@ -142,7 +141,7 @@ def _check_fields(ctx, fix) -> dict:
 def _check_files(ctx, fix) -> dict:
     """Orphan files (on disk, not in DB) and dangling DB rows (CONST-DOC-2)."""
     issues = []
-    fixed = []
+    fixed: list[dict] = []
     fm_paths = {}
     for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
         fm_paths[str(md_path.relative_to(ctx.root))] = fm_dict
@@ -157,7 +156,7 @@ def _check_files(ctx, fix) -> dict:
 def _check_relations(ctx, fix) -> dict:
     """LRU integrity: cap, contiguous positions, dangling targets (CONST-DOC-4)."""
     issues = []
-    fixed = []
+    fixed: list[dict] = []
     all_uids = set()
     for _, fm_dict, _ in _all_frontmatter_nodes(ctx):
         uid = fm_dict.get("uid")
@@ -229,6 +228,8 @@ def _check_report_evidence(ctx, fix) -> dict:
         to_remove = []
         for ref in evidence_list:
             ref_uid = ref.get("ref_uid") if isinstance(ref, dict) else ref
+            if ref_uid is None:
+                continue
             active = uid_active.get(ref_uid)
             if active is None:
                 issues.append({"report_uid": uid, "problem": "dangling evidence ref",
@@ -260,7 +261,7 @@ def _suggest_node_path(title: str) -> str:
         nouns = extract_nouns(title)
         if not nouns:
             return "uncategorized"
-        top = max(nouns, key=nouns.get)
+        top = max(nouns, key=lambda k: nouns.get(k) or 0)
         if len(top) < 2:
             return "uncategorized"
         safe = top.replace(" ", "-").lower()[:30]
@@ -306,7 +307,10 @@ def _check_node_path_organization(ctx, fix) -> dict:
         return {"issue_count": 0, "issues": [], "fixed": [], "at_root": 0}
 
     for uid in sorted(root_uids):
-        fm_dict, md_path = _find_node_fm(ctx, uid)
+        result = _find_node_fm(ctx, uid)
+        if not result:
+            continue
+        fm_dict, md_path = result
         if not fm_dict:
             continue
         title = fm_dict.get("title") or ""

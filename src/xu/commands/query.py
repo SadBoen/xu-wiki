@@ -9,7 +9,6 @@ CLI never generates summaries (PRIN-QRY-15).
 """
 from __future__ import annotations
 
-import yaml
 from pathlib import Path
 
 from ..ingest.relations_lru import list_relations, touch_relation
@@ -17,7 +16,7 @@ from ..query.scanner import scan
 from ..query.slicing import make_slice, merge_slices
 from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
-from ..utils.response import error, success, warning
+from ..utils.response import error, success
 from ..utils.wiki import find_node_md, resolve_wiki, write_node_frontmatter
 
 
@@ -150,8 +149,8 @@ def cmd_query(args) -> dict:
         body_offset = text.find(body) if body else 0
 
         title_hits = sum(1 for _, h in kw_hits
-                         if _line_col_to_offset(text, h["line"], h["col"]) is not None
-                         and _line_col_to_offset(text, h["line"], h["col"]) < body_offset)
+                         if (pos := _line_col_to_offset(text, h["line"], h["col"])) is not None
+                         and pos < body_offset)
         total_hits = len(kw_hits)
         body_hit_count = total_hits - title_hits
 

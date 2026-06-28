@@ -100,7 +100,7 @@ def load_registry() -> dict:
 
 
 def save_registry(reg: dict) -> None:
-    cfg = {}
+    cfg: dict[str, Any] = {}
     if GLOBAL_CONFIG.exists():
         with open(GLOBAL_CONFIG, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}

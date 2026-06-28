@@ -81,7 +81,7 @@ def _list_create(args) -> dict:
 
     md_path = ctx.list_dir / f"{node_path}.md"
     body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    atomic_write_text(md_path, fm.render(frontmatter, body))
+    atomic_write_text(md_path, fm.render(frontmatter, body))  # type: ignore[arg-type]  # md_path set when frontmatter found
 
     return success(
         {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_items],
@@ -170,7 +170,7 @@ def _list_modify(args) -> dict:
         body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
     frontmatter["updated_at"] = now_ts()
 
-    atomic_write_text(md_path, fm.render(frontmatter, body))
+    atomic_write_text(md_path, fm.render(frontmatter, body))  # type: ignore[arg-type]  # md_path set when frontmatter found
     return success(
         {"uid": args.uid, "layer": "List"},
         f"modified List {args.uid}",
@@ -306,7 +306,7 @@ def _entity_modify(args) -> dict:
         body = args.body
     frontmatter["updated_at"] = now_ts()
 
-    atomic_write_text(md_path, fm.render(frontmatter, body))
+    atomic_write_text(md_path, fm.render(frontmatter, body))  # type: ignore[arg-type]  # md_path set when frontmatter found
     return success(
         {"uid": args.uid, "layer": "Entity"},
         f"modified Entity {args.uid}",
@@ -453,9 +453,9 @@ def _report_modify(args) -> dict:
             return error(f"evidence node(s) not found: {missing}", "EvidenceNotFound",
                          data={"missing": missing})
         frontmatter["references"] = ref_meta
-
     frontmatter["updated_at"] = now_ts()
-    atomic_write_text(md_path, fm.render(frontmatter, body))
+
+    atomic_write_text(md_path, fm.render(frontmatter, body))  # type: ignore[arg-type]  # md_path set when frontmatter found
     return success(
         {"uid": args.uid, "layer": "Report"},
         f"modified Report {args.uid}",
