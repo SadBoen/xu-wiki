@@ -909,19 +909,17 @@ def cmd_ingest_verify(args) -> dict:
 
     md_path = ctx.page_dir / f"{args.uid}.md"
     if not md_path.exists():
-        # Fallback: rglob scan by UID in frontmatter
-        md_path = None
+        found: Path | None = None
         for p in ctx.page_dir.rglob("*.md"):
             try:
                 text = p.read_text(encoding="utf-8", errors="replace")
                 fm_dict, _ = fm.parse(text)
                 if fm_dict.get("uid") == args.uid:
-                    md_path = p
+                    found = p
                     break
             except Exception:
                 continue
-        if md_path is None:
-            md_path = ctx.root / "nodes" / "pages" / f"{args.uid}.md"
+        md_path = found if found else ctx.root / "nodes" / "pages" / f"{args.uid}.md"
 
     checks, passed, failed = _verify_committed(ctx, md_path, args.uid)
 
