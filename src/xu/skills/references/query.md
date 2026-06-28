@@ -92,12 +92,4 @@ xu report show --wiki <w> --uid <uid>
 xu report modify --wiki <w> --uid <uid> [--title <t>] [--body <md>] [--references <uids>]
 ```
 
-## Pitfalls
 
-| Pitfall | Fix |
-|---|---|
-| Passing raw text to `xu query` | Always grade into `--keywords` first |
-| Using `xu query` to count entities | Use `xu nodes --layer Entity` |
-| Skipping `suggest_create_report` in IF/THEN | Missing trigger — add it |
-| Expanding without `--relation-names` | Risk of chain explosion |
-| 50-edge limit | 51st relation evicts the tail |
