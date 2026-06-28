@@ -432,3 +432,66 @@ def test_album_temp_deleted_after_commit(wiki, tmp_path):
     r2 = _phase2(name, str(temp_path), "temp delete test")
     assert r2["status"] == "success", r2
     assert not temp_path.exists(), "Temp file should be deleted after Phase 2 success"
+
+
+# ---------------------------------------------------------------------------
+# article large-body ingest-verify (≥1.7 KB body triggers OSError before fix)
+# ---------------------------------------------------------------------------
+
+def _phase1_article(wiki_name, title, file_path, node_path=""):
+    """Run Phase 1: ingest-file with --file (article mode)."""
+    r = ingest_mod.cmd_ingest_file(_args(
+        wiki=wiki_name, title=title, file=file_path,
+        node_path=node_path, files=None,
+    ))
+    return r
+
+
+def _phase2_article(wiki_name, temp, title, content_type="article"):
+    """Run Phase 2: ingest-commit with temp file (article mode)."""
+    r = ingest_mod.cmd_ingest_commit(_args(
+        wiki=wiki_name, temp=temp, title=title,
+        content_type=content_type, author="agent",
+        native=None, source=None, node_path="", relations="",
+    ))
+    return r
+
+
+def test_ingest_verify_large_body_no_oserror(wiki, tmp_path):
+    """ingest-verify must not raise OSError on body ≥1.7 KB (split pages).
+
+    Regression test for: _raw_path_checks passed body string to os.stat()
+    instead of frontmatter['raw_path'] — fixed with isinstance guard + OSError
+    handling.  The bug triggered on every verify call because split pages carry
+    large bodies in frontmatter, and Linux filename length is unbounded so the
+    OSError only appeared on specific FS/path conditions; the real fix is the
+    type-safe rewrite that never passes body to file operations.
+    """
+    name, _root = wiki
+
+    # Generate a file large enough to create ≥2 split pages (1000 lines × 100
+    # chars ≈ 100 KB, well above the 300-line split threshold).
+    large_file = tmp_path / "large_doc.txt"
+    large_file.write_text("\n".join(f"line {i:04d} " + "x" * 90 for i in range(1000)),
+                          encoding="utf-8")
+    assert large_file.stat().st_size > 90_000, "sanity: file must be ≥90 KB"
+
+    r1 = _phase1_article(name, "large body test", str(large_file))
+    assert r1["status"] == "success", r1
+    temp_path = Path(r1["data"]["temp"])
+    assert temp_path.exists()
+
+    r2 = _phase2_article(name, str(temp_path), "large body test")
+    assert r2["status"] == "success", r2
+
+    created = r2["data"]["created"]
+    assert len(created) >= 2, f"expected ≥2 split pages, got {len(created)}"
+
+    # Verify every created UID — none should raise OSError
+    for item in created:
+        uid = item["uid"]
+        vr = ingest_mod.cmd_ingest_verify(_args(wiki=name, uid=uid))
+        assert vr["status"] == "success", f"verify failed for uid={uid}: {vr}"
+        assert not any(
+            "OSError" in str(c) for c in vr.get("data", {}).get("checks", [])
+        ), f"OSError found in verify checks for uid={uid}"

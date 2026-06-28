@@ -53,7 +53,7 @@ xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [
 1. **Phase 1** — `ingest-file`: SHA256 dedup → parse → temp file. Returns `data.temp`
 2. **Phase 2** — `ingest-commit --temp <f> --title <t>`: promotes to Page. Internal verify + atomic rollback on failure
 3. **Verify raws/** — `raw_path` must be non-null (source copied to `raws/<node_path>/`). Exception: `--native` mode → null by design
-4. **Phase 3** — `ingest-verify`: mandatory after every commit. On failure: files rolled back → start from Phase 1
+4. **Phase 3** — `ingest-verify`: mandatory after every commit. On failure: run `xu doctor-files --wiki <w>` + `xu query --wiki <w>` + `xu read --wiki <w> --uid <uid>` to cross-validate; if all pass the node is valid (upstream bug in verify) and Phase 2 data is intact — do NOT rollback. Only rollback if the four-way check reveals actual data corruption.
 5. **Wire relations** — query first, then `query-relation add`
 6. **Reflection** — append to existing List/Report if overlap; prefer extend over create
 
@@ -92,6 +92,7 @@ xu reorganize --wiki <w> --uid <uid> --new-node-path certificates/qsa
 ## Page splitting
 
 If `data.page_count > 1`: tell user "文档较长，已自动按容量分片为 N 个 Page 节点"
+- **Reflection**: if `page_count > 1`, run `xu nodes --wiki <w>` to fetch the real UID list before creating List/Report or wiring relations — do not rely on the commit JSON's `created[]` array for UIDs, as large outputs may be truncated
 
 ## Ingest verify — 5 checks
 

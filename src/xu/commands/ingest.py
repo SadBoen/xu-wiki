@@ -177,22 +177,23 @@ def cmd_ingest_file(args) -> dict:
     if not src.is_file():
         return error(f"source file not found: {src}", "FileNotFound")
 
-    # PDF/DOCX/PPTX: markitdown only required as fallback when MinerU unavailable
+    # PDF/DOCX/PPTX: MinerU first; markitdown is fallback only when MinerU unavailable
     # XLSX/XLS: ExcelParser only, no markitdown involved
-    _needs_markitdown = src.suffix.lower() in {".pdf", ".docx", ".pptx"}
-    if _needs_markitdown:
-        try:
-            importlib.import_module("markitdown")
-        except ImportError:
-            from ..parsers.mineru_parser import mineru_available
-            if not mineru_available():
+    _needs_parser = src.suffix.lower() in {".pdf", ".docx", ".pptx"}
+    if _needs_parser:
+        from ..parsers.mineru_parser import mineru_available
+        if mineru_available():
+            pass  # MinerU available, markitdown not needed at this stage
+        else:
+            try:
+                importlib.import_module("markitdown")
+            except ImportError:
                 return error(
-                    f"cannot parse {src.suffix}: markitdown not installed and MinerU not configured",
+                    f"cannot parse {src.suffix}: neither MinerU is configured nor markitdown is installed",
                     "MissingExtra",
                     data={"extra": "parse", "file_ext": src.suffix},
-                    hints=["pip install xu-wiki[parse] or configure MinerU key"],
+                    hints=["configure MinerU key, or pip install xu-wiki[parse,vision]"],
                 )
-            # MinerU available → markitdown is optional fallback, proceed
 
     source_hash = sha256_file(src)
     dup_fm = find_by_source_hash(ctx, source_hash)
@@ -632,7 +633,7 @@ def cmd_ingest_commit(args) -> dict:
         written.append({"md": md_path, "raw": raw_written})
         created.append({"uid": uid, "title": title, "md_path": str(rel_md),
                         "raw_path": str(rel_raw) if rel_raw else None,
-                        "body": page_body,
+                        "body": page_body[:200] + ("..." if len(page_body) > 200 else ""),
                         "lines": len(page_body.splitlines())})
 
     verify_failed = []
@@ -825,14 +826,15 @@ def _raw_path_checks(ctx, frontmatter) -> list[dict]:
     if album_sources:
         for src in album_sources:
             raw_rel = src.get("raw_rel_path", "") if isinstance(src, dict) else ""
-            if not raw_rel:
+            if not isinstance(raw_rel, str) or not raw_rel:
                 add_check("raw_file_exists", "warning", "source missing raw_rel_path")
                 continue
             raw_file = ctx.root / raw_rel
             try:
                 file_ok = raw_file.exists()
-            except OSError:
-                file_ok = False
+            except OSError as e:
+                add_check("raw_file_exists", "warning", f"OSError {e.errno}: {e}")
+                continue
             add_check("raw_file_exists", "pass" if file_ok else "warning", str(raw_file))
             if node_path:
                 expected_prefix = f"raws/{node_path}"
@@ -842,21 +844,22 @@ def _raw_path_checks(ctx, frontmatter) -> list[dict]:
                          f"raw_rel_path={raw_rel} should be under raws/{node_path}/" if not ok else "")
             else:
                 add_check("raw_path_node_path_mirror", "skip", "node_path empty for album")
-    elif raw_path_str := frontmatter.get("raw_path", ""):
+    elif isinstance(raw_path_str := frontmatter.get("raw_path", ""), str) and raw_path_str:
         raw_file = ctx.root / raw_path_str
         try:
             file_ok = raw_file.exists()
-        except OSError:
-            file_ok = False
-        add_check("raw_file_exists", "pass" if file_ok else "warning", str(raw_file))
-        if node_path:
-            expected_prefix = f"raws/{node_path}"
-            ok = raw_path_str.startswith(expected_prefix + "/") or raw_path_str == expected_prefix
-            add_check("raw_path_node_path_mirror",
-                     "pass" if ok else "fail",
-                     f"raw_path={raw_path_str} should be under raws/{node_path}/" if not ok else "")
+        except OSError as e:
+            add_check("raw_file_exists", "warning", f"OSError {e.errno}: {e}")
         else:
-            add_check("raw_path_node_path_mirror", "skip", "node_path empty")
+            add_check("raw_file_exists", "pass" if file_ok else "warning", str(raw_file))
+            if node_path:
+                expected_prefix = f"raws/{node_path}"
+                ok = raw_path_str.startswith(expected_prefix + "/") or raw_path_str == expected_prefix
+                add_check("raw_path_node_path_mirror",
+                         "pass" if ok else "fail",
+                         f"raw_path={raw_path_str} should be under raws/{node_path}/" if not ok else "")
+            else:
+                add_check("raw_path_node_path_mirror", "skip", "node_path empty")
     else:
         add_check("raw_file_exists", "skip", "raw_path not in frontmatter (pre-fix node or --native without source)")
         add_check("raw_path_node_path_mirror", "skip", "raw_path not in frontmatter (pre-fix node or --native without source)")

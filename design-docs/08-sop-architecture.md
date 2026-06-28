@@ -229,7 +229,7 @@ SKILL.md 的 SOP map 段必须列出每个 SOP 对应的全部 CLI 命令；任�
 
 **为什么 install 不需要 CLI 命令**（保持简单）：
 
-1. `pip install xu-wiki` 是单行命令，不需要编排。
+1. `pip install xu-wiki[parse,vision]` 是单行命令，不需要编排。
 2. 没有"副作用范围选择"——装就是装，没有"只装包不装依赖"之类的选项需要 UI。
 3. User 直接跑 pip 或 Agent 用 bash tool 跑 pip 都一样简单；包一层 CLI 反而违反「别人的软件就是安装很顺利」原则。
 4. 装失败时 pip 的报错已经很清晰，不需要 xu 翻译。

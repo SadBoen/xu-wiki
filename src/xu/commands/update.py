@@ -76,7 +76,7 @@ def _pipx_upgrade() -> dict:
         pipx_python = Path(sys.prefix) / "bin" / "python"
     cmd = [
         str(pipx_python), "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--no-deps",
-        f"git+https://github.com/{GITHUB_REPO}.git@main",
+        f"git+https://github.com/{GITHUB_REPO}.git@main#egg=xu-wiki[parse,vision]",
     ]
     if not sys.stdout.isatty():
         cmd.append("--quiet")
@@ -98,7 +98,7 @@ def _pipx_upgrade() -> dict:
 def _pip_upgrade() -> dict:
     cmd = [
         sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--no-deps",
-        f"git+https://github.com/{GITHUB_REPO}.git@main",
+        f"git+https://github.com/{GITHUB_REPO}.git@main#egg=xu-wiki[parse,vision]",
     ]
     if not sys.stdout.isatty():
         cmd.append("--quiet")
