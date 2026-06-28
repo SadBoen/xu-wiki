@@ -12,7 +12,7 @@ import yaml
 
 from ..utils import frontmatter as fm
 from ..utils.response import error, success, warning
-from ..utils.paths import atomic_write_text, gen_uid, now_ts, safe_slug, safe_node_path
+from ..utils.paths import atomic_write_text, gen_uid, now_ts, safe_slug, safe_node_path, sha256_text
 from ..utils.wiki import find_node_md, resolve_wiki
 
 
@@ -231,12 +231,15 @@ def _entity_create(args) -> dict:
         "uid": uid,
         "title": args.title,
         "layer": "Entity",
+        "content_type": "article",
+        "active": True,
         "node_path": node_path,
         "source_page": source_page_uid,
         "split_index": 1,
         "parent_uid": uid,
         "created_at": ts,
         "updated_at": ts,
+        "content_hash": sha256_text(args.body or ""),
     }
 
     md_path = ctx.entity_dir / f"{node_path}.md"
