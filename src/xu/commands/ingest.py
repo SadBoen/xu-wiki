@@ -30,6 +30,7 @@ from ..utils.constants import (
     FM_NODE_PATH,
     FM_PATCHES,
     FM_PARENT_UID,
+    FM_RAW_PATH,
     FM_SOURCE_HASH,
     FM_SOURCE_HASHES,
     FM_SPLIT_INDEX,
