@@ -111,10 +111,11 @@ def test_album_happy_table(wiki, tmp_path):
     data = r["data"]
     assert data["count"] == 3
 
-    # raws/ copied
-    raws_dir = root / "raws" / "船舶" / "SGW001" / "照片"
-    assert raws_dir.is_dir()
-    assert sorted(p.name for p in raws_dir.iterdir()) == ["001.jpeg", "002.jpeg", "003.jpeg"]
+    # raws/ copied: files are at raws/<node_path>/<uid>/
+    uid = data["uid"]
+    raws_uid_dir = root / "raws" / "船舶" / "SGW001" / "照片" / uid
+    assert raws_uid_dir.is_dir(), f"expected {raws_uid_dir} to exist"
+    assert sorted(p.name for p in raws_uid_dir.iterdir()) == ["001.jpeg", "002.jpeg", "003.jpeg"]
 
     # Page written
     md = root / data["md_path"]
@@ -134,7 +135,7 @@ def test_album_happy_table(wiki, tmp_path):
     items = yaml.safe_load(body)
     assert len(items) == 3
     assert [i["filename"] for i in items] == ["001.jpeg", "002.jpeg", "003.jpeg"]
-    assert items[0]["raw_rel_path"] == "raws/船舶/SGW001/照片/001.jpeg"
+    assert items[0]["raw_rel_path"] == f"raws/船舶/SGW001/照片/{uid}/001.jpeg"
 
 
 # ---------------------------------------------------------------------------

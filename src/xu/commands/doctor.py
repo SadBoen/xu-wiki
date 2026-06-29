@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ..ingest.relations_lru import list_relations
 from ..utils import frontmatter as fm
-from ..utils.constants import FM_EVIDENCE, FM_MEMBERS, MAX_EDGES, REQUIRED_FM_FIELDS
+from ..utils.constants import FM_CONTENT_HASH, FM_EVIDENCE, FM_MEMBERS, MAX_EDGES, REQUIRED_FM_FIELDS
 from ..utils.paths import sha256_text
 from ..utils.response import error, success, warning
 from ..utils.wiki import resolve_wiki
@@ -123,13 +123,19 @@ def cmd_doctor(args) -> dict:
 
 
 def _check_fields(ctx, fix) -> dict:
-    """Frontmatter completeness + file existence (CONST-DOC-1)."""
+    """Frontmatter completeness + file existence (CONST-DOC-1).
+
+    Gallery pages intentionally omit content_hash (verified in _verify_committed;
+    see PRIN-ING-12).
+    """
     issues = []
     fixed: list[dict] = []
     for md_path, fm_dict, _ in _all_frontmatter_nodes(ctx):
         uid = fm_dict.get("uid", "")
         lyr = fm_dict.get("layer", "cross")
         missing = [f for f in REQUIRED_FM_FIELDS if f not in fm_dict]
+        if fm_dict.get("content_type") == "gallery":
+            missing = [f for f in missing if f != FM_CONTENT_HASH]
         if missing:
             issues.append({"uid": uid, "problem": "missing frontmatter fields",
                            "missing": missing, "layer": lyr, "fixable": False,

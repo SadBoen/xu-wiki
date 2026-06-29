@@ -12,11 +12,13 @@ ruff check src/
 mypy src/
 python3 -m pytest tests/
 
-# Unit tests only
-python3 -m pytest tests/ -q
+# Single test file
+python3 -m pytest tests/path/to/test_file.py -q
 
 # End-to-end M1->M6 run (requires .venv; sample files at design-docs/测试用样例文件/)
-.venv/bin/xu create ...     # bootstrap .venv first: pip install -e ".[parse,vision]"
+# Bootstrap .venv first:
+pip install -e ".[parse,vision]"
+.venv/bin/xu create ...
 # or run via the wrapper script that manages .venv internally:
 bash tests/e2e_verify.sh
 

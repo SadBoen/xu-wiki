@@ -124,6 +124,36 @@ def _parse_captions(raw: str) -> dict[str, str]:
     return out
 
 
+def _compress_image(src: Path, dst: Path, preserve_exif: bool) -> tuple[str, Path]:
+    """Compress an image to JPEG at dst. Returns (sha256_of_compressed, final_dst).
+
+    dst may differ from src if format conversion occurs (e.g. PNG → JPEG).
+    Raises OSError on failure.
+    """
+    try:
+        from PIL import Image  # type: ignore
+    except Exception:
+        shutil.copy2(src, dst)
+        return sha256_file(dst), dst
+
+    try:
+        with Image.open(src) as im:
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGB")
+            save_kwargs: dict = {"format": "JPEG", "quality": 85, "optimize": True}
+            if preserve_exif:
+                exif = im.getexif()
+                if exif:
+                    save_kwargs["exif"] = exif
+            if dst.suffix.lower() != ".jpg" and dst.suffix.lower() != ".jpeg":
+                dst = dst.with_suffix(".jpg")
+            im.save(dst, **save_kwargs)
+        return sha256_file(dst), dst
+    except Exception:
+        shutil.copy2(src, dst)
+        return sha256_file(dst), dst
+
+
 def _render_body(rows: list[dict[str, Any]]) -> str:
     items = []
     for r in rows:
@@ -282,17 +312,21 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
 
     title = args.title or safe_slug(args.files.split(",")[0].strip())
 
+    compress_over = cfg_get(ctx.config, "asset.compress_over", 2097152)
+    preserve_exif = cfg_get(ctx.config, "asset.preserve_exif", True)
+
     # ---- Phase 1 dedup: build source_index before processing ----
     source_index, _ = _scan_fm_index(ctx)
 
     # ---- Parallel: sha256 + meta ----
     def process_one(src: Path) -> dict[str, Any]:
-        sha = sha256_file(src)
+        orig_sha = sha256_file(src)
         meta = read_image_meta(src)
         return {
             "filename": src.name,
             "source_path": str(src),
-            "sha256": sha,
+            "orig_sha256": orig_sha,
+            "sha256": orig_sha,
             "raw_rel_path": str(Path("raws") / Path(node_path) / src.name if node_path
                            else Path("raws") / src.name).replace("\\", "/"),
             "width": meta.get("width"),
@@ -300,16 +334,17 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
             "gps": meta.get("gps"),
             "captured": meta.get("captured"),
             "caption": captions.get(src.name, ""),
+            "_src_size": src.stat().st_size,
         }
 
     with ThreadPoolExecutor() as executor:
         all_rows: list[dict[str, Any]] = list(executor.map(process_one, files))
 
-    # ---- Split into new vs duplicate ----
+    # ---- Split into new vs duplicate (dedup uses original hash, PRIN-ING-12) ----
     new_rows: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     for item in all_rows:
-        sh = item["sha256"]
+        sh = item["orig_sha256"]
         if sh and sh in source_index:
             existing_uid, existing_title, existing_active = source_index[sh]
             skipped.append({
@@ -328,14 +363,24 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
             hints=["remove duplicates from --files and re-run Phase 1"],
         )
 
-    # ---- Copy new images to raws/ ----
+    # ---- Copy/compress new images to raws/ ----
     album_raw_dir = ctx.raws_dir / (Path(node_path) if node_path else Path("."))
     album_raw_dir.mkdir(parents=True, exist_ok=True)
+    compressed_count = 0
     for item in new_rows:
         src = Path(item["source_path"])
         dst = ctx.root / item["raw_rel_path"]
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if not dst.exists():
+        if dst.exists():
+            continue
+        src_size = item["_src_size"]
+        if src_size > compress_over:
+            new_sha, final_dst = _compress_image(src, dst, preserve_exif)
+            item["sha256"] = new_sha
+            if final_dst != dst:
+                item["raw_rel_path"] = str(final_dst.relative_to(ctx.root))
+            compressed_count += 1
+        else:
             shutil.copy2(src, dst)
 
     body = _render_body(new_rows)
@@ -372,8 +417,9 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
             "chars": len(body),
             "images": len(new_rows),
             "skipped": skipped,
+            "compressed": compressed_count,
         },
-        f"album Phase 1: {len(new_rows)} new images → temp file ({len(skipped)} duplicates skipped).",
+        f"album Phase 1: {len(new_rows)} new images → temp file ({len(skipped)} duplicates skipped, {compressed_count} compressed).",
         hints=hints,
     )
 
@@ -712,10 +758,31 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
             ],
         )
 
-    # Re-render body with only new (non-duplicate) images
+    # uid must be generated BEFORE computing raw paths (user convention: raws/<node_path>/<uid>/)
+    uid = gen_uid()
+    node_path_val = meta.get("node_path", "")
+    raw_uid_dir = ctx.root / "raws" / node_path_val / uid if node_path_val \
+        else ctx.root / "raws" / uid
+
+    # Reorganize Phase 1 files: raw_rel_path was raws/<node_path>/<orig_filename>,
+    # correct path is raws/<node_path>/<uid>/<orig_filename>
+    for item in new_body_items:
+        p1_rel = item.get("raw_rel_path", "")
+        if not p1_rel:
+            continue
+        p1_path = ctx.root / p1_rel
+        if not p1_path.exists():
+            continue
+        raw_uid_dir.mkdir(parents=True, exist_ok=True)
+        dst = raw_uid_dir / p1_path.name
+        if p1_path != dst:
+            shutil.move(str(p1_path), str(dst))
+        item["raw_rel_path"] = str(dst.relative_to(ctx.root)).replace("\\", "/")
+
+    # Re-render body with only new (non-duplicate) images and corrected paths
     body = _render_body(new_body_items)
 
-    uid = gen_uid()
+    node_path_val = meta.get("node_path", "")
     base_slug = safe_slug(args.title)
     slug = f"{base_slug}-{uid}"
     ts = now_ts()
@@ -752,7 +819,6 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         },
     }
 
-    node_path_val = meta.get("node_path", "")
     rel_md = Path("nodes/pages") / node_path_val / f"{slug}.md" if node_path_val \
         else Path("nodes/pages") / f"{slug}.md"
     md_path = ctx.root / rel_md
