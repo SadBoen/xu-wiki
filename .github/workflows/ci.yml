@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e ".[parse,vision]"
-          pip install pytest ruff mypy
+          pip install pytest ruff mypy types-PyYAML types-openpyxl
 
       - name: Lint with ruff
         run: ruff check src/
