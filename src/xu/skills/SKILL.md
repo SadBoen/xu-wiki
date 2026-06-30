@@ -25,8 +25,15 @@ DB, no lock, git-friendly.
 
 **CLI 设计原则**：
 - 全离线，不调用 LLM
-- 每次调用返回 `{status, data, message, hints}` — `hints` 供 Agent 后续步骤参考，不是给用户看的
+- 每次调用返回 `{status, data, message, hints}` — `hints` 是 **post-mortem 信号**，不是 pre-flight 提示
 - 你（Agent）是 `xu` 的唯一调用者，用户不直接操作 CLI
+
+**`hints` 字段语义**：hints 在命令**完成后**告诉你"刚才的命令留了什么尾巴"。常见模式：
+- 命令成功 + 创建了节点 → hints 可能说"新节点未挂 entity 链"（参见 `/xu-wiki wire`）
+- 命令成功 + 节点建在根目录 → hints 说"考虑下个 commit 传 --node-path"
+- 命令失败 → hints 告诉你是去查哪个 doctor 子命令
+
+**`hints` 不是"future suggestion"**——是"**past action 的 deferred work**"。读 hints 时把它当成 todo list，而不是 advisory。
 
 ## 哲学
 
@@ -40,7 +47,7 @@ DB, no lock, git-friendly.
 
 ## SOP 入口
 
-5 个 SOP，覆盖 wiki 内容操作和生命周期管理：
+6 个 SOP，覆盖 wiki 内容操作和生命周期管理：
 
 | 命令 | 职责 | 详情 |
 |---|---|---|
@@ -48,6 +55,12 @@ DB, no lock, git-friendly.
 | `/xu-wiki config` | 别名 / 注册表 / MinerU key | `config.md` |
 | `/xu-wiki ingest` | 导入内容（PDF/DOCX/图片/相册） | `ingest.md` |
 | `/xu-wiki query` | 搜索 + 多轮展开 + 反射 | `query.md` |
+| `/xu-wiki wire` | ingest/query 后的 relation 挂链反射（Entity/List/Report） | （见 ingest.md "Reflection triggers" 段） |
 | `/xu-wiki doctor` | 一致性检查 / 修复 / 重建 | `doctor.md` |
 
 每个 SOP 的详细步骤、flag 说明、常见陷阱均在对应的 `references/*.md` 中。
+
+**SOP 调用纪律**：
+- `/xu-wiki wire` 不是独立子命令——它是 ingest/query 末尾的反射动作（`xu query-relation add` / `xu list modify` / `xu report modify`），不是单独跑的命令
+- ingest 流程结尾**必须**做一次 `xu query --keywords "<新节点主题>"` 找已有 Entity，再决定是否挂 describes 链
+- 任何 ingest session 结束前跑 `xu doctor-node-path-organization` 做"未分类节点"体检
