@@ -62,10 +62,6 @@ def cmd_reorganize(args) -> dict:
 
     new_md_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fm_dict["node_path"] = new_node_path
-    fm_text_new = fm_render(fm_dict, body)
-    atomic_write_text(new_md_path, fm_text_new)
-
     moved_raw = None
     old_raw = fm_dict.get("raw_path") or ""
     if old_raw:
@@ -77,6 +73,12 @@ def cmd_reorganize(args) -> dict:
             new_raw_abs.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(old_raw_abs), str(new_raw_abs))
             moved_raw = new_raw_rel
+
+    fm_dict["node_path"] = new_node_path
+    if moved_raw:
+        fm_dict["raw_path"] = moved_raw
+    fm_text_new = fm_render(fm_dict, body)
+    atomic_write_text(new_md_path, fm_text_new)
 
     try:
         old_md_path.unlink()
