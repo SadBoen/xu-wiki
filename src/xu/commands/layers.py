@@ -6,13 +6,21 @@ Entity: first-class named concept extracted from Page content. Body is the Agent
   notes on the entity; source_page links back to the originating Page.
 All three are .md-only (DESIGN-ARCH-1).
 """
+
 from __future__ import annotations
 
 import yaml
 
 from ..utils import frontmatter as fm
 from ..utils.response import error, success, warning
-from ..utils.paths import atomic_write_text, gen_uid, now_ts, safe_slug, safe_node_path, sha256_text
+from ..utils.paths import (
+    atomic_write_text,
+    gen_uid,
+    now_ts,
+    safe_slug,
+    safe_node_path,
+    sha256_text,
+)
 from ..utils.wiki import find_node_md, resolve_wiki
 
 
@@ -46,15 +54,20 @@ def _list_create(args) -> dict:
             missing.append(m_uid)
         else:
             mf, _ = found
-            member_items.append({
-                "uid": m_uid,
-                "title": mf.get("title", ""),
-                "layer": mf.get("layer", ""),
-                "note": "",
-            })
+            member_items.append(
+                {
+                    "uid": m_uid,
+                    "title": mf.get("title", ""),
+                    "layer": mf.get("layer", ""),
+                    "note": "",
+                }
+            )
     if missing:
-        return error(f"member node(s) not found: {missing}", "MemberNotFound",
-                     data={"missing": missing})
+        return error(
+            f"member node(s) not found: {missing}",
+            "MemberNotFound",
+            data={"missing": missing},
+        )
 
     uid = gen_uid()
     ts = now_ts()
@@ -80,16 +93,29 @@ def _list_create(args) -> dict:
     }
 
     slug = safe_slug(args.title)
-    md_path = ctx.list_dir / node_path / f"{slug}.md" if node_path else ctx.list_dir / f"{slug}.md"
+    md_path = (
+        ctx.list_dir / node_path / f"{slug}.md"
+        if node_path
+        else ctx.list_dir / f"{slug}.md"
+    )
     md_path.parent.mkdir(parents=True, exist_ok=True)
-    body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    body = yaml.dump(
+        member_items, allow_unicode=True, default_flow_style=False, sort_keys=False
+    )
     atomic_write_text(md_path, fm.render(frontmatter, body))
 
     return success(
-        {"uid": uid, "layer": "List", "members": [m["uid"] for m in member_items],
-         "dimension": args.dimension, "node_path": node_path},
+        {
+            "uid": uid,
+            "layer": "List",
+            "members": [m["uid"] for m in member_items],
+            "dimension": args.dimension,
+            "node_path": node_path,
+        },
         f"created Node_List {uid} with {len(member_items)} member(s)",
-        hints=[f"read --uid {uid} to view; list show --uid {uid} for List presentation"],
+        hints=[
+            f"read --uid {uid} to view; list show --uid {uid} for List presentation"
+        ],
     )
 
 
@@ -118,9 +144,13 @@ def _list_show(args) -> dict:
             members = []
 
     return success(
-        {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),
-         "dimension": frontmatter.get("dimension", ""),
-         "members": members, "member_count": len(members)},
+        {
+            "uid": frontmatter.get("uid"),
+            "title": frontmatter.get("title"),
+            "dimension": frontmatter.get("dimension", ""),
+            "members": members,
+            "member_count": len(members),
+        },
         f"List {args.uid}: {len(members)} member(s)",
     )
 
@@ -159,17 +189,24 @@ def _list_modify(args) -> dict:
                 missing.append(m_uid)
             else:
                 mf, _ = found
-                member_items.append({
-                    "uid": m_uid,
-                    "title": mf.get("title", ""),
-                    "layer": mf.get("layer", ""),
-                    "note": "",
-                })
+                member_items.append(
+                    {
+                        "uid": m_uid,
+                        "title": mf.get("title", ""),
+                        "layer": mf.get("layer", ""),
+                        "note": "",
+                    }
+                )
         if missing:
-            return error(f"member node(s) not found: {missing}", "MemberNotFound",
-                         data={"missing": missing})
+            return error(
+                f"member node(s) not found: {missing}",
+                "MemberNotFound",
+                data={"missing": missing},
+            )
         frontmatter["members"] = member_items
-        body = yaml.dump(member_items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        body = yaml.dump(
+            member_items, allow_unicode=True, default_flow_style=False, sort_keys=False
+        )
     frontmatter["updated_at"] = now_ts()
 
     atomic_write_text(md_path, fm.render(frontmatter, body))  # type: ignore[arg-type]  # md_path set when frontmatter found
@@ -193,6 +230,7 @@ def cmd_report(args) -> dict:
 # Entity
 # ---------------------------------------------------------------------------
 
+
 def cmd_entity(args) -> dict:
     if args.entity_action == "create":
         return _entity_create(args)
@@ -214,8 +252,11 @@ def _entity_create(args) -> dict:
     if getattr(args, "source_page", None):
         found = find_node_md(ctx, args.source_page)
         if not found:
-            return error(f"source_page node not found: {args.source_page}", "MemberNotFound",
-                         data={"missing": [args.source_page]})
+            return error(
+                f"source_page node not found: {args.source_page}",
+                "MemberNotFound",
+                data={"missing": [args.source_page]},
+            )
         source_page_uid = args.source_page
 
     uid = gen_uid()
@@ -245,16 +286,26 @@ def _entity_create(args) -> dict:
     }
 
     slug = safe_slug(args.title)
-    md_path = ctx.entity_dir / node_path / f"{slug}.md" if node_path else ctx.entity_dir / f"{slug}.md"
+    md_path = (
+        ctx.entity_dir / node_path / f"{slug}.md"
+        if node_path
+        else ctx.entity_dir / f"{slug}.md"
+    )
     md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, args.body or ""))
 
     hints = [f"read --uid {uid} to view"]
     if source_page_uid:
-        hints.append(f"expand --wiki {args.wiki} --uids {source_page_uid} to review source")
+        hints.append(
+            f"expand --wiki {args.wiki} --uids {source_page_uid} to review source"
+        )
     return success(
-        {"uid": uid, "layer": "Entity", "source_page": source_page_uid,
-         "node_path": node_path},
+        {
+            "uid": uid,
+            "layer": "Entity",
+            "source_page": source_page_uid,
+            "node_path": node_path,
+        },
         f"created Node_Entity {uid}",
         hints=hints,
     )
@@ -279,10 +330,13 @@ def _entity_show(args) -> dict:
         return error(f"Entity not found: {args.uid}", "EntityNotFound")
 
     return success(
-        {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),
-         "source_page": frontmatter.get("source_page"),
-         "node_path": frontmatter.get("node_path", ""),
-         "body": body},
+        {
+            "uid": frontmatter.get("uid"),
+            "title": frontmatter.get("title"),
+            "source_page": frontmatter.get("source_page"),
+            "node_path": frontmatter.get("node_path", ""),
+            "body": body,
+        },
         f"Entity {args.uid}",
     )
 
@@ -340,15 +394,20 @@ def _report_create(args) -> dict:
             missing.append(r_uid)
         else:
             rf, _ = found
-            ref_meta.append({
-                "uid": r_uid,
-                "note": "",
-                "title": rf.get("title", ""),
-                "layer": rf.get("layer", ""),
-            })
+            ref_meta.append(
+                {
+                    "uid": r_uid,
+                    "note": "",
+                    "title": rf.get("title", ""),
+                    "layer": rf.get("layer", ""),
+                }
+            )
     if missing:
-        return error(f"evidence node(s) not found: {missing}", "EvidenceNotFound",
-                     data={"missing": missing})
+        return error(
+            f"evidence node(s) not found: {missing}",
+            "EvidenceNotFound",
+            data={"missing": missing},
+        )
 
     uid = gen_uid()
     ts = now_ts()
@@ -374,15 +433,25 @@ def _report_create(args) -> dict:
     }
 
     slug = safe_slug(args.title)
-    md_path = ctx.report_dir / node_path / f"{slug}.md" if node_path else ctx.report_dir / f"{slug}.md"
+    md_path = (
+        ctx.report_dir / node_path / f"{slug}.md"
+        if node_path
+        else ctx.report_dir / f"{slug}.md"
+    )
     md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, args.body or ""))
 
     return success(
-        {"uid": uid, "layer": "Report", "references": [r["uid"] for r in ref_meta],
-         "ref_count": len(ref_meta)},
+        {
+            "uid": uid,
+            "layer": "Report",
+            "references": [r["uid"] for r in ref_meta],
+            "ref_count": len(ref_meta),
+        },
         f"created Node_Report {uid} with {len(ref_meta)} evidence link(s)",
-        hints=[f"read --uid {uid} to view; report show --uid {uid} for Report presentation"],
+        hints=[
+            f"read --uid {uid} to view; report show --uid {uid} for Report presentation"
+        ],
     )
 
 
@@ -405,13 +474,19 @@ def _report_show(args) -> dict:
         return error(f"Report not found: {args.uid}", "ReportNotFound")
     references = frontmatter.get("references", [])
     dangling = [r["uid"] for r in references if not find_node_md(ctx, r["uid"])]
-    data = {"uid": frontmatter.get("uid"), "title": frontmatter.get("title"),
-            "body": body,
-            "references": references,
-            "evidence_count": len(references)}
+    data = {
+        "uid": frontmatter.get("uid"),
+        "title": frontmatter.get("title"),
+        "body": body,
+        "references": references,
+        "evidence_count": len(references),
+    }
     if dangling:
-        return warning(data, f"Report shown; {len(dangling)} dangling evidence ref(s)",
-                       hints=[f"run doctor-report-evidence; dangling: {dangling}"])
+        return warning(
+            data,
+            f"Report shown; {len(dangling)} dangling evidence ref(s)",
+            hints=[f"run doctor-report-evidence; dangling: {dangling}"],
+        )
     return success(data, f"Report {args.uid}: {len(references)} evidence link(s)")
 
 
@@ -442,8 +517,13 @@ def _report_modify(args) -> dict:
     if getattr(args, "references", None):
         ref_uids = _split_uids(args.references)
         if not ref_uids:
-            return error("Report needs at least one evidence node", "EmptyEvidence",
-                         hints=["Report conclusions require an evidence chain; no naked reports"])
+            return error(
+                "Report needs at least one evidence node",
+                "EmptyEvidence",
+                hints=[
+                    "Report conclusions require an evidence chain; no naked reports"
+                ],
+            )
         ref_meta = []
         missing = []
         for r_uid in ref_uids:
@@ -452,15 +532,20 @@ def _report_modify(args) -> dict:
                 missing.append(r_uid)
             else:
                 rf, _ = found
-                ref_meta.append({
-                    "uid": r_uid,
-                    "title": rf.get("title", ""),
-                    "layer": rf.get("layer", ""),
-                    "note": "",
-                })
+                ref_meta.append(
+                    {
+                        "uid": r_uid,
+                        "title": rf.get("title", ""),
+                        "layer": rf.get("layer", ""),
+                        "note": "",
+                    }
+                )
         if missing:
-            return error(f"evidence node(s) not found: {missing}", "EvidenceNotFound",
-                         data={"missing": missing})
+            return error(
+                f"evidence node(s) not found: {missing}",
+                "EvidenceNotFound",
+                data={"missing": missing},
+            )
         frontmatter["references"] = ref_meta
     frontmatter["updated_at"] = now_ts()
 

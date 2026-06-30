@@ -1,4 +1,5 @@
 """Path helpers, UID generation, hashing, logging (CONST-ARCH-3/6, BAN-ARCH-7)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -77,7 +78,11 @@ def normalize_within(root: str | Path, candidate: str | Path) -> Path:
     Resolves symlinks and '..' segments. Raises ValueError on escape.
     """
     root_resolved = Path(root).resolve()
-    cand_resolved = (root_resolved / candidate).resolve() if not Path(candidate).is_absolute() else Path(candidate).resolve()
+    cand_resolved = (
+        (root_resolved / candidate).resolve()
+        if not Path(candidate).is_absolute()
+        else Path(candidate).resolve()
+    )
     try:
         cand_resolved.relative_to(root_resolved)
     except ValueError:

@@ -17,6 +17,7 @@ ALL_SKILL_FILES tuple can stay close to the source layout for
 documentation purposes; this layer guarantees the agent only ever
 sees pure-markdown files.
 """
+
 from __future__ import annotations
 
 from ..skills import ALL_SKILL_FILES, SKILL_NAME, SKILL_SRC_DIR

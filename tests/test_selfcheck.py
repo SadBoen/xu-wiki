@@ -11,6 +11,7 @@ Status semantics:
 - warning → only non-critical checks failed
 - success → all checks passed
 """
+
 import os
 import sys
 from types import SimpleNamespace
@@ -38,31 +39,57 @@ def _args():
 def _all_ok_patcher(monkeypatch):
     """Patch all environment-dependent checks so tests run reliably
     regardless of what's installed on the host."""
-    monkeypatch.setattr(cmd_mod, "_check_cli_on_path",
-                        lambda: {"ok": True, "path": "/usr/bin/xu",
-                                 "hint": "xu on PATH (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_skill_bundle_readable",
-                        lambda: {"ok": True, "source_dir": "/fake/src",
-                                 "file_count": 7, "skill_name": "xu-wiki",
-                                 "hint": "skill bundle readable (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
-                        lambda: {"ok": True, "path": "/tmp/.xu-wiki",
-                                 "hint": "global dir writable (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_agent_skill_deployed",
-                        lambda: {"ok": True,
-                                 "found": [{"agent": "test", "path": "/fake"}],
-                                 "missing": [],
-                                 "hint": "skill deployed (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_optional_extras",
-                        lambda: {"ok": True, "extras": {},
-                                 "hint": "all extras installed (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_ripgrep",
-                        lambda: {"ok": True, "hint": "rg available (test mock)"})
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_cli_on_path",
+        lambda: {"ok": True, "path": "/usr/bin/xu", "hint": "xu on PATH (test mock)"},
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_skill_bundle_readable",
+        lambda: {
+            "ok": True,
+            "source_dir": "/fake/src",
+            "file_count": 7,
+            "skill_name": "xu-wiki",
+            "hint": "skill bundle readable (test mock)",
+        },
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_global_dir_writable",
+        lambda: {
+            "ok": True,
+            "path": "/tmp/.xu-wiki",
+            "hint": "global dir writable (test mock)",
+        },
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_agent_skill_deployed",
+        lambda: {
+            "ok": True,
+            "found": [{"agent": "test", "path": "/fake"}],
+            "missing": [],
+            "hint": "skill deployed (test mock)",
+        },
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_optional_extras",
+        lambda: {"ok": True, "extras": {}, "hint": "all extras installed (test mock)"},
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_ripgrep",
+        lambda: {"ok": True, "hint": "rg available (test mock)"},
+    )
 
 
 # ----------------------------------------------------------------------
 # 1. happy path — all checks pass (with mock for agent_skill_deployed)
 # ----------------------------------------------------------------------
+
 
 def test_selfcheck_happy_path(xu_home, monkeypatch):
     """When everything is OK, status=success and all checks passed."""
@@ -82,6 +109,7 @@ def test_selfcheck_happy_path(xu_home, monkeypatch):
 # 2. response envelope
 # ----------------------------------------------------------------------
 
+
 def test_selfcheck_returns_4_key_envelope(xu_home, monkeypatch):
     _all_ok_patcher(monkeypatch)
     r = cmd_mod.cmd_selfcheck(_args())
@@ -92,6 +120,7 @@ def test_selfcheck_returns_4_key_envelope(xu_home, monkeypatch):
 # ----------------------------------------------------------------------
 # 3. agent deployment hint — the bash template (now uses cp -r)
 # ----------------------------------------------------------------------
+
 
 def test_agent_deployment_hint_excludes_python_artifacts(xu_home):
     """Bash template must skip __init__.py and __pycache__ via for-loop."""
@@ -115,6 +144,7 @@ def test_agent_deployment_hint_excludes_python_artifacts(xu_home):
 # ----------------------------------------------------------------------
 # 4. global_config_chmod check (3.4)
 # ----------------------------------------------------------------------
+
 
 def test_global_config_chmod_no_config_ok(xu_home):
     check = cmd_mod._check_global_config_chmod()
@@ -142,6 +172,7 @@ def test_global_config_chmod_secret_with_600_passes(xu_home):
 # 5. optional_extras — Pillow is imported as PIL (Bug 1 fix)
 # ----------------------------------------------------------------------
 
+
 def test_optional_extras_pillow_uses_PIL_import_name(xu_home):
     """Bug 1: the import name for Pillow is PIL, not Pillow. Ensure
     the check passes when Pillow is installed."""
@@ -165,13 +196,16 @@ def test_optional_extras_pillow_uses_PIL_import_name(xu_home):
 # 6. agent_skill_deployed check (Bug 4)
 # ----------------------------------------------------------------------
 
+
 def test_agent_skill_deployed_not_deployed_returns_failure(xu_home):
     """If no known agent discovery dir has SKILL.md, the check fails."""
     # Don't actually touch $HOME; instead patch the candidate dirs to
     # point at non-existent paths.
-    with patch.object(cmd_mod, "KNOWN_AGENT_SKILL_DIRS",
-                       (("test-a", str(xu_home / "ghost-a")),
-                        ("test-b", str(xu_home / "ghost-b")))):
+    with patch.object(
+        cmd_mod,
+        "KNOWN_AGENT_SKILL_DIRS",
+        (("test-a", str(xu_home / "ghost-a")), ("test-b", str(xu_home / "ghost-b"))),
+    ):
         check = cmd_mod._check_agent_skill_deployed()
     assert check["ok"] is False
     assert check["found"] == []
@@ -185,9 +219,11 @@ def test_agent_skill_deployed_at_least_one_passes(xu_home):
     fake_dest = xu_home / "agent-skill"
     fake_dest.mkdir()
     (fake_dest / "SKILL.md").write_text("# fake\n", encoding="utf-8")
-    with patch.object(cmd_mod, "KNOWN_AGENT_SKILL_DIRS",
-                       (("test-a", str(xu_home / "ghost-a")),
-                        ("test-real", str(fake_dest)))):
+    with patch.object(
+        cmd_mod,
+        "KNOWN_AGENT_SKILL_DIRS",
+        (("test-a", str(xu_home / "ghost-a")), ("test-real", str(fake_dest))),
+    ):
         check = cmd_mod._check_agent_skill_deployed()
     assert check["ok"] is True
     found_names = [f["agent"] for f in check["found"]]
@@ -226,8 +262,10 @@ def test_agent_skill_deployed_is_non_critical():
 # 7. CLI palette wiring
 # ----------------------------------------------------------------------
 
+
 def test_cli_palette_includes_selfcheck():
     from xu.cli import build_parser
+
     p = build_parser()
     args = p.parse_args(["selfcheck"])
     assert args.func == "selfcheck"
@@ -236,6 +274,7 @@ def test_cli_palette_includes_selfcheck():
 def test_cli_palette_includes_deploy_skill():
     """`xu deploy skill --target <agent>` is wired as a sub-sub-command."""
     from xu.cli import build_parser
+
     p = build_parser()
     args = p.parse_args(["deploy", "skill", "--target", "hermes"])
     assert args.func == "deploy_skill"
@@ -245,6 +284,7 @@ def test_cli_palette_includes_deploy_skill():
 def test_cli_deploy_skill_target_default_is_auto():
     """If --target not passed, default to auto."""
     from xu.cli import build_parser
+
     p = build_parser()
     args = p.parse_args(["deploy", "skill"])
     assert args.target == "auto"
@@ -252,6 +292,7 @@ def test_cli_deploy_skill_target_default_is_auto():
 
 def test_cli_deploy_skill_rejects_unknown_target():
     from xu.cli import build_parser
+
     p = build_parser()
     with pytest.raises(SystemExit):
         p.parse_args(["deploy", "skill", "--target", "vscode"])
@@ -260,6 +301,7 @@ def test_cli_deploy_skill_rejects_unknown_target():
 def test_cli_palette_includes_version_flag():
     """Bug 3: `xu --version` should output the package version."""
     from xu.cli import build_parser
+
     p = build_parser()
     with pytest.raises(SystemExit) as exc_info:
         p.parse_args(["--version"])
@@ -270,6 +312,7 @@ def test_cli_palette_includes_version_flag():
 def test_cli_version_flag_prints_version_string(capsys):
     """The --version output should contain 'xu-wiki X.Y.Z'."""
     from xu.cli import build_parser
+
     p = build_parser()
     with pytest.raises(SystemExit):
         p.parse_args(["--version"])
@@ -277,20 +320,25 @@ def test_cli_version_flag_prints_version_string(capsys):
     assert "xu-wiki" in captured.out
     # also matches the version number pattern
     import re
-    assert re.search(r"\d+\.\d+\.\d+", captured.out), \
+
+    assert re.search(r"\d+\.\d+\.\d+", captured.out), (
         f"expected version number in: {captured.out!r}"
+    )
 
 
 # ----------------------------------------------------------------------
 # 8. critical vs non-critical failure handling
 # ----------------------------------------------------------------------
 
+
 def test_critical_failure_returns_error(xu_home, monkeypatch):
     """If a CRITICAL check fails, status=error."""
     _all_ok_patcher(monkeypatch)
-    monkeypatch.setattr(cmd_mod, "_check_skill_bundle_readable",
-                        lambda: {"ok": False,
-                                 "hint": "synthetic failure for test"})
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_skill_bundle_readable",
+        lambda: {"ok": False, "hint": "synthetic failure for test"},
+    )
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "SelfCheckFailed"
@@ -304,22 +352,46 @@ def test_agent_skill_not_deployed_returns_warning(xu_home, monkeypatch):
     not an installation-success criterion. The check still runs and
     surfaces actionable next_actions, but does not make selfcheck fail.
     """
-    monkeypatch.setattr(cmd_mod, "_check_cli_on_path",
-                        lambda: {"ok": True, "path": "/usr/bin/xu",
-                                 "hint": "xu on PATH (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_skill_bundle_readable",
-                        lambda: {"ok": True, "source_dir": "/fake/src",
-                                 "file_count": 7, "skill_name": "xu-wiki",
-                                 "hint": "skill bundle readable (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
-                        lambda: {"ok": True, "path": "/tmp/.xu-wiki",
-                                 "hint": "global dir writable (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_optional_extras",
-                        lambda: {"ok": True, "extras": {},
-                                 "hint": "optional extras (test mock)"})
-    monkeypatch.setattr(cmd_mod, "_check_agent_skill_deployed",
-                        lambda: {"ok": False, "found": [], "missing": [],
-                                 "hint": "skill not deployed (test mock)"})
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_cli_on_path",
+        lambda: {"ok": True, "path": "/usr/bin/xu", "hint": "xu on PATH (test mock)"},
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_skill_bundle_readable",
+        lambda: {
+            "ok": True,
+            "source_dir": "/fake/src",
+            "file_count": 7,
+            "skill_name": "xu-wiki",
+            "hint": "skill bundle readable (test mock)",
+        },
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_global_dir_writable",
+        lambda: {
+            "ok": True,
+            "path": "/tmp/.xu-wiki",
+            "hint": "global dir writable (test mock)",
+        },
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_optional_extras",
+        lambda: {"ok": True, "extras": {}, "hint": "optional extras (test mock)"},
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_agent_skill_deployed",
+        lambda: {
+            "ok": False,
+            "found": [],
+            "missing": [],
+            "hint": "skill not deployed (test mock)",
+        },
+    )
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "warning"
     assert "agent_skill_deployed" in r["data"]["failed_noncritical"]
@@ -329,8 +401,9 @@ def test_agent_skill_not_deployed_returns_warning(xu_home, monkeypatch):
 def test_non_critical_failure_returns_warning(xu_home, monkeypatch):
     """If only a non-critical check fails, status=warning."""
     _all_ok_patcher(monkeypatch)
-    monkeypatch.setattr(cmd_mod, "_check_optional_extras",
-                        lambda: {"ok": False, "hint": "synthetic"})
+    monkeypatch.setattr(
+        cmd_mod, "_check_optional_extras", lambda: {"ok": False, "hint": "synthetic"}
+    )
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "warning"
     assert "optional_extras" in r["data"]["failed_noncritical"]
@@ -340,11 +413,13 @@ def test_non_critical_failure_returns_warning(xu_home, monkeypatch):
 # 9. ALL_SKILL_FILES excludes install docs (BAN-SKILL-3a / CONST-INST-6)
 # ----------------------------------------------------------------------
 
+
 def test_all_skill_files_excludes_install_docs():
     """Install docs live in README, NOT the bundle — the bundle is a
     post-install resource (BAN-SKILL-3a). Bundle = SKILL.md + 5 SOPs +
     1 reference = 7 files."""
     from xu.skills import ALL_SKILL_FILES
+
     assert "INSTALL.md" not in ALL_SKILL_FILES
     assert len(ALL_SKILL_FILES) == 7
 
@@ -352,6 +427,7 @@ def test_all_skill_files_excludes_install_docs():
 # ----------------------------------------------------------------------
 # 10. deployment_status + next_actions (case study v2)
 # ----------------------------------------------------------------------
+
 
 def test_selfcheck_returns_deployment_status(xu_home, monkeypatch):
     _all_ok_patcher(monkeypatch)
@@ -390,19 +466,40 @@ def test_selfcheck_next_actions_empty_when_all_green(xu_home, monkeypatch):
     """When every check passes, next_actions is the empty list."""
     _all_ok_patcher(monkeypatch)
     # Make sure ALL checks pass by patching the rest to True too.
-    monkeypatch.setattr(cmd_mod, "_check_optional_extras",
-                        lambda: {"ok": True, "extras": {}, "hint": "all green"})
-    monkeypatch.setattr(cmd_mod, "_check_global_config_chmod",
-                        lambda: {"ok": True, "mode": "0o600",
-                                 "has_secret": False, "hint": "OK"})
-    monkeypatch.setattr(cmd_mod, "_check_ripgrep",
-                        lambda: {"ok": True, "note": "rg not installed but that's OK",
-                                 "hint": "fallback"})
-    monkeypatch.setattr(cmd_mod, "_check_global_dir_writable",
-                        lambda: {"ok": True, "path": "/tmp/xu", "hint": "writable"})
-    monkeypatch.setattr(cmd_mod, "_check_agent_skill_deployed",
-                        lambda: {"ok": True, "found": [{"agent": "hermes", "path": "/fake"}],
-                                 "missing": [], "hint": "deployed"})
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_optional_extras",
+        lambda: {"ok": True, "extras": {}, "hint": "all green"},
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_global_config_chmod",
+        lambda: {"ok": True, "mode": "0o600", "has_secret": False, "hint": "OK"},
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_ripgrep",
+        lambda: {
+            "ok": True,
+            "note": "rg not installed but that's OK",
+            "hint": "fallback",
+        },
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_global_dir_writable",
+        lambda: {"ok": True, "path": "/tmp/xu", "hint": "writable"},
+    )
+    monkeypatch.setattr(
+        cmd_mod,
+        "_check_agent_skill_deployed",
+        lambda: {
+            "ok": True,
+            "found": [{"agent": "hermes", "path": "/fake"}],
+            "missing": [],
+            "hint": "deployed",
+        },
+    )
     r = cmd_mod.cmd_selfcheck(_args())
     assert r["status"] == "success"
     assert r["data"]["next_actions"] == []

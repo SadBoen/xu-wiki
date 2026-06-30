@@ -5,6 +5,7 @@ Phase 1 (ingest-file): parse → write temporary file (system temp dir).
 Phase 2 (ingest-commit): validate → atomic write Page(s) + raws copy + patches v1
                          + relations. The ONLY write entry (PRIN-ING-1).
 """
+
 from __future__ import annotations
 
 import importlib
@@ -69,11 +70,11 @@ def _scan_fm_index(ctx) -> tuple[dict, dict]:
                 sh = fd.get("source_hash")
                 if sh:
                     source_map[sh] = (uid, fd.get("title", ""), active)
-                for _sh in (fd.get("source_hashes") or []):
+                for _sh in fd.get("source_hashes") or []:
                     if _sh:
                         source_map[_sh] = (uid, fd.get("title", ""), active)
                 attrs = fd.get("attrs", {})
-                for _s in (attrs.get("album", {}).get("sources") or []):
+                for _s in attrs.get("album", {}).get("sources") or []:
                     if isinstance(_s, dict) and (_sh := _s.get("source_hash")):
                         source_map[_sh] = (uid, fd.get("title", ""), active)
                 ch = fd.get("content_hash")
@@ -105,6 +106,7 @@ def _detect_content_type(path: Path) -> str:
 # ---------------------------------------------------------------------------
 # Album/gallery helpers (shared between Phase 1 and Phase 2)
 # ---------------------------------------------------------------------------
+
 
 def _parse_captions(raw: str) -> dict[str, str]:
     """Parse --captions JSON: {filename: description_string}."""
@@ -139,7 +141,7 @@ def _compress_image(src: Path, dst: Path, preserve_exif: bool) -> tuple[str, Pat
     try:
         with Image.open(src) as im:
             if im.mode in ("RGBA", "LA", "P"):
-                im = im.convert("RGB")
+                im = im.convert("RGB")  # type: ignore[assignment]
             save_kwargs: dict = {"format": "JPEG", "quality": 85, "optimize": True}
             if preserve_exif:
                 exif = im.getexif()
@@ -172,7 +174,9 @@ def _render_body(rows: list[dict[str, Any]]) -> str:
         if r.get("caption"):
             item["caption"] = r["caption"]
         items.append(item)
-    return yaml.dump(items, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    return yaml.dump(
+        items, allow_unicode=True, default_flow_style=False, sort_keys=False
+    )
 
 
 def cmd_ingest_file(args) -> dict:
@@ -189,8 +193,11 @@ def cmd_ingest_file(args) -> dict:
     """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
-        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound",
-                     hints=["check the name/path; do NOT auto-create (PRIN-SAFETY)"])
+        return error(
+            f"wiki not found: {args.wiki!r}",
+            "WikiNotFound",
+            hints=["check the name/path; do NOT auto-create (PRIN-SAFETY)"],
+        )
 
     # ---- Gallery mode: --files provided ----
     _files = getattr(args, "files", None)
@@ -209,6 +216,7 @@ def cmd_ingest_file(args) -> dict:
     _needs_parser = src.suffix.lower() in {".pdf", ".docx", ".pptx"}
     if _needs_parser:
         from ..parsers.mineru_parser import mineru_available
+
         if mineru_available():
             pass  # MinerU available, markitdown not needed at this stage
         else:
@@ -219,7 +227,9 @@ def cmd_ingest_file(args) -> dict:
                     f"cannot parse {src.suffix}: neither MinerU is configured nor markitdown is installed",
                     "MissingExtra",
                     data={"extra": "parse", "file_ext": src.suffix},
-                    hints=["configure MinerU key, or pip install xu-wiki[parse,vision]"],
+                    hints=[
+                        "configure MinerU key, or pip install xu-wiki[parse,vision]"
+                    ],
                 )
 
     source_hash = sha256_file(src)
@@ -228,11 +238,16 @@ def cmd_ingest_file(args) -> dict:
         return error(
             f"source already ingested as {dup_fm['uid']} (BAN-ING-4); use 'revise' to update",
             "DuplicateSource",
-            data={"existing_uid": dup_fm["uid"], "existing_title": dup_fm.get("title", ""),
-                  "existing_active": dup_fm.get("active", True), "source_hash": source_hash},
+            data={
+                "existing_uid": dup_fm["uid"],
+                "existing_title": dup_fm.get("title", ""),
+                "existing_active": dup_fm.get("active", True),
+                "source_hash": source_hash,
+            },
         )
 
     from ..utils.config import load_global_config
+
     mineru_key = load_global_config().get("mineru", {}).get("api_key", "")
     res = parse_file(src, mineru_key=mineru_key)
     if not res.ok:
@@ -248,8 +263,12 @@ def cmd_ingest_file(args) -> dict:
         return error(str(e), "BadNodePath")
     stem = safe_slug(src.stem)
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix="-pre.md", prefix=f"{stem}-",
-        dir=tempfile.gettempdir(), delete=False, encoding="utf-8"
+        mode="w",
+        suffix="-pre.md",
+        prefix=f"{stem}-",
+        dir=tempfile.gettempdir(),
+        delete=False,
+        encoding="utf-8",
     ) as f:
         text = _strip_frontmatter(res.text)
         detected_ct = _detect_content_type(src)
@@ -284,15 +303,20 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
 
     raw_files = [p.strip() for p in args.files.split(",") if p.strip()]
     if not raw_files:
-        return error("ingest-file --files requires comma-separated absolute paths",
-                     "MissingFiles")
+        return error(
+            "ingest-file --files requires comma-separated absolute paths",
+            "MissingFiles",
+        )
 
     files: list[Path] = []
     for f in raw_files:
         p = Path(f).expanduser()
         if not p.is_absolute():
-            return error(f"file path must be absolute: {p}", "PathNotAbsolute",
-                         data={"file": str(p)})
+            return error(
+                f"file path must be absolute: {p}",
+                "PathNotAbsolute",
+                data={"file": str(p)},
+            )
         if not p.is_file():
             return error(f"file not found: {p}", "FileNotFound", data={"file": str(p)})
         files.append(p)
@@ -302,8 +326,11 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         try:
             captions = _parse_captions(args.captions)
         except (ValueError, json.JSONDecodeError) as e:
-            return error(f"--captions invalid: {e}", "BadCaptionsJSON",
-                         data={"hint": 'use a JSON object {"001.jpeg": "船头整体"}'})
+            return error(
+                f"--captions invalid: {e}",
+                "BadCaptionsJSON",
+                data={"hint": 'use a JSON object {"001.jpeg": "船头整体"}'},
+            )
 
     try:
         node_path = safe_node_path(args.node_path or "")
@@ -327,8 +354,11 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
             "source_path": str(src),
             "orig_sha256": orig_sha,
             "sha256": orig_sha,
-            "raw_rel_path": str(Path("raws") / Path(node_path) / src.name if node_path
-                           else Path("raws") / src.name).replace("\\", "/"),
+            "raw_rel_path": str(
+                Path("raws") / Path(node_path) / src.name
+                if node_path
+                else Path("raws") / src.name
+            ).replace("\\", "/"),
             "width": meta.get("width"),
             "height": meta.get("height"),
             "gps": meta.get("gps"),
@@ -347,12 +377,14 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         sh = item["orig_sha256"]
         if sh and sh in source_index:
             existing_uid, existing_title, existing_active = source_index[sh]
-            skipped.append({
-                "filename": item["filename"],
-                "source_hash": sh,
-                "existing_uid": existing_uid,
-                "existing_title": existing_title,
-            })
+            skipped.append(
+                {
+                    "filename": item["filename"],
+                    "source_hash": sh,
+                    "existing_uid": existing_uid,
+                    "existing_title": existing_title,
+                }
+            )
         else:
             new_rows.append(item)
 
@@ -391,13 +423,19 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         "node_path": node_path,
         "vision": vision,
     }
-    yaml_header = yaml.dump(frontmatter_dict, allow_unicode=True, default_flow_style=False)
+    yaml_header = yaml.dump(
+        frontmatter_dict, allow_unicode=True, default_flow_style=False
+    )
     temp_content = f"---\n{yaml_header}---\n{body}"
 
     stem = safe_slug(title)
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix="-pre.md", prefix=f"{stem}-",
-        dir=tempfile.gettempdir(), delete=False, encoding="utf-8"
+        mode="w",
+        suffix="-pre.md",
+        prefix=f"{stem}-",
+        dir=tempfile.gettempdir(),
+        delete=False,
+        encoding="utf-8",
     ) as f:
         f.write(temp_content)
         temp_path = Path(f.name)
@@ -407,7 +445,10 @@ def _cmd_ingest_file_album(ctx, args) -> dict:
         "if node_path is empty, all pages land at nodes/pages/ root",
     ]
     if skipped:
-        hints.insert(0, f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details")
+        hints.insert(
+            0,
+            f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details",
+        )
     return success(
         {
             "temp": str(temp_path),
@@ -456,12 +497,12 @@ def _parse_temp_header(text: str) -> tuple[dict, str]:
     if text.startswith("<!-- xu-temp"):
         end = text.find("-->")
         if end != -1:
-            header = text[len("<!-- xu-temp"):end].strip()
+            header = text[len("<!-- xu-temp") : end].strip()
             for tok in header.split():
                 if "=" in tok:
                     k, v = tok.split("=", 1)
                     meta[k] = v
-            body = text[end + 3:].lstrip("\n")
+            body = text[end + 3 :].lstrip("\n")
             return meta, body
 
     # YAML frontmatter style (gallery)
@@ -469,10 +510,10 @@ def _parse_temp_header(text: str) -> tuple[dict, str]:
         end = text.find("\n---")
         if end != -1:
             try:
-                front = yaml.safe_load(text[:end + 1])
+                front = yaml.safe_load(text[: end + 1])
                 if isinstance(front, dict):
                     meta = front
-                body = text[end + 4:].lstrip("\n")
+                body = text[end + 4 :].lstrip("\n")
                 return meta, body
             except yaml.YAMLError:
                 pass
@@ -518,7 +559,7 @@ def _strip_frontmatter(text: str) -> str:
     if text.startswith("---"):
         end = text.find("\n---", 3)
         if end != -1:
-            return text[end + 4:].lstrip("\n")
+            return text[end + 4 :].lstrip("\n")
     return text
 
 
@@ -533,8 +574,11 @@ def cmd_ingest_commit(args) -> dict:
     """
     ctx = resolve_wiki(args.wiki)
     if not ctx:
-        return error(f"wiki not found: {args.wiki!r}", "WikiNotFound",
-                     hints=["check the name/path; do NOT auto-create (PRIN-SAFETY)"])
+        return error(
+            f"wiki not found: {args.wiki!r}",
+            "WikiNotFound",
+            hints=["check the name/path; do NOT auto-create (PRIN-SAFETY)"],
+        )
 
     source_hash = None
     raw_src_path = None
@@ -546,14 +590,18 @@ def cmd_ingest_commit(args) -> dict:
             return error(
                 "--native requires --source <abs-path or URL> (PRIN-ING-6: local sources must be copyable to raws/; URL sources are stored as-is)",
                 "MissingSource",
-                hints=["--source must be an absolute path to the source file, or a http:// / https:// URL"],
+                hints=[
+                    "--source must be an absolute path to the source file, or a http:// / https:// URL"
+                ],
             )
         src_path = Path(args.source).expanduser()
         is_url = args.source.startswith(("http://", "https://"))
         if not is_url and not src_path.is_file():
             return error(f"source file not found: {src_path}", "FileNotFound")
         content = args.native
-        raw_src_path = args.source  # URL stored as-is; local path stored as resolved string
+        raw_src_path = (
+            args.source
+        )  # URL stored as-is; local path stored as resolved string
         source_hash = sha256_text(args.native)
         node_path_arg = args.node_path
         effective_ct = args.content_type or "article"
@@ -578,8 +626,11 @@ def cmd_ingest_commit(args) -> dict:
         return error(str(e), "BadNodePath")
 
     if not args.title:
-        return error("ingest-commit requires --title (CONST-ING-4)", "MissingTitle",
-                     data={"missing": ["title"]})
+        return error(
+            "ingest-commit requires --title (CONST-ING-4)",
+            "MissingTitle",
+            data={"missing": ["title"]},
+        )
 
     if effective_ct not in CONTENT_TYPES:
         return error(f"invalid content-type: {effective_ct}", "InvalidContentType")
@@ -611,21 +662,29 @@ def cmd_ingest_commit(args) -> dict:
         if body_err:
             hints = []
             if effective_ct == "table":
-                hints.append("table requires YAML list body; for PDF/DOCX text use --content-type article")
+                hints.append(
+                    "table requires YAML list body; for PDF/DOCX text use --content-type article"
+                )
             return error(body_err, "BodyFormatMismatch", hints=hints)
 
         content_hash = sha256_text(page_body)
         if content_hash in content_index:
-            dup_pages.append({"part": idx + 1, "existing_uid": content_index[content_hash][0]})
+            dup_pages.append(
+                {"part": idx + 1, "existing_uid": content_index[content_hash][0]}
+            )
             continue
         if content_hash in new_content_hashes:
-            dup_pages.append({"part": idx + 1, "existing_uid": "duplicate in this commit"})
+            dup_pages.append(
+                {"part": idx + 1, "existing_uid": "duplicate in this commit"}
+            )
             continue
 
         uid = first_uid if idx == 0 else gen_uid()
         split_index = idx + 1
         parent_uid = first_uid
-        title = args.title if not multi else f"{args.title} (part {idx + 1}/{len(pages)})"
+        title = (
+            args.title if not multi else f"{args.title} (part {idx + 1}/{len(pages)})"
+        )
         base_slug = safe_slug(args.title)
         slug = f"{base_slug}-{idx + 1}-{uid}" if multi else f"{base_slug}-{uid}"
         ts = now_ts()
@@ -641,22 +700,27 @@ def cmd_ingest_commit(args) -> dict:
             FM_NODE_PATH: node_path,
             FM_SPLIT_INDEX: split_index,
             FM_PARENT_UID: parent_uid,
-            FM_PATCHES: [{"op": "create", "delta": content_hash,
-                          "created_at": ts}],
+            FM_PATCHES: [{"op": "create", "delta": content_hash, "created_at": ts}],
         }
         if source_hash:
             frontmatter[FM_SOURCE_HASH] = source_hash
 
-        rel_md = Path("nodes/pages") / node_path / f"{slug}.md" if node_path \
+        rel_md = (
+            Path("nodes/pages") / node_path / f"{slug}.md"
+            if node_path
             else Path("nodes/pages") / f"{slug}.md"
+        )
         md_path = ctx.root / rel_md
         md_path.parent.mkdir(parents=True, exist_ok=True)
 
         rel_raw = None
         raw_written = None
         if raw_src_path and Path(raw_src_path).is_file() and idx == 0:
-            rel_raw = (Path("raws") / node_path / Path(raw_src_path).name
-                        ) if node_path else Path("raws") / Path(raw_src_path).name
+            rel_raw = (
+                (Path("raws") / node_path / Path(raw_src_path).name)
+                if node_path
+                else Path("raws") / Path(raw_src_path).name
+            )
             raw_dst = ctx.root / rel_raw
             raw_dst.parent.mkdir(parents=True, exist_ok=True)
             if not raw_dst.exists():
@@ -669,17 +733,25 @@ def cmd_ingest_commit(args) -> dict:
 
         new_content_hashes.add(content_hash)
         written.append({"md": md_path, "raw": raw_written})
-        created.append({"uid": uid, "title": title, "md_path": str(rel_md),
-                        "raw_path": str(rel_raw) if rel_raw else None,
-                        "body": page_body[:200] + ("..." if len(page_body) > 200 else ""),
-                        "lines": len(page_body.splitlines())})
+        created.append(
+            {
+                "uid": uid,
+                "title": title,
+                "md_path": str(rel_md),
+                "raw_path": str(rel_raw) if rel_raw else None,
+                "body": page_body[:200] + ("..." if len(page_body) > 200 else ""),
+                "lines": len(page_body.splitlines()),
+            }
+        )
 
     verify_failed = []
     for item in created:
         md_p = ctx.root / str(item["md_path"])
         v_checks, v_passed, v_failed = _verify_committed(ctx, md_p, item["uid"])
         if v_failed:
-            verify_failed.append({"uid": item["uid"], "failed": v_failed, "checks": v_checks})
+            verify_failed.append(
+                {"uid": item["uid"], "failed": v_failed, "checks": v_checks}
+            )
 
     if verify_failed:
         for w in written:
@@ -691,7 +763,7 @@ def cmd_ingest_commit(args) -> dict:
             f"verify failed for {len(verify_failed)} node(s): {[f['uid'] for f in verify_failed]}",
             "VerifyFailed",
             data={"verify_failed": verify_failed},
-            hints=["fix the failed checks and re-run ingest-commit"]
+            hints=["fix the failed checks and re-run ingest-commit"],
         )
 
     if args.temp:
@@ -700,18 +772,30 @@ def cmd_ingest_commit(args) -> dict:
         except OSError:
             pass
 
-    data = {"created": created, "page_count": len(created),
-            "duplicate_parts": dup_pages}
+    data = {
+        "created": created,
+        "page_count": len(created),
+        "duplicate_parts": dup_pages,
+    }
     if not created and dup_pages:
-        return warning(data, "all pages were content-duplicates; nothing created (BAN-ING-4)")
+        return warning(
+            data, "all pages were content-duplicates; nothing created (BAN-ING-4)"
+        )
     hints = ["query to retrieve; read --uid for full body"]
     if parser_used == "native":
-        hints.insert(0, "DEPRECATED: --native is deprecated; use --temp for external documents (PRIN-ING-6)")
+        hints.insert(
+            0,
+            "DEPRECATED: --native is deprecated; use --temp for external documents (PRIN-ING-6)",
+        )
     if created and str(created[0]["md_path"]).startswith("nodes/pages/"):
-        bare = str(created[0]["md_path"])[len("nodes/pages/"):]
+        bare = str(created[0]["md_path"])[len("nodes/pages/") :]
         if "/" not in bare:
-            hints.append("node_path is empty — all pages are piling at nodes/pages/ root; future ingest should pass --node-path to organize by category")
-    return success(data, f"committed {len(created)} Node_Page via {parser_used}", hints=hints)
+            hints.append(
+                "node_path is empty — all pages are piling at nodes/pages/ root; future ingest should pass --node-path to organize by category"
+            )
+    return success(
+        data, f"committed {len(created)} Node_Page via {parser_used}", hints=hints
+    )
 
 
 def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
@@ -736,21 +820,27 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         sh = item.get("sha256", "")
         if sh and sh in source_index:
             existing_uid, existing_title, existing_active = source_index[sh]
-            skipped.append({
-                "filename": item.get("filename", ""),
-                "source_hash": sh,
-                "existing_uid": existing_uid,
-                "existing_title": existing_title,
-                "existing_layer": "Page",
-                "existing_active": existing_active,
-            })
+            skipped.append(
+                {
+                    "filename": item.get("filename", ""),
+                    "source_hash": sh,
+                    "existing_uid": existing_uid,
+                    "existing_title": existing_title,
+                    "existing_layer": "Page",
+                    "existing_active": existing_active,
+                }
+            )
         else:
             new_body_items.append(item)
 
     if not new_body_items:
         return warning(
-            {"skipped": skipped, "checked": len(all_body_items),
-             "wiki": args.wiki, "title": args.title},
+            {
+                "skipped": skipped,
+                "checked": len(all_body_items),
+                "wiki": args.wiki,
+                "title": args.title,
+            },
             "all images already ingested; nothing to commit",
             hints=[
                 "remove skipped files from --files and re-run Phase 1",
@@ -761,8 +851,11 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
     # uid must be generated BEFORE computing raw paths (user convention: raws/<node_path>/<uid>/)
     uid = gen_uid()
     node_path_val = meta.get("node_path", "")
-    raw_uid_dir = ctx.root / "raws" / node_path_val / uid if node_path_val \
+    raw_uid_dir = (
+        ctx.root / "raws" / node_path_val / uid
+        if node_path_val
         else ctx.root / "raws" / uid
+    )
 
     # Reorganize Phase 1 files: raw_rel_path was raws/<node_path>/<orig_filename>,
     # correct path is raws/<node_path>/<uid>/<orig_filename>
@@ -795,8 +888,7 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         FM_ACTIVE: True,
         FM_CREATED: ts,
         FM_NODE_PATH: meta.get("node_path", ""),
-        FM_PATCHES: [{"op": "create", "delta": "gallery",
-                      "created_at": ts}],
+        FM_PATCHES: [{"op": "create", "delta": "gallery", "created_at": ts}],
         FM_SOURCE_HASHES: [item["sha256"] for item in new_body_items],
         "attrs": {
             "album": {
@@ -819,8 +911,11 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         },
     }
 
-    rel_md = Path("nodes/pages") / node_path_val / f"{slug}.md" if node_path_val \
+    rel_md = (
+        Path("nodes/pages") / node_path_val / f"{slug}.md"
+        if node_path_val
         else Path("nodes/pages") / f"{slug}.md"
+    )
     md_path = ctx.root / rel_md
     md_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(md_path, fm.render(frontmatter, body))
@@ -839,25 +934,30 @@ def _cmd_ingest_commit_album(ctx, args, meta: dict, body: str) -> dict:
         "count": len(new_body_items),
         "skipped": skipped,
         "md_path": str(rel_md).replace("\\", "/"),
-            "sources": [
-                {
-                    "filename": item["filename"],
-                    "source_hash": item["sha256"],
-                    "raw_rel_path": item["raw_rel_path"],
-                    "width": item.get("width"),
-                    "height": item.get("height"),
-                    "gps": item.get("gps"),
-                    "captured": item.get("captured"),
-                    "caption": item.get("caption", ""),
-                }
-                for item in new_body_items
-            ],
+        "sources": [
+            {
+                "filename": item["filename"],
+                "source_hash": item["sha256"],
+                "raw_rel_path": item["raw_rel_path"],
+                "width": item.get("width"),
+                "height": item.get("height"),
+                "gps": item.get("gps"),
+                "captured": item.get("captured"),
+                "caption": item.get("caption", ""),
+            }
+            for item in new_body_items
+        ],
     }
     hints = ["read by UID to view; revise to update captions"]
     if skipped:
-        hints.insert(0, f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details")
+        hints.insert(
+            0,
+            f"{len(skipped)} duplicate image(s) skipped; see data.skipped for details",
+        )
     if meta.get("vision"):
-        hints.append("vision intent was set; per-photo captions will be added when a vision backend is configured")
+        hints.append(
+            "vision intent was set; per-photo captions will be added when a vision backend is configured"
+        )
     return success(
         data,
         f"album committed: {len(new_body_items)} photos → 1 Node_Page (content_type=gallery)",
@@ -870,7 +970,9 @@ def _raw_path_checks(ctx, frontmatter) -> list[dict]:
     checks = []
     node_path = frontmatter.get("node_path", "")
     attrs = frontmatter.get("attrs", {})
-    album_sources = attrs.get("album", {}).get("sources", []) if isinstance(attrs, dict) else []
+    album_sources = (
+        attrs.get("album", {}).get("sources", []) if isinstance(attrs, dict) else []
+    )
 
     def add_check(name, status, detail=""):
         checks.append({"check": name, "status": status, "detail": detail})
@@ -887,34 +989,65 @@ def _raw_path_checks(ctx, frontmatter) -> list[dict]:
             except OSError as e:
                 add_check("raw_file_exists", "warning", f"OSError {e.errno}: {e}")
                 continue
-            add_check("raw_file_exists", "pass" if file_ok else "warning", str(raw_file))
+            add_check(
+                "raw_file_exists", "pass" if file_ok else "warning", str(raw_file)
+            )
             if node_path:
                 expected_prefix = f"raws/{node_path}"
-                ok = raw_rel.startswith(expected_prefix + "/") or raw_rel == expected_prefix
-                add_check("raw_path_node_path_mirror",
-                         "pass" if ok else "fail",
-                         f"raw_rel_path={raw_rel} should be under raws/{node_path}/" if not ok else "")
+                ok = (
+                    raw_rel.startswith(expected_prefix + "/")
+                    or raw_rel == expected_prefix
+                )
+                add_check(
+                    "raw_path_node_path_mirror",
+                    "pass" if ok else "fail",
+                    f"raw_rel_path={raw_rel} should be under raws/{node_path}/"
+                    if not ok
+                    else "",
+                )
             else:
-                add_check("raw_path_node_path_mirror", "skip", "node_path empty for album")
-    elif isinstance(raw_path_str := frontmatter.get("raw_path", ""), str) and raw_path_str:
+                add_check(
+                    "raw_path_node_path_mirror", "skip", "node_path empty for album"
+                )
+    elif (
+        isinstance(raw_path_str := frontmatter.get("raw_path", ""), str)
+        and raw_path_str
+    ):
         raw_file = ctx.root / raw_path_str
         try:
             file_ok = raw_file.exists()
         except OSError as e:
             add_check("raw_file_exists", "warning", f"OSError {e.errno}: {e}")
         else:
-            add_check("raw_file_exists", "pass" if file_ok else "warning", str(raw_file))
+            add_check(
+                "raw_file_exists", "pass" if file_ok else "warning", str(raw_file)
+            )
             if node_path:
                 expected_prefix = f"raws/{node_path}"
-                ok = raw_path_str.startswith(expected_prefix + "/") or raw_path_str == expected_prefix
-                add_check("raw_path_node_path_mirror",
-                         "pass" if ok else "fail",
-                         f"raw_path={raw_path_str} should be under raws/{node_path}/" if not ok else "")
+                ok = (
+                    raw_path_str.startswith(expected_prefix + "/")
+                    or raw_path_str == expected_prefix
+                )
+                add_check(
+                    "raw_path_node_path_mirror",
+                    "pass" if ok else "fail",
+                    f"raw_path={raw_path_str} should be under raws/{node_path}/"
+                    if not ok
+                    else "",
+                )
             else:
                 add_check("raw_path_node_path_mirror", "skip", "node_path empty")
     else:
-        add_check("raw_file_exists", "skip", "raw_path not in frontmatter (pre-fix node or --native without source)")
-        add_check("raw_path_node_path_mirror", "skip", "raw_path not in frontmatter (pre-fix node or --native without source)")
+        add_check(
+            "raw_file_exists",
+            "skip",
+            "raw_path not in frontmatter (pre-fix node or --native without source)",
+        )
+        add_check(
+            "raw_path_node_path_mirror",
+            "skip",
+            "raw_path not in frontmatter (pre-fix node or --native without source)",
+        )
     return checks
 
 
@@ -928,14 +1061,19 @@ def _verify_committed(ctx, md_path, uid) -> tuple[list[dict], list[str], list[st
     failed = []
 
     def check(name, cond, detail=""):
-        checks.append({"check": name, "status": "pass" if cond else "fail", "detail": detail})
+        checks.append(
+            {"check": name, "status": "pass" if cond else "fail", "detail": detail}
+        )
         if cond:
             passed.append(name)
         else:
             failed.append(name)
 
-    check("nodes_file_exists", md_path is not None and md_path.exists(),
-          str(md_path) if md_path else "")
+    check(
+        "nodes_file_exists",
+        md_path is not None and md_path.exists(),
+        str(md_path) if md_path else "",
+    )
 
     frontmatter: dict[str, Any] = {}
     body = ""
@@ -948,15 +1086,23 @@ def _verify_committed(ctx, md_path, uid) -> tuple[list[dict], list[str], list[st
         if ct != "gallery":
             required.append("content_hash")
         missing = [f for f in required if f not in frontmatter]
-        check("frontmatter_complete", len(missing) == 0,
-              f"missing: {missing}" if missing else "")
+        check(
+            "frontmatter_complete",
+            len(missing) == 0,
+            f"missing: {missing}" if missing else "",
+        )
         if body and ct != "gallery":
             actual_hash = sha256_text(body)
             stored_hash = frontmatter.get("content_hash", "")
-            check("content_hash_match", actual_hash == stored_hash,
-                  f"stored={stored_hash[:8]}... actual={actual_hash[:8]}...")
+            check(
+                "content_hash_match",
+                actual_hash == stored_hash,
+                f"stored={stored_hash[:8]}... actual={actual_hash[:8]}...",
+            )
         fmt_err = _validate_body_format(body, ct) if body else None
-        check("content_type_body_match", fmt_err is None, fmt_err or "" if fmt_err else "")
+        check(
+            "content_type_body_match", fmt_err is None, fmt_err or "" if fmt_err else ""
+        )
     else:
         check("frontmatter_complete", False, "nodes file missing")
 
@@ -988,7 +1134,13 @@ def cmd_ingest_verify(args) -> dict:
 
     status = "success" if not failed else "error"
     passed_all = len(checks) - len(failed)
-    msgs = {"uid": args.uid, "wiki": args.wiki, "passed": passed, "failed": failed, "checks": checks}
+    msgs = {
+        "uid": args.uid,
+        "wiki": args.wiki,
+        "passed": passed,
+        "failed": failed,
+        "checks": checks,
+    }
     detail = f"{passed_all}/{len(checks)} checks passed"
     if failed:
         detail += f"; FAILED: {failed}"

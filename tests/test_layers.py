@@ -1,4 +1,5 @@
 """Unit tests for List and Report layer commands."""
+
 import os
 import sys
 from types import SimpleNamespace
@@ -13,7 +14,6 @@ from xu.commands import create as create_mod
 from xu.commands.layers import _list_create, _list_show
 from xu.utils.frontmatter import render as fm_render, parse as fm_parse
 from xu.utils.wiki import resolve_wiki
-from xu.utils.paths import now_ts
 
 
 @pytest.fixture
@@ -29,9 +29,13 @@ def wiki(xu_home):
     """Create a fresh empty wiki and return its name + root path."""
     name = "list-test-wiki"
     root = xu_home / "wikis" / name
-    r = create_mod.cmd_create(SimpleNamespace(
-        name=name, path=str(root), alias=None,
-    ))
+    r = create_mod.cmd_create(
+        SimpleNamespace(
+            name=name,
+            path=str(root),
+            alias=None,
+        )
+    )
     assert r["status"] == "success", r
     return name, root
 
@@ -44,7 +48,13 @@ def _write_page(ctx, uid, title, layer="Page"):
     """Write a minimal page node file and return (frontmatter, body)."""
     page_dir = ctx.page_dir
     page_dir.mkdir(parents=True, exist_ok=True)
-    frontmatter = {"uid": uid, "title": title, "layer": layer, "created_at": "1", "updated_at": "1"}
+    frontmatter = {
+        "uid": uid,
+        "title": title,
+        "layer": layer,
+        "created_at": "1",
+        "updated_at": "1",
+    }
     body = f"Body of {title}"
     path = page_dir / f"{uid}.md"
     path.write_text(fm_render(frontmatter, body), encoding="utf-8")
@@ -55,6 +65,7 @@ def _write_page(ctx, uid, title, layer="Page"):
 # List create
 # ---------------------------------------------------------------------------
 
+
 def test_list_create_body_is_yaml_list(wiki):
     """List body must be a YAML list of dicts, not markdown table."""
     name, root = wiki
@@ -63,12 +74,15 @@ def test_list_create_body_is_yaml_list(wiki):
     _write_page(ctx, "PAGE0001", "Test Page 1")
     _write_page(ctx, "PAGE0002", "Test Page 2")
 
-    r = _list_create(_args(
-        wiki=name, title="My List", dimension="by-type",
-        members="PAGE0001,PAGE0002",
-    ))
+    r = _list_create(
+        _args(
+            wiki=name,
+            title="My List",
+            dimension="by-type",
+            members="PAGE0001,PAGE0002",
+        )
+    )
     assert r["status"] == "success", r
-    list_uid = r["data"]["uid"]
     node_path = "my-list"
 
     text = (ctx.list_dir / node_path / f"{node_path}.md").read_text()
@@ -91,8 +105,11 @@ def test_list_create_frontmatter_has_no_members_array(wiki):
     ctx = resolve_wiki(name)
 
     _write_page(ctx, "PAGE0001", "Page 1")
-    r = _list_create(_args(wiki=name, title="List No Members",
-                            dimension="by-type", members="PAGE0001"))
+    r = _list_create(
+        _args(
+            wiki=name, title="List No Members", dimension="by-type", members="PAGE0001"
+        )
+    )
     assert r["status"] == "success"
     list_uid = r["data"]["uid"]
     node_path = "list-no-members"
@@ -107,9 +124,11 @@ def test_list_create_frontmatter_has_no_members_array(wiki):
     assert frontmatter["split_index"] == 1
     assert frontmatter["parent_uid"] == list_uid
 
+
 # ---------------------------------------------------------------------------
 # List show
 # ---------------------------------------------------------------------------
+
 
 def test_list_show_returns_members_from_body_yaml(wiki):
     """list show must read members from YAML body, not frontmatter members array."""
@@ -120,13 +139,24 @@ def test_list_show_returns_members_from_body_yaml(wiki):
     uid = "LISTEST1"
     ctx.list_dir.mkdir(parents=True, exist_ok=True)
     frontmatter = {
-        "uid": uid, "title": "Test List", "layer": "List",
-        "dimension": "by-type", "created_at": "1", "updated_at": "1",
+        "uid": uid,
+        "title": "Test List",
+        "layer": "List",
+        "dimension": "by-type",
+        "created_at": "1",
+        "updated_at": "1",
     }
-    body = yaml.dump([
-        {"uid": "PAGE0001", "title": "Page 1", "layer": "Page", "note": ""},
-        {"uid": "PAGE0002", "title": "Page 2", "layer": "Page", "note": "important"},
-    ])
+    body = yaml.dump(
+        [
+            {"uid": "PAGE0001", "title": "Page 1", "layer": "Page", "note": ""},
+            {
+                "uid": "PAGE0002",
+                "title": "Page 2",
+                "layer": "Page",
+                "note": "important",
+            },
+        ]
+    )
     path = ctx.list_dir / f"{uid}.md"
     path.write_text(fm_render(frontmatter, body), encoding="utf-8")
 
@@ -146,11 +176,19 @@ def test_list_show_dimension_from_frontmatter(wiki):
     uid = "LISTDIMEN1"
     ctx.list_dir.mkdir(parents=True, exist_ok=True)
     frontmatter = {
-        "uid": uid, "title": "Dim List", "layer": "List",
-        "dimension": "by-owner", "created_at": "1", "updated_at": "1",
+        "uid": uid,
+        "title": "Dim List",
+        "layer": "List",
+        "dimension": "by-owner",
+        "created_at": "1",
+        "updated_at": "1",
     }
-    body = yaml.dump([{"uid": "PAGE0001", "title": "Page 1", "layer": "Page", "note": ""}])
-    (ctx.list_dir / f"{uid}.md").write_text(fm_render(frontmatter, body), encoding="utf-8")
+    body = yaml.dump(
+        [{"uid": "PAGE0001", "title": "Page 1", "layer": "Page", "note": ""}]
+    )
+    (ctx.list_dir / f"{uid}.md").write_text(
+        fm_render(frontmatter, body), encoding="utf-8"
+    )
 
     r = _list_show(_args(wiki=name, uid=uid))
     assert r["data"]["dimension"] == "by-owner"

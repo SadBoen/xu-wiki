@@ -1,12 +1,14 @@
 """Elastic slicing + neighborhood merge (DESIGN-ARCH-6/7, PRIN-QRY-8/9)."""
+
 from __future__ import annotations
 
 _HIGH_PUNCT = "。？！.?!\n"
 _LOW_PUNCT = "，,;；"
 
 
-def make_slice(text: str, hit_start: int, hit_end: int,
-               soft_limit: int, hard_limit: int) -> tuple[int, int, str]:
+def make_slice(
+    text: str, hit_start: int, hit_end: int, soft_limit: int, hard_limit: int
+) -> tuple[int, int, str]:
     """Expand a hit [start,end) into a slice bounded by soft/hard limits.
 
     Prefer high-priority punctuation within soft limit; low-priority next;
@@ -46,7 +48,9 @@ def _expand_right(text: str, pos: int, soft: int, hard: int) -> int:
     return hard_bound
 
 
-def merge_slices(slices: list[dict], radius: int, text: str | None = None) -> list[dict]:
+def merge_slices(
+    slices: list[dict], radius: int, text: str | None = None
+) -> list[dict]:
     """Merge same-file slices whose physical distance < radius (PRIN-QRY-9).
 
     Each slice dict: {start, end, text, hits:set, line}. Returns merged blocks.
@@ -66,7 +70,7 @@ def merge_slices(slices: list[dict], radius: int, text: str | None = None) -> li
             last["end"] = max(last["end"], s["end"])
             last["hits"] |= set(s["hits"])
             if text is not None:
-                last["text"] = text[last["start"]:last["end"]]
+                last["text"] = text[last["start"] : last["end"]]
         else:
             nb = dict(s)
             nb["hits"] = set(s["hits"])

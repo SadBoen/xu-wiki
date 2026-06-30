@@ -1,4 +1,5 @@
 """YAML frontmatter parsing / rendering for Node markdown files (PRIN-ARCH-15)."""
+
 from __future__ import annotations
 
 import yaml
@@ -21,7 +22,7 @@ def parse(text: str) -> tuple[dict, str]:
     if end is None:
         return {}, text
     fm_text = "\n".join(lines[1:end])
-    body = "\n".join(lines[end + 1:])
+    body = "\n".join(lines[end + 1 :])
     if body.startswith("\n"):
         body = body[1:]
     fm = yaml.safe_load(fm_text) or {}

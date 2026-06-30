@@ -9,10 +9,10 @@ to audit.jsonl. The audit log has exactly one writer — the CLI entrypoint's
 auto-log block. This prevents the past anti-pattern where album / ingest /
 doctor each hand-rolled their own op-log.
 """
+
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,7 +22,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from xu import cli as cli_mod
-from xu.commands import album as album_mod
 from xu.commands import create as create_mod
 from xu.utils import config as cfg_mod
 
@@ -30,6 +29,7 @@ from xu.utils import config as cfg_mod
 # ---------------------------------------------------------------------------
 # fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def xu_home(monkeypatch, tmp_path):
@@ -45,9 +45,13 @@ def wiki(xu_home):
     """Create a fresh empty wiki; return (name, root)."""
     name = "log-test-wiki"
     root = xu_home / "wikis" / name
-    r = create_mod.cmd_create(SimpleNamespace(
-        name=name, path=str(root), alias=None,
-    ))
+    r = create_mod.cmd_create(
+        SimpleNamespace(
+            name=name,
+            path=str(root),
+            alias=None,
+        )
+    )
     assert r["status"] == "success", r
     return name, root
 
@@ -55,12 +59,17 @@ def wiki(xu_home):
 def _read_jsonl(p: Path):
     if not p.exists():
         return []
-    return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in p.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 # ---------------------------------------------------------------------------
 # dual-path: per-wiki vs global
 # ---------------------------------------------------------------------------
+
 
 def test_wiki_command_writes_to_per_wiki_log(xu_home, wiki):
     """A command with a resolvable --wiki writes to <wiki>/.xu/audit.jsonl
@@ -110,27 +119,31 @@ def test_unresolvable_wiki_falls_back_to_global(xu_home):
     assert rec["command"] == "nodes"
     assert rec["wiki"] == "no-such-wiki"
     assert rec["status"] == "error"
-    assert "error_class" in rec   # unknown wiki → CLI returns error response
+    assert "error_class" in rec  # unknown wiki → CLI returns error response
 
 
 # ---------------------------------------------------------------------------
 # failure path: error_class on failure
 # ---------------------------------------------------------------------------
 
+
 def test_failed_command_includes_error_class(xu_home):
     """On error, the audit record carries error_class from response.data."""
-    cli_mod.main(["create", "--name", "missing", "--path", ""])  # missing --path → error
+    cli_mod.main(
+        ["create", "--name", "missing", "--path", ""]
+    )  # missing --path → error
     lines = _read_jsonl(xu_home / "global_audit.jsonl")
     assert len(lines) == 1
     rec = lines[0]
     assert rec["status"] == "error"
     assert "error_class" in rec
-    assert rec["error_class"]   # non-empty
+    assert rec["error_class"]  # non-empty
 
 
 # ---------------------------------------------------------------------------
 # anti-regression: no command module may manually append audit
 # ---------------------------------------------------------------------------
+
 
 def test_no_command_module_imports_append_jsonl():
     """PRIN-ARCH-26: the audit log has exactly one writer — the CLI entrypoint.
@@ -140,11 +153,15 @@ def test_no_command_module_imports_append_jsonl():
     offenders = []
     for py in src_dir.rglob("*.py"):
         text = py.read_text(encoding="utf-8")
-        if re.search(r"^\s*from\s+\.\.?utils\.paths\s+import\s+.*\bappend_jsonl\b",
-                     text, re.MULTILINE):
+        if re.search(
+            r"^\s*from\s+\.\.?utils\.paths\s+import\s+.*\bappend_jsonl\b",
+            text,
+            re.MULTILINE,
+        ):
             offenders.append(str(py.relative_to(src_dir.parent.parent)))
-        if re.search(r"^\s*from\s+\.\.?\.?\s+import\s+.*\bappend_jsonl\b",
-                     text, re.MULTILINE):
+        if re.search(
+            r"^\s*from\s+\.\.?\.?\s+import\s+.*\bappend_jsonl\b", text, re.MULTILINE
+        ):
             offenders.append(str(py.relative_to(src_dir.parent.parent)))
     assert not offenders, (
         "Manual append_jsonl calls are forbidden in command modules "
@@ -171,6 +188,7 @@ def test_no_command_module_calls_append_jsonl_directly():
 # coverage: every CLI subcommand emits exactly one audit line
 # ---------------------------------------------------------------------------
 
+
 def _all_subcommands():
     parser = cli_mod.build_parser()
     cmds = []
@@ -189,7 +207,8 @@ def _iter_subcommands(parser):
 
     def _descend(p, prefix):
         sub_actions = [
-            a for a in p._actions
+            a
+            for a in p._actions
             if hasattr(a, "choices") and isinstance(a.choices, dict)
         ]
         if not sub_actions:
@@ -259,6 +278,7 @@ def test_every_cli_subcommand_emits_exactly_one_audit_line(xu_home, wiki):
 # ---------------------------------------------------------------------------
 # append semantics: not overwrite
 # ---------------------------------------------------------------------------
+
 
 def test_audit_log_appends_not_overwrites(xu_home):
     """Two invocations should produce 2 lines, not 1 — append semantics."""

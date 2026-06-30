@@ -4,6 +4,7 @@ Key resolution priority: argument > env MINERU_API_KEY > config.mineru.api_key.
 Key missing → silent fallback (returns "") — this is by design (CONST-ING-1),
 not a bug. NEVER hardcode the key here.
 """
+
 from __future__ import annotations
 
 import io
@@ -34,6 +35,7 @@ def _resolve_mineru_key(api_key: str) -> str:
         return env_key
     try:
         from ..utils.config import load_global_config
+
         cfg = load_global_config()
         return cfg.get("mineru", {}).get("api_key", "")
     except Exception:
@@ -81,22 +83,30 @@ def _do_mineru(path: str, key: str) -> str:
     filename = os.path.basename(path)
 
     # Step 1: request a presigned upload URL
-    body = json.dumps({
-        "enable_formula": True,
-        "enable_table": True,
-        "files": [{"name": filename, "is_ocr": True}],
-    }).encode("utf-8")
-    req = urllib.request.Request(_API_BATCH_URLS, data=body, headers=headers, method="POST")
+    body = json.dumps(
+        {
+            "enable_formula": True,
+            "enable_table": True,
+            "files": [{"name": filename, "is_ocr": True}],
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        _API_BATCH_URLS, data=body, headers=headers, method="POST"
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"[mineru] HTTP {e.code}: {e.read()[:500].decode(errors='replace')}")
+        raise RuntimeError(
+            f"[mineru] HTTP {e.code}: {e.read()[:500].decode(errors='replace')}"
+        )
     except urllib.error.URLError as e:
         raise RuntimeError(f"[mineru] network error: {e}")
 
     if data.get("code") != 0:
-        raise RuntimeError(f"[mineru] API error: code={data.get('code')} msg={data.get('msg')}")
+        raise RuntimeError(
+            f"[mineru] API error: code={data.get('code')} msg={data.get('msg')}"
+        )
     upload_url = data["data"]["file_urls"][0]
     batch_id = data["data"]["batch_id"]
 
@@ -143,7 +153,9 @@ def _do_mineru(path: str, key: str) -> str:
                 raise RuntimeError("[mineru] done but no zip URL")
             return _download_full_md(zip_url)
         if state == "failed":
-            raise RuntimeError(f"[mineru] processing failed: {entry.get('err_msg', '?')}")
+            raise RuntimeError(
+                f"[mineru] processing failed: {entry.get('err_msg', '?')}"
+            )
     raise RuntimeError(f"[mineru] poll timeout after {_POLL_TIMEOUT}s")
 
 
@@ -154,8 +166,10 @@ def _download_full_md(zip_url: str) -> str:
             blob = resp.read()
         with zipfile.ZipFile(io.BytesIO(blob)) as zf:
             names = zf.namelist()
-            target = "full.md" if "full.md" in names else next(
-                (n for n in names if n.endswith(".md")), None
+            target = (
+                "full.md"
+                if "full.md" in names
+                else next((n for n in names if n.endswith(".md")), None)
             )
             if not target:
                 raise RuntimeError("[mineru] no .md file found in result zip")

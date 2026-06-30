@@ -11,6 +11,7 @@ Flags:
   --check       Only check for updates; do not install anything.
   --no-redeploy Skip skill re-deploy step (only upgrade the pip package).
 """
+
 from __future__ import annotations
 
 import json
@@ -31,6 +32,7 @@ GIT_INSTALL_URL = f"git+https://github.com/{GITHUB_REPO}.git@main"
 def _is_installed() -> bool:
     try:
         import importlib.util
+
         spec = importlib.util.find_spec("xu")
         return spec is not None
     except Exception:
@@ -52,6 +54,7 @@ def _current_commit() -> str | None:
     try:
         import re
         import importlib.metadata
+
         dist_path = importlib.metadata.distribution("xu-wiki")._path  # type: ignore[attr-defined]
         spec_file = dist_path / "direct_url.json"
         if spec_file.exists():
@@ -63,8 +66,17 @@ def _current_commit() -> str | None:
                     src_path = Path(url.replace("file://", ""))
                     try:
                         git_sha = subprocess.run(
-                            ["git", "-C", str(src_path), "rev-parse", "--short=12", "HEAD"],
-                            capture_output=True, text=True, timeout=5,
+                            [
+                                "git",
+                                "-C",
+                                str(src_path),
+                                "rev-parse",
+                                "--short=12",
+                                "HEAD",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
                         )
                         if git_sha.returncode == 0:
                             return git_sha.stdout.strip()
@@ -86,7 +98,13 @@ def _pipx_upgrade() -> dict:
     if not pipx_python.exists():
         pipx_python = Path(sys.prefix) / "bin" / "python"
     cmd = [
-        str(pipx_python), "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "--no-deps",
+        str(pipx_python),
+        "-m",
+        "pip",
+        "install",
+        "--force-reinstall",
+        "--no-cache-dir",
+        "--no-deps",
         f"xu-wiki[parse,vision] @ git+https://github.com/{GITHUB_REPO}.git@main",
     ]
     if not sys.stdout.isatty():
@@ -108,7 +126,13 @@ def _pipx_upgrade() -> dict:
 
 def _pip_upgrade() -> dict:
     cmd = [
-        sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "--no-deps",
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--force-reinstall",
+        "--no-cache-dir",
+        "--no-deps",
         f"xu-wiki[parse,vision] @ git+https://github.com/{GITHUB_REPO}.git@main",
     ]
     if not sys.stdout.isatty():
@@ -131,8 +155,11 @@ def _pip_upgrade() -> dict:
 def _fetch_github_version() -> tuple[str | None, str | None]:
     try:
         import urllib.request
+
         url = f"https://api.github.com/repos/{GITHUB_REPO}/commits/main"
-        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        req = urllib.request.Request(
+            url, headers={"Accept": "application/vnd.github+json"}
+        )
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.loads(r.read())
         sha = data.get("sha", "")[:12]
@@ -187,7 +214,11 @@ def _redeploy_one(target: str) -> dict:
 
     src = Path(SKILL_SRC_DIR)
     if not src.is_dir():
-        return {"status": "error", "target": target_name, "error": f"skill src dir not found: {src}"}
+        return {
+            "status": "error",
+            "target": target_name,
+            "error": f"skill src dir not found: {src}",
+        }
 
     deployed = []
     failures = []
@@ -263,7 +294,11 @@ def cmd_update(args) -> dict:
     if first_install:
         result_data["first_install"] = True
     if all_ok:
-        parts = [f"upgraded ({installed})" if not first_install else f"first-time installed ({installed})"]
+        parts = [
+            f"upgraded ({installed})"
+            if not first_install
+            else f"first-time installed ({installed})"
+        ]
         if redeploy_result:
             parts.append(
                 f"skills re-deployed ({redeploy_result['succeeded']}/{redeploy_result['total']} targets)"

@@ -28,6 +28,7 @@ Critical (causes `error`): cli_on_path, python_version,
 skill_bundle_readable, global_dir_writable.
 Non-critical (causes `warning`): the rest.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -49,45 +50,65 @@ def _global_config() -> Path:
     return Path(cfg_mod.GLOBAL_CONFIG)
 
 
-CRITICAL = {"cli_on_path", "python_version", "skill_bundle_readable",
-            "global_dir_writable"}
+CRITICAL = {
+    "cli_on_path",
+    "python_version",
+    "skill_bundle_readable",
+    "global_dir_writable",
+}
 
 
 def _check_cli_on_path() -> dict:
     found = shutil.which("xu")
     if found:
-        return {"ok": True, "path": found,
-                "hint": f"`xu` resolves to {found}"}
-    return {"ok": False,
-            "hint": "`xu` not found on $PATH. If you used a venv, "
-                    "either activate it (`source .venv/bin/activate`) or "
-                    "use the absolute path (`.venv/bin/xu`)."}
+        return {"ok": True, "path": found, "hint": f"`xu` resolves to {found}"}
+    return {
+        "ok": False,
+        "hint": "`xu` not found on $PATH. If you used a venv, "
+        "either activate it (`source .venv/bin/activate`) or "
+        "use the absolute path (`.venv/bin/xu`).",
+    }
 
 
 def _check_python_version() -> dict:
     v = sys.version_info
     if (v.major, v.minor) >= (3, 10):
-        return {"ok": True, "version": f"{v.major}.{v.minor}.{v.micro}",
-                "executable": sys.executable,
-                "hint": f"Python {v.major}.{v.minor}.{v.micro} OK"}
-    return {"ok": False, "version": f"{v.major}.{v.minor}.{v.micro}",
-            "hint": "Python >= 3.10 required (see README Requirements)."}
+        return {
+            "ok": True,
+            "version": f"{v.major}.{v.minor}.{v.micro}",
+            "executable": sys.executable,
+            "hint": f"Python {v.major}.{v.minor}.{v.micro} OK",
+        }
+    return {
+        "ok": False,
+        "version": f"{v.major}.{v.minor}.{v.micro}",
+        "hint": "Python >= 3.10 required (see README Requirements).",
+    }
 
 
 def _check_skill_bundle_readable() -> dict:
     src = Path(SKILL_SRC_DIR)
     if not src.is_dir():
-        return {"ok": False,
-                "hint": f"skill bundle dir missing: {src}. "
-                        "Reinstall with `pip install --force-reinstall xu-wiki`."}
+        return {
+            "ok": False,
+            "hint": f"skill bundle dir missing: {src}. "
+            "Reinstall with `pip install --force-reinstall xu-wiki`.",
+        }
     missing = [f for f in ALL_SKILL_FILES if not (src / f).is_file()]
     if missing:
-        return {"ok": False, "missing_files": missing,
-                "hint": f"{len(missing)} skill file(s) missing under {src}. "
-                        "Reinstall xu-wiki."}
-    return {"ok": True, "source_dir": str(src), "file_count": len(ALL_SKILL_FILES),
-            "skill_name": SKILL_NAME,
-            "hint": f"all {len(ALL_SKILL_FILES)} skill files present"}
+        return {
+            "ok": False,
+            "missing_files": missing,
+            "hint": f"{len(missing)} skill file(s) missing under {src}. "
+            "Reinstall xu-wiki.",
+        }
+    return {
+        "ok": True,
+        "source_dir": str(src),
+        "file_count": len(ALL_SKILL_FILES),
+        "skill_name": SKILL_NAME,
+        "hint": f"all {len(ALL_SKILL_FILES)} skill files present",
+    }
 
 
 def _check_global_dir_writable() -> dict:
@@ -97,62 +118,89 @@ def _check_global_dir_writable() -> dict:
         probe = gdir / ".selfcheck_probe"
         probe.write_text("ok", encoding="utf-8")
         probe.unlink()
-        return {"ok": True, "path": str(gdir),
-                "hint": f"global dir writable at {gdir}"}
+        return {"ok": True, "path": str(gdir), "hint": f"global dir writable at {gdir}"}
     except OSError as e:
-        return {"ok": False, "error": str(e),
-                "hint": f"cannot write to {gdir}. "
-                        "Check XU_HOME / HOME permissions."}
+        return {
+            "ok": False,
+            "error": str(e),
+            "hint": f"cannot write to {gdir}. Check XU_HOME / HOME permissions.",
+        }
 
 
 def _check_global_config_chmod() -> dict:
     gcfg = _global_config()
     if not gcfg.exists():
-        return {"ok": True, "note": "config not yet created; chmod enforced "
-                                    "automatically when mineru.api_key is set",
-                "hint": "no config yet — nothing to chmod"}
+        return {
+            "ok": True,
+            "note": "config not yet created; chmod enforced "
+            "automatically when mineru.api_key is set",
+            "hint": "no config yet — nothing to chmod",
+        }
     mode = oct(gcfg.stat().st_mode & 0o777)
     cfg = cfg_mod.load_global_config()
     has_secret = bool(cfg.get("mineru", {}).get("api_key"))
     if has_secret and mode != "0o600":
-        return {"ok": False, "mode": mode,
-                "hint": f"config has mineru.api_key but mode is {mode} "
-                        f"(expected 0o600). Run `chmod 600 {gcfg}`."}
-    return {"ok": True, "mode": mode, "has_secret": has_secret,
-            "hint": "config permissions OK"}
+        return {
+            "ok": False,
+            "mode": mode,
+            "hint": f"config has mineru.api_key but mode is {mode} "
+            f"(expected 0o600). Run `chmod 600 {gcfg}`.",
+        }
+    return {
+        "ok": True,
+        "mode": mode,
+        "has_secret": has_secret,
+        "hint": "config permissions OK",
+    }
 
 
 def _check_optional_extras() -> dict:
     # (pip_name, import_name, extra_name, desc)
     extras = (
         ("markitdown", "markitdown", "parse", "parse (DOCX/PPTX/PDF parsing)"),
-        ("Pillow",     "PIL",        "vision", "vision (image EXIF for albums)"),
+        ("Pillow", "PIL", "vision", "vision (image EXIF for albums)"),
     )
     found = {}
     for pip_name, import_name, extra_name, desc in extras:
         try:
             importlib.import_module(import_name)
-            found[pip_name] = {"installed": True, "import_name": import_name,
-                                "purpose": desc}
+            found[pip_name] = {
+                "installed": True,
+                "import_name": import_name,
+                "purpose": desc,
+            }
         except ImportError:
-            found[pip_name] = {"installed": False, "import_name": import_name,
-                                "purpose": desc,
-                                "hint": f"`pip install xu-wiki[{extra_name}]` to enable {desc}"}
+            found[pip_name] = {
+                "installed": False,
+                "import_name": import_name,
+                "purpose": desc,
+                "hint": f"`pip install xu-wiki[{extra_name}]` to enable {desc}",
+            }
     all_installed = all(v["installed"] for v in found.values())
-    return {"ok": all_installed, "extras": found,
-            "hint": "all optional extras installed" if all_installed
-                    else "some optional extras missing — see per-extra hint"}
+    return {
+        "ok": all_installed,
+        "extras": found,
+        "hint": "all optional extras installed"
+        if all_installed
+        else "some optional extras missing — see per-extra hint",
+    }
 
 
 def _check_ripgrep() -> dict:
     rg = shutil.which("rg")
     if rg:
-        return {"ok": True, "path": rg,
-                "hint": "ripgrep installed; full-text scan speed OK"}
-    return {"ok": True, "note": "rg not found on PATH; the CLI auto-falls-back "
-                                "to a pure-Python scanner (slower on large wikis)",
-            "hint": "install ripgrep for faster scans: `apt install ripgrep` / "
-                    "`brew install ripgrep`"}
+        return {
+            "ok": True,
+            "path": rg,
+            "hint": "ripgrep installed; full-text scan speed OK",
+        }
+    return {
+        "ok": True,
+        "note": "rg not found on PATH; the CLI auto-falls-back "
+        "to a pure-Python scanner (slower on large wikis)",
+        "hint": "install ripgrep for faster scans: `apt install ripgrep` / "
+        "`brew install ripgrep`",
+    }
 
 
 # Known agent skill discovery directories. The CLI does not know which
@@ -163,10 +211,10 @@ def _check_ripgrep() -> dict:
 # Override with env var `XU_AGENT_SKILL_DIR=/path/to/skill/dir` to
 # restrict the check to a single location (e.g. non-standard installs).
 KNOWN_AGENT_SKILL_DIRS = (
-    ("hermes",   "~/.hermes/skills/xu-wiki"),
-    ("trae",     "~/.trae/skills/xu-wiki"),
-    ("claude",   "~/Library/Application Support/Claude/skills/xu-wiki"),
-    ("cursor",   "~/.cursor/skills/xu-wiki"),
+    ("hermes", "~/.hermes/skills/xu-wiki"),
+    ("trae", "~/.trae/skills/xu-wiki"),
+    ("claude", "~/Library/Application Support/Claude/skills/xu-wiki"),
+    ("cursor", "~/.cursor/skills/xu-wiki"),
 )
 
 
@@ -187,8 +235,7 @@ def _check_agent_skill_deployed() -> dict:
     if env_override:
         targets = [("custom", os.path.expanduser(env_override))]
     else:
-        targets = [(name, os.path.expanduser(p))
-                   for name, p in KNOWN_AGENT_SKILL_DIRS]
+        targets = [(name, os.path.expanduser(p)) for name, p in KNOWN_AGENT_SKILL_DIRS]
 
     found = []
     missing = []
@@ -214,7 +261,8 @@ def _check_agent_skill_deployed() -> dict:
             "skill bundle NOT deployed to any known agent discovery dir. "
             "Run the copy_template_bash in data.agent_deployment_hint "
             "(or set XU_AGENT_SKILL_DIR=<path> to specify a non-standard "
-            "location). Probed: " + ", ".join(f"{m['agent']}={m['path']}" for m in missing)
+            "location). Probed: "
+            + ", ".join(f"{m['agent']}={m['path']}" for m in missing)
         ),
     }
 
@@ -228,23 +276,23 @@ def _agent_deployment_hint() -> dict:
     src = str(SKILL_SRC_DIR)
     lines = [
         f"SRC='{src}'",
-        f"DEST=\"$HOME/.hermes/skills/{SKILL_NAME}\"",
-        "mkdir -p \"$DEST\"",
+        f'DEST="$HOME/.hermes/skills/{SKILL_NAME}"',
+        'mkdir -p "$DEST"',
         'for f in "$SRC"/*; do',
         '  base="$(basename "$f")"',
-        '  # skip Python package artifacts',
+        "  # skip Python package artifacts",
         '  if [ "$base" = "__init__.py" ] || [ "$base" = "__pycache__" ]; then',
-        '    continue',
-        '  fi',
+        "    continue",
+        "  fi",
         '  if [ -d "$f" ]; then',
         '    mkdir -p "$DEST/$base"',
         '    for sf in "$f"/*; do',
         '      cp "$sf" "$DEST/$base/"',
-        '    done',
-        '  else',
+        "    done",
+        "  else",
         '    cp "$f" "$DEST/"',
-        '  fi',
-        'done',
+        "  fi",
+        "done",
         'ls "$DEST"            # verify top-level files',
         'ls "$DEST/reference"  # verify 2 reference files',
     ]
@@ -253,8 +301,8 @@ def _agent_deployment_hint() -> dict:
         "source_dir": src,
         "copy_template_bash": "\n".join(lines),
         "hint": "run the copy_template_bash to deploy the skill to Hermes; "
-                "substitute $HOME/.hermes/skills/ for your agent's discovery dir "
-                "(see README §Agent compatibility matrix).",
+        "substitute $HOME/.hermes/skills/ for your agent's discovery dir "
+        "(see README §Agent compatibility matrix).",
     }
 
 
@@ -271,8 +319,9 @@ def cmd_selfcheck(_args) -> dict:
     }
 
     failed_critical = [k for k in CRITICAL if not checks[k]["ok"]]
-    failed_noncritical = [k for k, v in checks.items()
-                          if k not in CRITICAL and not v["ok"]]
+    failed_noncritical = [
+        k for k, v in checks.items() if k not in CRITICAL and not v["ok"]
+    ]
     passed = [k for k, v in checks.items() if v["ok"]]
 
     # Build a high-signal "what's still left to do" list. The agent
@@ -288,7 +337,7 @@ def cmd_selfcheck(_args) -> dict:
     if not checks["skill_bundle_readable"]["ok"]:
         next_actions.append(
             "reinstall xu-wiki: `pip install --force-reinstall "
-            "\"xu-wiki[parse,vision]\"` (or `pipx reinstall xu-wiki`)."
+            '"xu-wiki[parse,vision]"` (or `pipx reinstall xu-wiki`).'
         )
     if not checks["agent_skill_deployed"]["ok"]:
         next_actions.append(
@@ -302,9 +351,7 @@ def cmd_selfcheck(_args) -> dict:
         )
     if failed_noncritical:
         for name in failed_noncritical:
-            next_actions.append(
-                f"optional: fix `{name}` — see checks.{name}.hint"
-            )
+            next_actions.append(f"optional: fix `{name}` — see checks.{name}.hint")
 
     # Installer + smoke-test snapshot for the user.
     # Lazy import to avoid circular dependency: uninstall.py imports
@@ -313,6 +360,7 @@ def cmd_selfcheck(_args) -> dict:
     # deferred call keeps things resilient.
     try:
         from .uninstall import _detect_installer
+
         installer = _detect_installer()
     except Exception:
         installer = "unknown"
@@ -321,11 +369,11 @@ def cmd_selfcheck(_args) -> dict:
     ]
 
     deployment_status = {
-        "installer": installer,                            # pipx | pip | unknown
+        "installer": installer,  # pipx | pip | unknown
         "binary_on_path": checks["cli_on_path"]["ok"],
-        "skill_deployed_to": skill_deployed_to,            # e.g. ["hermes"]
-        "smoke_test_run": False,                           # future: auto-run
-        "wiki_data_present": False,                        # future: read registry
+        "skill_deployed_to": skill_deployed_to,  # e.g. ["hermes"]
+        "smoke_test_run": False,  # future: auto-run
+        "wiki_data_present": False,  # future: read registry
     }
 
     data = {

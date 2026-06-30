@@ -30,6 +30,7 @@ Side effects (only when --execute is set):
 Audit: the uninstall itself is logged to the GLOBAL audit log (no wiki
 context).
 """
+
 from __future__ import annotations
 
 import json
@@ -65,11 +66,13 @@ def _plan(args, *, mode: str | None = None) -> dict:
     wikis = _list_wikis()
     annotated = []
     for name, p in wikis:
-        annotated.append({
-            "name": name,
-            "path": p,
-            "is_wiki_root": is_wiki_root(p),
-        })
+        annotated.append(
+            {
+                "name": name,
+                "path": p,
+                "is_wiki_root": is_wiki_root(p),
+            }
+        )
 
     keep_skill = bool(getattr(args, "keep_skill", False))
     targets = getattr(args, "targets", None) or []
@@ -86,8 +89,12 @@ def _plan(args, *, mode: str | None = None) -> dict:
         "purge_config": not bool(getattr(args, "preserve_config", False)),
         "targets": targets or [d.agent for d in skill_deployments],
         "skill_deployments": [
-            {"agent": d.agent, "skill_path": d.skill_path,
-             "mode": d.mode, "installed_at": d.installed_at}
+            {
+                "agent": d.agent,
+                "skill_path": d.skill_path,
+                "mode": d.mode,
+                "installed_at": d.installed_at,
+            }
             for d in skill_deployments
         ],
         "wikis_found": annotated,
@@ -99,10 +106,6 @@ def _plan(args, *, mode: str | None = None) -> dict:
         "installer": _detect_installer(),
     }
     return plan
-
-
-
-
 
 
 def _purge_global_dir() -> dict:
@@ -147,9 +150,7 @@ def _purge_global_dir() -> dict:
 
 
 # ---- known temp artifact paths that accumulate during xu-wiki use ----
-_TEMP_ARTIFACT_PATHS = (
-    Path("/tmp/xu-wiki"),
-)
+_TEMP_ARTIFACT_PATHS = (Path("/tmp/xu-wiki"),)
 
 
 def _purge_temp_artifacts() -> dict:
@@ -175,15 +176,28 @@ def _purge_temp_artifacts() -> dict:
             except Exception as e:
                 skipped.append(f"/tmp/xu-wiki: {e}")
         else:
-            skipped.append("/tmp/xu-wiki: no .venv/ found, skipping (not a xu-wiki project)")
+            skipped.append(
+                "/tmp/xu-wiki: no .venv/ found, skipping (not a xu-wiki project)"
+            )
 
     # uv cache pruning
     uv_cache_base = Path.home() / ".cache" / "uv" / "archive-v0"
     if uv_cache_base.is_dir():
         # xu-wiki runtime deps that land in uv cache when installed via pip
-        known_deps = {"httpx", "yarl", "markupsafe", "pillow", "markitdown",
-                      "charset_normalizer", "idna", "certifi", "urllib3",
-                      "frozenlist", "multidict", "anyio"}
+        known_deps = {
+            "httpx",
+            "yarl",
+            "markupsafe",
+            "pillow",
+            "markitdown",
+            "charset_normalizer",
+            "idna",
+            "certifi",
+            "urllib3",
+            "frozenlist",
+            "multidict",
+            "anyio",
+        }
         for entry in uv_cache_base.iterdir():
             if not entry.is_dir():
                 continue
@@ -239,11 +253,11 @@ def _pip_uninstall() -> dict:
     """
     cmd_full = [sys.executable, "-m", "pip", "uninstall", "xu-wiki", "-y"]
     cmd_redacted = ["python3", "-m", "pip", "uninstall", "xu-wiki", "-y"]
-    redaction_note = "(sys.executable absolute path redacted; see command_full for debug)"
+    redaction_note = (
+        "(sys.executable absolute path redacted; see command_full for debug)"
+    )
     try:
-        proc = subprocess.run(
-            cmd_full, capture_output=True, text=True, timeout=120
-        )
+        proc = subprocess.run(cmd_full, capture_output=True, text=True, timeout=120)
         return {
             "command": " ".join(cmd_redacted),
             "command_redaction_note": redaction_note,
@@ -254,15 +268,21 @@ def _pip_uninstall() -> dict:
             "ok": proc.returncode == 0,
         }
     except subprocess.TimeoutExpired:
-        return {"command": " ".join(cmd_redacted),
-                "command_redaction_note": redaction_note,
-                "command_full": " ".join(cmd_full),
-                "error": "timeout after 120s", "ok": False}
+        return {
+            "command": " ".join(cmd_redacted),
+            "command_redaction_note": redaction_note,
+            "command_full": " ".join(cmd_full),
+            "error": "timeout after 120s",
+            "ok": False,
+        }
     except Exception as e:
-        return {"command": " ".join(cmd_redacted),
-                "command_redaction_note": redaction_note,
-                "command_full": " ".join(cmd_full),
-                "error": str(e), "ok": False}
+        return {
+            "command": " ".join(cmd_redacted),
+            "command_redaction_note": redaction_note,
+            "command_full": " ".join(cmd_full),
+            "error": str(e),
+            "ok": False,
+        }
 
 
 def _pipx_uninstall() -> dict:
@@ -293,8 +313,11 @@ def _purge_skill_bundles(targets: list[str] | None = None) -> dict:
     """
     manifest = _read_manifest()
     if not manifest:
-        return {"removed": [], "skipped": True,
-                "reason": "no manifest found; nothing to clean"}
+        return {
+            "removed": [],
+            "skipped": True,
+            "reason": "no manifest found; nothing to clean",
+        }
 
     deployments = manifest.deployments
     if targets:
@@ -314,8 +337,7 @@ def _purge_skill_bundles(targets: list[str] | None = None) -> dict:
                 p.unlink()
             elif p.exists():
                 shutil.rmtree(p)
-            removed.append({"agent": d.agent, "path": d.skill_path,
-                            "mode": d.mode})
+            removed.append({"agent": d.agent, "path": d.skill_path, "mode": d.mode})
         except Exception as e:
             failures.append({"agent": d.agent, "path": d.skill_path, "error": str(e)})
         remaining.append(d)
@@ -323,17 +345,26 @@ def _purge_skill_bundles(targets: list[str] | None = None) -> dict:
     if remaining and not failures:
         manifest.deployments = remaining
         try:
-            MANIFEST_PATH.write_text(json.dumps({
-                "version": manifest.version,
-                "deployments": [
-                    {"agent": d.agent, "skill_path": d.skill_path,
-                     "mode": d.mode, "link_target": d.link_target,
-                     "installed_at": d.installed_at}
-                    for d in manifest.deployments
-                ],
-                "pip_installer": manifest.pip_installer,
-                "pip_package": manifest.pip_package,
-            }, indent=2))
+            MANIFEST_PATH.write_text(
+                json.dumps(
+                    {
+                        "version": manifest.version,
+                        "deployments": [
+                            {
+                                "agent": d.agent,
+                                "skill_path": d.skill_path,
+                                "mode": d.mode,
+                                "link_target": d.link_target,
+                                "installed_at": d.installed_at,
+                            }
+                            for d in manifest.deployments
+                        ],
+                        "pip_installer": manifest.pip_installer,
+                        "pip_package": manifest.pip_package,
+                    },
+                    indent=2,
+                )
+            )
         except Exception:
             pass
     elif not remaining or (not remaining and failures):
@@ -348,8 +379,11 @@ def _purge_skill_bundles(targets: list[str] | None = None) -> dict:
         except FileNotFoundError:
             pass
 
-    return {"removed": removed, "failures": failures,
-            "skipped": False if removed else True}
+    return {
+        "removed": removed,
+        "failures": failures,
+        "skipped": False if removed else True,
+    }
 
 
 def _format_dry_run(plan: dict) -> str:
@@ -368,20 +402,27 @@ def _format_dry_run(plan: dict) -> str:
         for d in skill_deps:
             mode = d.get("mode", "unknown")
             lt = d.get("link_target", "")
-            lines.append(f"    - {d['agent']:<8} {d['skill_path']}  ({mode}"
-                        + (f" → {lt}" if lt else "") + ")")
+            lines.append(
+                f"    - {d['agent']:<8} {d['skill_path']}  ({mode}"
+                + (f" → {lt}" if lt else "")
+                + ")"
+            )
     else:
         lines.append("  Skill bundle: (none deployed)")
 
     if plan["purge_config"]:
         lines.append(f"  Config:     {plan['global_dir']}  (REMOVED)")
     else:
-        lines.append(f"  Config:     {plan['global_dir']}  (preserved — --preserve-config)")
+        lines.append(
+            f"  Config:     {plan['global_dir']}  (preserved — --preserve-config)"
+        )
 
     if plan.get("wikis_found"):
         lines.append("  Wiki data:")
         for w in plan["wikis_found"]:
-            lines.append(f"    - {w['name']:<8} {w['path']}  (preserved — wiki data NEVER deleted)")
+            lines.append(
+                f"    - {w['name']:<8} {w['path']}  (preserved — wiki data NEVER deleted)"
+            )
 
     lines.append("  Temp artifacts: /tmp/xu-wiki/ + uv cache entries (always removed)")
     return "\n".join(lines)
@@ -399,32 +440,41 @@ def cmd_uninstall(args) -> dict:
         )
 
     # ----- execute branch -----
-    result: dict = {"mode": "execute", "pip": None, "wikis": None,
-                    "config_dir": None, "skill_bundles": None,
-                    "temp_artifacts": None, "installer": None}
+    result: dict = {
+        "mode": "execute",
+        "pip": None,
+        "wikis": None,
+        "config_dir": None,
+        "skill_bundles": None,
+        "temp_artifacts": None,
+        "installer": None,
+    }
 
     # 0) detect installer context. Already in plan via _plan(); re-read
     # here so the pipx guard is a single local reference.
     installer = plan["installer"]
 
     # 1) wikis — never deleted (BAN-UNINST-1)
-    result["wikis"] = {"skipped": True,
-                       "reason": "wiki data is NEVER deleted"}
+    result["wikis"] = {"skipped": True, "reason": "wiki data is NEVER deleted"}
 
     # 2) skill bundles (only if --purge-skill, default: remove)
     if plan["purge_skill"]:
         targets = plan.get("targets")
         result["skill_bundles"] = _purge_skill_bundles(targets if targets else None)
     else:
-        result["skill_bundles"] = {"skipped": True,
-                                   "reason": "--keep-skill set; skill bundles preserved"}
+        result["skill_bundles"] = {
+            "skipped": True,
+            "reason": "--keep-skill set; skill bundles preserved",
+        }
 
     # 3) global dir (only if --purge-config, default: remove)
     if plan["purge_config"]:
         result["config_dir"] = _purge_global_dir()
     else:
-        result["config_dir"] = {"skipped": True,
-                                "reason": "--preserve-config set; ~/.xu-wiki/ preserved"}
+        result["config_dir"] = {
+            "skipped": True,
+            "reason": "--preserve-config set; ~/.xu-wiki/ preserved",
+        }
 
     # 4) pip/pipx uninstall (skip if --keep-pip)
     if plan["pip_uninstall"]:
@@ -433,8 +483,10 @@ def cmd_uninstall(args) -> dict:
         else:
             result["pip"] = _pip_uninstall()
     else:
-        result["pip"] = {"skipped": True,
-                         "reason": "--keep-pip set; pip uninstall not run"}
+        result["pip"] = {
+            "skipped": True,
+            "reason": "--keep-pip set; pip uninstall not run",
+        }
 
     # 5) temp artifacts: /tmp/xu-wiki/ and uv cache entries for xu-wiki deps
     result["temp_artifacts"] = _purge_temp_artifacts()

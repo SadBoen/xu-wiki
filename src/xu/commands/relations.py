@@ -3,6 +3,7 @@
 Relations stored in each node's frontmatter `relations` YAML list.
 No SQLite; frontmatter is the sole store.
 """
+
 from __future__ import annotations
 
 from ..ingest.relations_lru import add_relation, list_relations
@@ -41,8 +42,9 @@ def _rel_add(args) -> dict:
         return error(f"node not found: {args.to_uid}", "NodeNotFound")
 
     max_edges = cfg_get(ctx.config, "relation.max_edges", 50)
-    result = add_relation(from_fm, args.from_uid, args.to_uid,
-                          args.relation_name, args.comment, max_edges)
+    result = add_relation(
+        from_fm, args.from_uid, args.to_uid, args.relation_name, args.comment, max_edges
+    )
 
     write_node_frontmatter(ctx, args.from_uid, from_fm)
 

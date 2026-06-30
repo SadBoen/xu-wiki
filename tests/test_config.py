@@ -5,9 +5,9 @@ attributes (set at import time from XU_HOME env). The test wiki is seeded
 directly into the registry yaml — no real filesystem wiki is required for
 config SOP, since the SOP touches only the global registry + global config.
 """
+
 import os
 import sys
-import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -66,12 +66,14 @@ def test_alias_set_by_alias_works(xu_home):
 
 
 def test_alias_set_conflict(xu_home):
-    cfg_mod.save_registry({
-        "wikis": {
-            "A": {"path": "/tmp/a", "alias": None, "created_at": now_ts()},
-            "B": {"path": "/tmp/b", "alias": "X", "created_at": now_ts()},
+    cfg_mod.save_registry(
+        {
+            "wikis": {
+                "A": {"path": "/tmp/a", "alias": None, "created_at": now_ts()},
+                "B": {"path": "/tmp/b", "alias": "X", "created_at": now_ts()},
+            }
         }
-    })
+    )
     r = cmd_mod.cmd_alias_set(_args(wiki="A", alias="X"))
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "AliasConflict"
@@ -231,6 +233,7 @@ def test_config_path(xu_home):
 # 3.4 fix: save_global_config auto-chmods 600 when a secret is present.
 # ----------------------------------------------------------------------
 
+
 def test_save_global_config_chmods_600_when_secret_present(xu_home, monkeypatch):
     """When mineru.api_key is set, the saved file should be chmod 600."""
     monkeypatch.setenv("MINERU_API_KEY", "sk-test-1234567890abcdef")
@@ -247,7 +250,9 @@ def test_save_global_config_no_chmod_when_no_secret(xu_home):
     assert mode in ("0o600", "0o644"), f"unexpected mode {mode}"
 
 
-def test_save_global_config_chmod_idempotent_after_repeated_writes(xu_home, monkeypatch):
+def test_save_global_config_chmod_idempotent_after_repeated_writes(
+    xu_home, monkeypatch
+):
     """If user re-saves with same key, chmod stays 600 (no surprise flip)."""
     monkeypatch.setenv("MINERU_API_KEY", "sk-test-abcdef1234567890")
     cmd_mod.cmd_config_set_mineru_key(_args())

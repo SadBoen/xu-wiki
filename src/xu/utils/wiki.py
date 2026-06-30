@@ -1,4 +1,5 @@
 """Wiki instance context: locate root, expose four-piece layout paths."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,9 +47,7 @@ class WikiContext:
 
     def is_valid(self) -> bool:
         return (
-            self.raws_dir.is_dir()
-            and self.nodes_dir.is_dir()
-            and self.xu_dir.is_dir()
+            self.raws_dir.is_dir() and self.nodes_dir.is_dir() and self.xu_dir.is_dir()
         )
 
 

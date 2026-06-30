@@ -3,6 +3,7 @@
 Builds the three-piece layout (raws/nodes/.xu), wiki-internal config,
 and a registry entry. Builds in a temp dir then atomically renames (CONST-CRT-2).
 """
+
 from __future__ import annotations
 
 import os
@@ -166,7 +167,7 @@ def cmd_create(args) -> dict:
     tmp = Path(tempfile.mkdtemp(prefix=".xu-create-", dir=str(tmp_parent)))
     try:
         _build_skeleton(tmp, name)
-        os.replace(str(tmp), str(target))   # atomic on the same filesystem
+        os.replace(str(tmp), str(target))  # atomic on the same filesystem
     except Exception as e:  # rollback: leave no half-built artifact
         shutil.rmtree(tmp, ignore_errors=True)
         return error(f"create failed, rolled back: {e}", "CreateFailed")
@@ -178,8 +179,22 @@ def cmd_create(args) -> dict:
         "alias": bound_alias,
         "path": str(target),
         "version": WIKI_FORMAT_VERSION,
-        "layout": ["raws/", "nodes/pages/", "nodes/entities/", "nodes/lists/", "nodes/reports/", ".xu/"],
-        "structures": ["nodes/pages/", "nodes/entities/", "nodes/lists/", "nodes/reports/", "raws/", ".xu/"],
+        "layout": [
+            "raws/",
+            "nodes/pages/",
+            "nodes/entities/",
+            "nodes/lists/",
+            "nodes/reports/",
+            ".xu/",
+        ],
+        "structures": [
+            "nodes/pages/",
+            "nodes/entities/",
+            "nodes/lists/",
+            "nodes/reports/",
+            "raws/",
+            ".xu/",
+        ],
     }
     if alias_warning:
         return error(
@@ -198,7 +213,9 @@ def cmd_create(args) -> dict:
     )
 
 
-def _register(name: str, target: Path, alias: str | None) -> tuple[str | None, str | None]:
+def _register(
+    name: str, target: Path, alias: str | None
+) -> tuple[str | None, str | None]:
     """Add/update registry entry. Returns (warning_or_None, bound_alias_or_None)."""
     reg = load_registry()
     reg.setdefault("wikis", {})

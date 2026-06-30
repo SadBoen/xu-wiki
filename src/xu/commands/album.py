@@ -7,6 +7,7 @@ Gallery ingestion now goes through:
 This module is kept for backwards compatibility and will be removed in a
 future version.
 """
+
 from __future__ import annotations
 
 from ..utils.response import error
@@ -33,4 +34,5 @@ def cmd_ingest_album(args) -> dict:
 def _scan_fm_index(ctx):
     """Stub: redirects to ingest._scan_fm_index for backwards compat."""
     from ..commands.ingest import _scan_fm_index as _scan
+
     return _scan(ctx)

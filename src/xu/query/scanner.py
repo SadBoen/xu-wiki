@@ -1,4 +1,5 @@
 """ripgrep scanner with Python re fallback (DESIGN-ARCH-3, CONST-QRY-8)."""
+
 from __future__ import annotations
 
 import json
@@ -32,8 +33,15 @@ def _scan_rg(search_dir: Path, keywords: list[str], timeout: float) -> dict:
     results: dict[str, list] = {k: [] for k in keywords}
     for kw in keywords:
         cmd = [
-            "rg", "--json", "--fixed-strings", "--ignore-case",
-            "--type-add", "md:*.md", "-tmd", kw, str(search_dir),
+            "rg",
+            "--json",
+            "--fixed-strings",
+            "--ignore-case",
+            "--type-add",
+            "md:*.md",
+            "-tmd",
+            kw,
+            str(search_dir),
         ]
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -57,13 +65,15 @@ def _scan_rg(search_dir: Path, keywords: list[str], timeout: float) -> dict:
                 # (CONST-QRY-8 determinism on CJK text).
                 byte_start = sm["start"]
                 col_char = len(line_bytes[:byte_start].decode("utf-8", errors="ignore"))
-                results[kw].append({
-                    "file": path,
-                    "line": line_no,
-                    "col": col_char,
-                    "match": sm["match"]["text"],
-                    "line_text": text.rstrip("\n"),
-                })
+                results[kw].append(
+                    {
+                        "file": path,
+                        "line": line_no,
+                        "col": col_char,
+                        "match": sm["match"]["text"],
+                        "line_text": text.rstrip("\n"),
+                    }
+                )
     return results
 
 
@@ -78,11 +88,13 @@ def _scan_re(search_dir: Path, keywords: list[str]) -> dict:
         for line_no, line in enumerate(text.splitlines(), start=1):
             for kw, pat in patterns.items():
                 for m in pat.finditer(line):
-                    results[kw].append({
-                        "file": str(md),
-                        "line": line_no,
-                        "col": m.start(),
-                        "match": m.group(0),
-                        "line_text": line,
-                    })
+                    results[kw].append(
+                        {
+                            "file": str(md),
+                            "line": line_no,
+                            "col": m.start(),
+                            "match": m.group(0),
+                            "line_text": line,
+                        }
+                    )
     return results

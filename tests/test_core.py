@@ -1,7 +1,7 @@
 """Unit tests for deterministic core logic (CLI determinism, PRIN-QRY-3)."""
+
 import os
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -100,10 +100,12 @@ def test_lru_touch_moves_forward():
 def test_doctor_summarize_by_layer_and_fixability():
     report = {
         "doctor-files": {"issues": [{"layer": "Page", "fixable": True}]},
-        "doctor-report-evidence": {"issues": [
-            {"layer": "Report", "fixable": False},
-            {"layer": "Report", "fixable": False},
-        ]},
+        "doctor-report-evidence": {
+            "issues": [
+                {"layer": "Report", "fixable": False},
+                {"layer": "Report", "fixable": False},
+            ]
+        },
         "doctor-idf": {"issues": [{"layer": "cross", "fixable": True}]},
     }
     s = _summarize(report)
@@ -114,11 +116,32 @@ def test_doctor_summarize_by_layer_and_fixability():
 
 
 def test_touch_relation_no_rotation_multi_relname():
-    fm = {"uid": "2026-N0000000", "relations": [
-        {"to_uid": "2026-N0000001", "relation_name": "r1", "comment": "", "created_at": 0, "position": 0},
-        {"to_uid": "2026-N0000001", "relation_name": "r2", "comment": "", "created_at": 0, "position": 1},
-        {"to_uid": "2026-N0000001", "relation_name": "r3", "comment": "", "created_at": 0, "position": 2},
-    ]}
+    fm = {
+        "uid": "2026-N0000000",
+        "relations": [
+            {
+                "to_uid": "2026-N0000001",
+                "relation_name": "r1",
+                "comment": "",
+                "created_at": 0,
+                "position": 0,
+            },
+            {
+                "to_uid": "2026-N0000001",
+                "relation_name": "r2",
+                "comment": "",
+                "created_at": 0,
+                "position": 1,
+            },
+            {
+                "to_uid": "2026-N0000001",
+                "relation_name": "r3",
+                "comment": "",
+                "created_at": 0,
+                "position": 2,
+            },
+        ],
+    }
     src = "2026-N0000000"
     touch_relation(fm, src, "2026-N0000001")
     order = [r["relation_name"] for r in list_relations(fm, src)]
@@ -126,23 +149,51 @@ def test_touch_relation_no_rotation_multi_relname():
 
 
 def test_touch_relation_advances_one_slot():
-    fm = {"uid": "2026-N0000000", "relations": [
-        {"to_uid": "2026-N0000001", "relation_name": "a", "comment": "", "created_at": 0, "position": 0},
-        {"to_uid": "2026-N0000002", "relation_name": "b", "comment": "", "created_at": 0, "position": 1},
-        {"to_uid": "2026-N0000003", "relation_name": "c", "comment": "", "created_at": 0, "position": 2},
-    ]}
+    fm = {
+        "uid": "2026-N0000000",
+        "relations": [
+            {
+                "to_uid": "2026-N0000001",
+                "relation_name": "a",
+                "comment": "",
+                "created_at": 0,
+                "position": 0,
+            },
+            {
+                "to_uid": "2026-N0000002",
+                "relation_name": "b",
+                "comment": "",
+                "created_at": 0,
+                "position": 1,
+            },
+            {
+                "to_uid": "2026-N0000003",
+                "relation_name": "c",
+                "comment": "",
+                "created_at": 0,
+                "position": 2,
+            },
+        ],
+    }
     src = "2026-N0000000"
     touch_relation(fm, src, "2026-N0000003")
     order = [r["to_uid"] for r in list_relations(fm, src)]
-    assert order == ["2026-N0000001", "2026-N0000003", "2026-N0000002"]  # c moved up one
+    assert order == [
+        "2026-N0000001",
+        "2026-N0000003",
+        "2026-N0000002",
+    ]  # c moved up one
 
 
 def test_safe_node_path_blocks_traversal():
     from xu.utils.paths import safe_node_path
+
     assert safe_node_path("papers/ml") == "papers/ml"
     assert safe_node_path("/papers/ml/") == "papers/ml"
     assert safe_node_path("") == ""
-    assert safe_node_path("/abs/path") == "abs/path"  # leading slash stripped, stays in-tree
+    assert (
+        safe_node_path("/abs/path") == "abs/path"
+    )  # leading slash stripped, stays in-tree
     for bad in ("../etc", "a/../../b", "../../tmp/evil"):
         try:
             safe_node_path(bad)
@@ -153,7 +204,10 @@ def test_safe_node_path_blocks_traversal():
 
 if __name__ == "__main__":
     import traceback
-    funcs = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+
+    funcs = [
+        v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)
+    ]
     failed = 0
     for f in funcs:
         try:
@@ -163,5 +217,5 @@ if __name__ == "__main__":
             failed += 1
             print(f"FAIL {f.__name__}")
             traceback.print_exc()
-    print(f"\n{len(funcs)-failed}/{len(funcs)} passed")
+    print(f"\n{len(funcs) - failed}/{len(funcs)} passed")
     sys.exit(1 if failed else 0)

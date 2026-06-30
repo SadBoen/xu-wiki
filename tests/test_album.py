@@ -8,6 +8,7 @@ PRIN-ING-3a (SHA256 three-way). The gallery flow goes:
 Tests: Phase 1, Phase 2, dedup, captions, vision, Pillow degradation,
 raws/ copy, and integration (resolve_wiki round-trip).
 """
+
 import json
 import os
 import sys
@@ -30,6 +31,7 @@ from xu.utils.wiki import resolve_wiki
 # fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def xu_home(monkeypatch, tmp_path):
     monkeypatch.setattr(cfg_mod, "GLOBAL_DIR", tmp_path)
@@ -41,9 +43,13 @@ def xu_home(monkeypatch, tmp_path):
 def wiki(xu_home):
     name = "album-test-wiki"
     root = xu_home / "wikis" / name
-    r = create_mod.cmd_create(SimpleNamespace(
-        name=name, path=str(root), alias=None,
-    ))
+    r = create_mod.cmd_create(
+        SimpleNamespace(
+            name=name,
+            path=str(root),
+            alias=None,
+        )
+    )
     assert r["status"] == "success", r
     return name, root
 
@@ -61,30 +67,62 @@ def _args(**kw) -> SimpleNamespace:
 # helpers
 # ---------------------------------------------------------------------------
 
-def _phase1(wiki_name, title, files, node_path="", layout="table",
-            vision=False, captions="", author="agent"):
+
+def _phase1(
+    wiki_name,
+    title,
+    files,
+    node_path="",
+    layout="table",
+    vision=False,
+    captions="",
+    author="agent",
+):
     """Run Phase 1: ingest-file with --files (gallery mode)."""
-    r1 = ingest_mod.cmd_ingest_file(_args(
-        wiki=wiki_name, title=title, files=files,
-        node_path=node_path, layout=layout, vision=vision,
-        captions=captions, author=author,
-        file=None,
-    ))
+    r1 = ingest_mod.cmd_ingest_file(
+        _args(
+            wiki=wiki_name,
+            title=title,
+            files=files,
+            node_path=node_path,
+            layout=layout,
+            vision=vision,
+            captions=captions,
+            author=author,
+            file=None,
+        )
+    )
     return r1
 
 
 def _phase2(wiki_name, temp, title, content_type="gallery", author="agent"):
     """Run Phase 2: ingest-commit with temp file."""
-    r2 = ingest_mod.cmd_ingest_commit(_args(
-        wiki=wiki_name, temp=temp, title=title,
-        content_type=content_type, author=author,
-        native=None, source=None, node_path="", relations="",
-    ))
+    r2 = ingest_mod.cmd_ingest_commit(
+        _args(
+            wiki=wiki_name,
+            temp=temp,
+            title=title,
+            content_type=content_type,
+            author=author,
+            native=None,
+            source=None,
+            node_path="",
+            relations="",
+        )
+    )
     return r2
 
 
-def _two_phase(wiki_name, title, files, node_path="", layout="table",
-                vision=False, captions="", author="agent"):
+def _two_phase(
+    wiki_name,
+    title,
+    files,
+    node_path="",
+    layout="table",
+    vision=False,
+    captions="",
+    author="agent",
+):
     """Full two-phase album commit."""
     r1 = _phase1(wiki_name, title, files, node_path, layout, vision, captions, author)
     if r1["status"] != "success":
@@ -98,15 +136,23 @@ def _two_phase(wiki_name, title, files, node_path="", layout="table",
 # happy path: table layout
 # ---------------------------------------------------------------------------
 
+
 def test_album_happy_table(wiki, tmp_path):
     name, root = wiki
     for n in ("001.jpeg", "002.jpeg", "003.jpeg"):
         p = tmp_path / "photos" / n
         _write_fake_jpeg(p, body=f"image-{n}".encode())
-    files_str = ",".join(str(tmp_path / "photos" / n) for n in ("001.jpeg", "002.jpeg", "003.jpeg"))
+    files_str = ",".join(
+        str(tmp_path / "photos" / n) for n in ("001.jpeg", "002.jpeg", "003.jpeg")
+    )
 
-    r = _two_phase(name, "SGW001 第一次岸上系统部署完工", files_str,
-                   node_path="船舶/SGW001/照片", layout="table")
+    r = _two_phase(
+        name,
+        "SGW001 第一次岸上系统部署完工",
+        files_str,
+        node_path="船舶/SGW001/照片",
+        layout="table",
+    )
     assert r["status"] == "success", r
     data = r["data"]
     assert data["count"] == 3
@@ -115,7 +161,11 @@ def test_album_happy_table(wiki, tmp_path):
     uid = data["uid"]
     raws_uid_dir = root / "raws" / "船舶" / "SGW001" / "照片" / uid
     assert raws_uid_dir.is_dir(), f"expected {raws_uid_dir} to exist"
-    assert sorted(p.name for p in raws_uid_dir.iterdir()) == ["001.jpeg", "002.jpeg", "003.jpeg"]
+    assert sorted(p.name for p in raws_uid_dir.iterdir()) == [
+        "001.jpeg",
+        "002.jpeg",
+        "003.jpeg",
+    ]
 
     # Page written
     md = root / data["md_path"]
@@ -142,25 +192,42 @@ def test_album_happy_table(wiki, tmp_path):
 # Phase 1 validation
 # ---------------------------------------------------------------------------
 
+
 def test_album_phase1_missing_wiki(xu_home, tmp_path):
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)
-    r = ingest_mod.cmd_ingest_file(_args(
-        wiki="no-such-wiki", title="t", files=str(p),
-        node_path="", layout="table", vision=False, captions="",
-        author="agent", file=None,
-    ))
+    r = ingest_mod.cmd_ingest_file(
+        _args(
+            wiki="no-such-wiki",
+            title="t",
+            files=str(p),
+            node_path="",
+            layout="table",
+            vision=False,
+            captions="",
+            author="agent",
+            file=None,
+        )
+    )
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "WikiNotFound"
 
 
 def test_album_phase1_missing_files(wiki):
     name, _ = wiki
-    r = ingest_mod.cmd_ingest_file(_args(
-        wiki=name, title="t", files=None,
-        node_path="", layout="table", vision=False, captions="",
-        author="agent", file=None,
-    ))
+    r = ingest_mod.cmd_ingest_file(
+        _args(
+            wiki=name,
+            title="t",
+            files=None,
+            node_path="",
+            layout="table",
+            vision=False,
+            captions="",
+            author="agent",
+            file=None,
+        )
+    )
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "FileNotFound"
 
@@ -169,24 +236,38 @@ def test_album_phase1_relative_path(wiki, tmp_path):
     name, _ = wiki
     rel = tmp_path / "x.jpeg"
     _write_fake_jpeg(rel)
-    r = ingest_mod.cmd_ingest_file(_args(
-        wiki=name, title="t",
-        files=f"./{rel.name}",          # relative — must be rejected
-        node_path="", layout="table", vision=False, captions="",
-        author="agent", file=None,
-    ))
+    r = ingest_mod.cmd_ingest_file(
+        _args(
+            wiki=name,
+            title="t",
+            files=f"./{rel.name}",  # relative — must be rejected
+            node_path="",
+            layout="table",
+            vision=False,
+            captions="",
+            author="agent",
+            file=None,
+        )
+    )
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "PathNotAbsolute"
 
 
 def test_album_phase1_file_not_found(wiki, tmp_path):
     name, _ = wiki
-    r = ingest_mod.cmd_ingest_file(_args(
-        wiki=name, title="t",
-        files=str(tmp_path / "missing.jpeg"),
-        node_path="", layout="table", vision=False, captions="",
-        author="agent", file=None,
-    ))
+    r = ingest_mod.cmd_ingest_file(
+        _args(
+            wiki=name,
+            title="t",
+            files=str(tmp_path / "missing.jpeg"),
+            node_path="",
+            layout="table",
+            vision=False,
+            captions="",
+            author="agent",
+            file=None,
+        )
+    )
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "FileNotFound"
 
@@ -195,13 +276,22 @@ def test_album_phase1_file_not_found(wiki, tmp_path):
 # Phase 2 validation
 # ---------------------------------------------------------------------------
 
+
 def test_album_phase2_temp_not_found(wiki, tmp_path):
     name, _ = wiki
-    r = ingest_mod.cmd_ingest_commit(_args(
-        wiki=name, temp=str(tmp_path / "nonexistent.pending"),
-        title="t", content_type="gallery", author="agent",
-        native=None, source=None, node_path="", relations="",
-    ))
+    r = ingest_mod.cmd_ingest_commit(
+        _args(
+            wiki=name,
+            temp=str(tmp_path / "nonexistent.pending"),
+            title="t",
+            content_type="gallery",
+            author="agent",
+            native=None,
+            source=None,
+            node_path="",
+            relations="",
+        )
+    )
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "TempNotFound"
 
@@ -212,11 +302,19 @@ def test_album_phase2_invalid_content_type(wiki, tmp_path):
     _write_fake_jpeg(p)
     r1 = _phase1(name, "t", str(p))
     assert r1["status"] == "success"
-    r2 = ingest_mod.cmd_ingest_commit(_args(
-        wiki=name, temp=r1["data"]["temp"],
-        title="t", content_type="invalid_type", author="agent",
-        native=None, source=None, node_path="", relations="",
-    ))
+    r2 = ingest_mod.cmd_ingest_commit(
+        _args(
+            wiki=name,
+            temp=r1["data"]["temp"],
+            title="t",
+            content_type="invalid_type",
+            author="agent",
+            native=None,
+            source=None,
+            node_path="",
+            relations="",
+        )
+    )
     assert r2["status"] == "error"
     assert r2["data"]["error_class"] == "InvalidContentType"
 
@@ -224,6 +322,7 @@ def test_album_phase2_invalid_content_type(wiki, tmp_path):
 # ---------------------------------------------------------------------------
 # dedup
 # ---------------------------------------------------------------------------
+
 
 def test_album_source_collision_skipped(wiki, tmp_path):
     """If a source file's hash already exists, Phase 1 skips it (no I/O waste)."""
@@ -243,8 +342,8 @@ def test_album_source_collision_skipped(wiki, tmp_path):
     # Phase 1 catches duplicate
     r1b = _phase1(name, "second album", f"{p1},{p2}")
     assert r1b["status"] == "success", r1b
-    assert r1b["data"]["images"] == 1               # only p2 is new
-    assert len(r1b["data"]["skipped"]) == 1        # p1 is duplicate
+    assert r1b["data"]["images"] == 1  # only p2 is new
+    assert len(r1b["data"]["skipped"]) == 1  # p1 is duplicate
     assert r1b["data"]["skipped"][0]["source_hash"] == first_hash
     assert r1b["data"]["skipped"][0]["filename"] == "first.jpeg"
 
@@ -252,12 +351,13 @@ def test_album_source_collision_skipped(wiki, tmp_path):
     r2 = _phase2(name, r1b["data"]["temp"], "second album", "gallery")
     assert r2["status"] == "success", r2
     assert r2["data"]["count"] == 1
-    assert len(r2["data"]["skipped"]) == 0          # Phase 1 already deduped
+    assert len(r2["data"]["skipped"]) == 0  # Phase 1 already deduped
 
 
 # ---------------------------------------------------------------------------
 # captions + vision
 # ---------------------------------------------------------------------------
+
 
 def test_album_captions_inline_json(wiki, tmp_path):
     name, root = wiki
@@ -279,12 +379,19 @@ def test_album_captions_bad_json(wiki, tmp_path):
     name, _ = wiki
     p = tmp_path / "x.jpeg"
     _write_fake_jpeg(p)
-    r = ingest_mod.cmd_ingest_file(_args(
-        wiki=name, title="t", files=str(p),
-        node_path="", layout="table", vision=False,
-        captions="{not-json",
-        author="agent", file=None,
-    ))
+    r = ingest_mod.cmd_ingest_file(
+        _args(
+            wiki=name,
+            title="t",
+            files=str(p),
+            node_path="",
+            layout="table",
+            vision=False,
+            captions="{not-json",
+            author="agent",
+            file=None,
+        )
+    )
     assert r["status"] == "error"
     assert r["data"]["error_class"] == "BadCaptionsJSON"
 
@@ -317,6 +424,7 @@ def test_album_vision_flag_recorded(wiki, tmp_path):
 # Pillow graceful degradation
 # ---------------------------------------------------------------------------
 
+
 def test_album_runs_without_pillow(wiki, tmp_path, monkeypatch):
     """Force image_meta._PILLOW_OK = False; album still commits with null meta."""
     from xu.parsers import image_meta
@@ -340,6 +448,7 @@ def test_album_runs_without_pillow(wiki, tmp_path, monkeypatch):
 # raws/ copy (PRIN-ING-6)
 # ---------------------------------------------------------------------------
 
+
 def test_album_sources_copied_to_raws(wiki, tmp_path):
     """All source images are copied to raws/<node-path>/ before Phase 2."""
     name, root = wiki
@@ -350,8 +459,7 @@ def test_album_sources_copied_to_raws(wiki, tmp_path):
     files_str = f"{p1},{p2}"
 
     # Phase 1 alone must copy to raws/
-    r1 = _phase1(name, "raws copy test", files_str,
-                  node_path="嵌套/路径/段")
+    r1 = _phase1(name, "raws copy test", files_str, node_path="嵌套/路径/段")
     assert r1["status"] == "success", r1
 
     raws_root = root / "raws" / "嵌套" / "路径" / "段"
@@ -362,6 +470,7 @@ def test_album_sources_copied_to_raws(wiki, tmp_path):
 # ---------------------------------------------------------------------------
 # resolve_wiki round-trip
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_wiki_after_album_creation(wiki, tmp_path):
     """Created Page is queryable via resolve_wiki after commit."""
@@ -391,6 +500,7 @@ def test_resolve_wiki_after_album_creation(wiki, tmp_path):
 # temp file deleted after success (PRIN-ING-7)
 # ---------------------------------------------------------------------------
 
+
 def test_album_temp_deleted_after_commit(wiki, tmp_path):
     """Temp file is deleted after Phase 2 success."""
     name, _ = wiki
@@ -411,22 +521,36 @@ def test_album_temp_deleted_after_commit(wiki, tmp_path):
 # article large-body ingest-verify (≥1.7 KB body triggers OSError before fix)
 # ---------------------------------------------------------------------------
 
+
 def _phase1_article(wiki_name, title, file_path, node_path=""):
     """Run Phase 1: ingest-file with --file (article mode)."""
-    r = ingest_mod.cmd_ingest_file(_args(
-        wiki=wiki_name, title=title, file=file_path,
-        node_path=node_path, files=None,
-    ))
+    r = ingest_mod.cmd_ingest_file(
+        _args(
+            wiki=wiki_name,
+            title=title,
+            file=file_path,
+            node_path=node_path,
+            files=None,
+        )
+    )
     return r
 
 
 def _phase2_article(wiki_name, temp, title, content_type="article"):
     """Run Phase 2: ingest-commit with temp file (article mode)."""
-    r = ingest_mod.cmd_ingest_commit(_args(
-        wiki=wiki_name, temp=temp, title=title,
-        content_type=content_type, author="agent",
-        native=None, source=None, node_path="", relations="",
-    ))
+    r = ingest_mod.cmd_ingest_commit(
+        _args(
+            wiki=wiki_name,
+            temp=temp,
+            title=title,
+            content_type=content_type,
+            author="agent",
+            native=None,
+            source=None,
+            node_path="",
+            relations="",
+        )
+    )
     return r
 
 
@@ -445,8 +569,9 @@ def test_ingest_verify_large_body_no_oserror(wiki, tmp_path):
     # Generate a file large enough to create ≥2 split pages (1000 lines × 100
     # chars ≈ 100 KB, well above the 300-line split threshold).
     large_file = tmp_path / "large_doc.txt"
-    large_file.write_text("\n".join(f"line {i:04d} " + "x" * 90 for i in range(1000)),
-                          encoding="utf-8")
+    large_file.write_text(
+        "\n".join(f"line {i:04d} " + "x" * 90 for i in range(1000)), encoding="utf-8"
+    )
     assert large_file.stat().st_size > 90_000, "sanity: file must be ≥90 KB"
 
     r1 = _phase1_article(name, "large body test", str(large_file))

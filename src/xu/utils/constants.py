@@ -2,6 +2,7 @@
 
 These are STARTING POINTS, tunable via wiki-internal config — not contracts.
 """
+
 from __future__ import annotations
 
 WIKI_FORMAT_VERSION = "1.0.0"
@@ -9,9 +10,9 @@ WIKI_FORMAT_VERSION = "1.0.0"
 # Frontmatter field names (CONST-ARCH-2). Implementation-chosen names.
 FM_UID = "uid"
 FM_TITLE = "title"
-FM_LAYER = "layer"          # ∈ {Page, List, Report, Entity}
+FM_LAYER = "layer"  # ∈ {Page, List, Report, Entity}
 FM_CONTENT_TYPE = "content_type"  # ∈ {article, table, gallery, ...}
-FM_ACTIVE = "active"        # bool (not 0/1)
+FM_ACTIVE = "active"  # bool (not 0/1)
 FM_CREATED = "created_at"
 FM_CONTENT_HASH = "content_hash"
 FM_NODE_PATH = "node_path"
@@ -20,12 +21,20 @@ FM_SOURCE_HASH = "source_hash"
 FM_SOURCE_HASHES = "source_hashes"
 FM_SPLIT_INDEX = "split_index"
 FM_PARENT_UID = "parent_uid"
-FM_RELATIONS = "relations"    # YAML list of {to_uid, relation_name, comment, created_at}
-FM_PATCHES = "patches"        # YAML list of {op, delta, created_at}
-FM_EVIDENCE = "references"    # YAML list of {ref_uid, note} on Report nodes
-FM_MEMBERS = "members"        # YAML list of {uid, note, position} on List nodes
+FM_RELATIONS = "relations"  # YAML list of {to_uid, relation_name, comment, created_at}
+FM_PATCHES = "patches"  # YAML list of {op, delta, created_at}
+FM_EVIDENCE = "references"  # YAML list of {ref_uid, note} on Report nodes
+FM_MEMBERS = "members"  # YAML list of {uid, note, position} on List nodes
 
-REQUIRED_FM_FIELDS = [FM_UID, FM_TITLE, FM_LAYER, FM_CONTENT_TYPE, FM_ACTIVE, FM_CREATED, FM_CONTENT_HASH]
+REQUIRED_FM_FIELDS = [
+    FM_UID,
+    FM_TITLE,
+    FM_LAYER,
+    FM_CONTENT_TYPE,
+    FM_ACTIVE,
+    FM_CREATED,
+    FM_CONTENT_HASH,
+]
 
 CONTENT_TYPES = {"article", "table", "gallery"}
 
@@ -36,9 +45,15 @@ LAYERS = {"Page", "List", "Report", "Entity"}
 # Content-aware override (markdown pipe/img detection) happens in the LLM,
 # not here — this map covers unambiguous file types only.
 CONTENT_TYPE_MAP: dict[str, str] = {
-    ".xlsx": "table",   ".xls": "table",   ".csv": "table",
-    ".png": "gallery",   ".jpg": "gallery",  ".jpeg": "gallery",
-    ".webp": "gallery", ".gif": "gallery",  ".bmp": "gallery",
+    ".xlsx": "table",
+    ".xls": "table",
+    ".csv": "table",
+    ".png": "gallery",
+    ".jpg": "gallery",
+    ".jpeg": "gallery",
+    ".webp": "gallery",
+    ".gif": "gallery",
+    ".bmp": "gallery",
     # article (default): .pdf .docx .pptx .md .txt .yaml .json and all others
 }
 
@@ -50,10 +65,10 @@ SLICE_CHARS = 50
 MERGE_RADIUS = 80
 
 # Multi-round query (PRIN-QRY-14, CONST-QRY-12)
-QUERY_BLOCKS = 50             # top N blocks returned per round
-QUERY_BATCH = 30             # top N UIDs after LLM filtering
-QUERY_MAX_ROUNDS = 5         # max rounds per query session
-QUERY_MAX_EXPAND = 10        # max UIDs per expand call
+QUERY_BLOCKS = 50  # top N blocks returned per round
+QUERY_BATCH = 30  # top N UIDs after LLM filtering
+QUERY_MAX_ROUNDS = 5  # max rounds per query session
+QUERY_MAX_EXPAND = 10  # max UIDs per expand call
 
 # Relations (PRIN-ARCH-7)
 MAX_EDGES = 50
@@ -61,7 +76,7 @@ MAX_EDGES = 50
 # Assets
 COMPRESS_OVER_BYTES = 2 * 1024 * 1024
 
-QUERY_TIMEOUT_SECONDS = 10    # CONST-QRY-9
+QUERY_TIMEOUT_SECONDS = 10  # CONST-QRY-9
 
 REBUILD_GRANULARITY = ["keep-l1", "keep-l1-l2", "full"]
 

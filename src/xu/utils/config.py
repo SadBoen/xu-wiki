@@ -3,6 +3,7 @@
 Global config: ~/.xu-wiki/config.yaml  (wikis registry + api keys segment)
 Wiki config:   <wiki>/.xu/config.yaml
 """
+
 from __future__ import annotations
 
 import os
@@ -12,6 +13,7 @@ from typing import Any
 import yaml
 
 from .paths import atomic_write_text
+
 
 def _global_dir() -> Path:
     """Global config dir. Honors XU_HOME (useful for isolation/testing)."""
@@ -65,7 +67,9 @@ def save_global_config(cfg: dict) -> None:
             "# wikis: wiki 注册表（xu create / register 自动写入，不要手动编辑）\n"
             "#\n"
         )
-    atomic_write_text(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    atomic_write_text(
+        GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False)
+    )
     if _contains_secret(cfg):
         try:
             os.chmod(GLOBAL_CONFIG, 0o600)
@@ -76,10 +80,13 @@ def save_global_config(cfg: dict) -> None:
 def _contains_secret(cfg: dict) -> bool:
     """True if cfg has any non-empty `*.api_key` (or `*.token`, `*.secret`)."""
     SENSITIVE_SUFFIXES = ("api_key", "token", "secret", "password")
+
     def walk(obj):
         if isinstance(obj, dict):
             for k, v in obj.items():
-                if isinstance(k, str) and any(k.endswith(s) for s in SENSITIVE_SUFFIXES):
+                if isinstance(k, str) and any(
+                    k.endswith(s) for s in SENSITIVE_SUFFIXES
+                ):
                     if v:  # non-empty
                         return True
                 if walk(v):
@@ -87,6 +94,7 @@ def _contains_secret(cfg: dict) -> bool:
         elif isinstance(obj, list):
             return any(walk(v) for v in obj)
         return False
+
     return walk(cfg)
 
 
@@ -114,7 +122,9 @@ def save_registry(reg: dict) -> None:
             "# wikis: wiki 注册表（xu create / register 自动写入，不要手动编辑）\n"
             "#\n"
         )
-    atomic_write_text(GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    atomic_write_text(
+        GLOBAL_CONFIG, header + yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False)
+    )
     if _contains_secret(cfg):
         try:
             os.chmod(GLOBAL_CONFIG, 0o600)
@@ -143,7 +153,9 @@ def load_wiki_config(wiki_root: str | Path) -> dict:
 
 def save_wiki_config(wiki_root: str | Path, cfg: dict) -> None:
     cfg_path = Path(wiki_root) / ".xu" / "config.yaml"
-    atomic_write_text(cfg_path, yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+    atomic_write_text(
+        cfg_path, yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False)
+    )
 
 
 def cfg_get(cfg: dict, dotted: str, default: Any = None) -> Any:

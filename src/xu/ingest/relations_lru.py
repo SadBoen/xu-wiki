@@ -8,6 +8,7 @@ the node's frontmatter `relations` field:
 
 Position = list index (head = 0). No SQLite; frontmatter is the sole store.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -73,10 +74,18 @@ def add_relation(
 
     if len(raw) > max_edges:
         evicted = raw.pop()
-        result: dict[str, Any] = {"action": "refreshed" if existing_idx is not None else "created",
-                                   "evicted": {"to_uid": evicted["to_uid"], "relation_name": evicted["relation_name"]}}
+        result: dict[str, Any] = {
+            "action": "refreshed" if existing_idx is not None else "created",
+            "evicted": {
+                "to_uid": evicted["to_uid"],
+                "relation_name": evicted["relation_name"],
+            },
+        }
     else:
-        result = {"action": "refreshed" if existing_idx is not None else "created", "evicted": None}
+        result = {
+            "action": "refreshed" if existing_idx is not None else "created",
+            "evicted": None,
+        }
 
     fm[FM_RELATIONS] = raw
     return result

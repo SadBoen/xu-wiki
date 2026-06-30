@@ -1,4 +1,5 @@
 """Page splitting (PRIN-ING-4)."""
+
 from __future__ import annotations
 
 import re
@@ -40,7 +41,7 @@ def split_pages(text: str, max_lines: int = PAGE_SPLIT_LINES) -> list[str]:
     pages: list[str] = []
     cur_start = sections[0][0]
     cur_end = cur_start
-    for (a, b) in sections:
+    for a, b in sections:
         seg_len = b - cur_start
         if seg_len >= max_lines and cur_end > cur_start:
             # flush accumulated, start fresh at this section
@@ -67,9 +68,7 @@ def split_pages(text: str, max_lines: int = PAGE_SPLIT_LINES) -> list[str]:
 def _hard_split(lines: list[str], max_lines: int) -> list[str]:
     out = []
     for i in range(0, len(lines), max_lines):
-        chunk = lines[i:i + max_lines]
+        chunk = lines[i : i + max_lines]
         if any(c.strip() for c in chunk):
             out.append("\n".join(chunk))
     return out
-
-

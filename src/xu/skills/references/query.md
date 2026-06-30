@@ -91,5 +91,3 @@ xu report create --wiki <w> --title <t> --body <md> --references <uid,uid,...> [
 xu report show --wiki <w> --uid <uid>
 xu report modify --wiki <w> --uid <uid> [--title <t>] [--body <md>] [--references <uids>]
 ```
-
-

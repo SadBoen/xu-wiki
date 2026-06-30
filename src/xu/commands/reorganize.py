@@ -8,6 +8,7 @@ Moves a Page from one node_path partition to another:
 Files updated first; frontmatter updated last so failure leaves
 filesystem as source of truth for recovery.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -37,8 +38,10 @@ def cmd_reorganize(args) -> dict:
         return error(f"node not found: {args.uid}", "NodeNotFound")
 
     if fm_dict.get("layer") != "Page":
-        return error(f"reorganize is only for Page nodes; {fm_dict.get('layer')} not supported",
-                     "UnsupportedLayer")
+        return error(
+            f"reorganize is only for Page nodes; {fm_dict.get('layer')} not supported",
+            "UnsupportedLayer",
+        )
 
     old_node_path = fm_dict.get("node_path") or ""
     slug = fm_dict.get("slug") or args.uid
@@ -49,8 +52,11 @@ def cmd_reorganize(args) -> dict:
             f"node {args.uid} is already at node_path={old_node_path!r}; no move needed",
         )
 
-    new_rel_md = f"nodes/pages/{new_node_path}/{slug}.md" if new_node_path \
+    new_rel_md = (
+        f"nodes/pages/{new_node_path}/{slug}.md"
+        if new_node_path
         else f"nodes/pages/{slug}.md"
+    )
     new_md_path = ctx.root / new_rel_md
 
     old_md_path = _find_node_path(ctx, args.uid)
@@ -67,8 +73,11 @@ def cmd_reorganize(args) -> dict:
     if old_raw:
         old_raw_abs = ctx.root / old_raw
         if old_raw_abs.exists():
-            new_raw_rel = str(Path("raws") / new_node_path / Path(old_raw).name) \
-                if new_node_path else str(Path("raws") / Path(old_raw).name)
+            new_raw_rel = (
+                str(Path("raws") / new_node_path / Path(old_raw).name)
+                if new_node_path
+                else str(Path("raws") / Path(old_raw).name)
+            )
             new_raw_abs = ctx.root / new_raw_rel
             new_raw_abs.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(old_raw_abs), str(new_raw_abs))
@@ -86,12 +95,14 @@ def cmd_reorganize(args) -> dict:
         pass
 
     return success(
-        {"uid": args.uid,
-         "old_node_path": old_node_path,
-         "new_node_path": new_node_path,
-         "old_rel_md": str(old_md_path.relative_to(ctx.root)),
-         "new_rel_md": new_rel_md,
-         "moved_raw": moved_raw},
+        {
+            "uid": args.uid,
+            "old_node_path": old_node_path,
+            "new_node_path": new_node_path,
+            "old_rel_md": str(old_md_path.relative_to(ctx.root)),
+            "new_rel_md": new_rel_md,
+            "moved_raw": moved_raw,
+        },
         f"reorganized {args.uid} from {old_node_path!r} → {new_node_path!r}",
     )
 

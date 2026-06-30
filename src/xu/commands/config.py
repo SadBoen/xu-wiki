@@ -25,6 +25,7 @@ Design constraints honored:
                explicitly asking for a SET, unlike create where conflict
                is warning).
 """
+
 from __future__ import annotations
 
 import os
@@ -89,7 +90,11 @@ def cmd_alias_set(args):
             return error(
                 f"alias {new_alias!r} already used by wiki {en!r}",
                 "AliasConflict",
-                data={"attempted_alias": new_alias, "current_wiki": name, "conflicting_wiki": en},
+                data={
+                    "attempted_alias": new_alias,
+                    "current_wiki": name,
+                    "conflicting_wiki": en,
+                },
             )
 
     previous = entry.get("alias")

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Tooling baseline
+
+- **Lint/format baseline**: applied `ruff format` across `src/` and `tests/`
+  (38 files reformatted, no semantic changes). Pre-commit hook ruff version
+  bumped from `v0.4.0` → `v0.15.20` to match the locally installed ruff,
+  which fixes the format loop where hook and CLI disagreed.
+- **Type-check baseline**: mypy now passes clean (0 errors) on `src/`. Fixes:
+  - `src/xu/commands/ingest.py`: annotate Pillow `Image.open(...).convert(...)`
+    return with `# type: ignore[assignment]` (Pillow stub types `Image` vs
+    `ImageFile` more strictly than the runtime).
+  - `src/xu/parsers/image_meta.py`: annotate `exif` as `Any` to satisfy
+    `var-annotated` rule.
+- **Test imports**: removed unused imports across the test suite
+  (`tempfile` in `test_config.py` / `test_core.py`; `tempfile` redefined in
+  `test_uninstall.py` collapsed to a single top-level import; `subprocess`
+  in `test_logging.py`; `now_ts` in `test_layers.py`; `SKILL_SRC_DIR` in
+  `test_deploy_skill.py`; `album_mod` in `test_logging.py`). Removed unused
+  local `list_uid` in `tests/test_layers.py`.
+
 ### Install/Uninstall Redesign
 
 - **Skill bundle deployment**: `xu deploy skill --target <agent>` now defaults to symlink

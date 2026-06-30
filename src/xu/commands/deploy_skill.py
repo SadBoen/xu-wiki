@@ -40,6 +40,7 @@ Targets:
 The command is always explicit — no default. The agent must declare
 which target it serves.
 """
+
 from __future__ import annotations
 
 import json
@@ -77,13 +78,15 @@ class Manifest:
         deployments = []
         for d in data.get("deployments", []):
             if isinstance(d, dict):
-                deployments.append(Deployment(
-                    agent=str(d.get("agent", "")),
-                    skill_path=str(d.get("skill_path", "")),
-                    mode=str(d.get("mode", "copy")),
-                    link_target=d.get("link_target"),
-                    installed_at=str(d.get("installed_at", "")),
-                ))
+                deployments.append(
+                    Deployment(
+                        agent=str(d.get("agent", "")),
+                        skill_path=str(d.get("skill_path", "")),
+                        mode=str(d.get("mode", "copy")),
+                        link_target=d.get("link_target"),
+                        installed_at=str(d.get("installed_at", "")),
+                    )
+                )
         return cls(
             version=str(data.get("version", "0.1.0")),
             deployments=deployments,
@@ -102,6 +105,7 @@ def _read_manifest() -> Manifest | None:
     except Exception:
         return None
 
+
 CANONICAL_SKILLS = Path("~/.local/share/xu-wiki/skills").expanduser()
 MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
 
@@ -109,14 +113,14 @@ MANIFEST_PATH = Path("~/.local/share/xu-wiki/manifest.json").expanduser()
 # Target → (description, path template, project_local_bool)
 # `path_template` uses `~` and `{cwd}`; expanded at call time.
 TARGETS: dict[str, tuple[str, str, bool]] = {
-    "hermes": ("Hermes (cross-platform)",
-               "~/.hermes/skills/{name}", False),
-    "trae":   ("Trae IDE (project-local)",
-               "{cwd}/.trae/skills/{name}", True),
-    "claude": ("Claude Desktop (macOS only)",
-               "~/Library/Application Support/Claude/skills/{name}", False),
-    "cursor": ("Cursor (project-local)",
-               "{cwd}/.cursor/skills/{name}", True),
+    "hermes": ("Hermes (cross-platform)", "~/.hermes/skills/{name}", False),
+    "trae": ("Trae IDE (project-local)", "{cwd}/.trae/skills/{name}", True),
+    "claude": (
+        "Claude Desktop (macOS only)",
+        "~/Library/Application Support/Claude/skills/{name}",
+        False,
+    ),
+    "cursor": ("Cursor (project-local)", "{cwd}/.cursor/skills/{name}", True),
 }
 
 
@@ -151,8 +155,10 @@ def _resolve_target(target: str, *, cwd: str | None = None) -> tuple[str, str, P
         )
 
     if target not in TARGETS:
-        raise ValueError(f"unknown target: {target!r}; "
-                         f"choose from {sorted(list(TARGETS.keys()) + ['auto'])}")
+        raise ValueError(
+            f"unknown target: {target!r}; "
+            f"choose from {sorted(list(TARGETS.keys()) + ['auto'])}"
+        )
 
     desc, tpl, _pl = TARGETS[target]
     expanded = Path(os.path.expanduser(tpl.format(name=SKILL_NAME, cwd=cwd)))
@@ -170,7 +176,8 @@ def cmd_deploy_skill(args) -> dict:
     src = Path(SKILL_SRC_DIR)
     if not src.is_dir():
         return error(
-            f"skill source dir not found: {src}", "BundleMissing",
+            f"skill source dir not found: {src}",
+            "BundleMissing",
             data={"source_dir": str(src)},
         )
 
@@ -182,15 +189,26 @@ def cmd_deploy_skill(args) -> dict:
     failures = [r for r in results if r["status"] == "error"]
     successes = [r for r in results if r["status"] == "success"]
     if not successes:
-        return error(f"all {len(targets)} target(s) failed", "DeployFailed",
-                     data={"results": results, "total": len(targets),
-                           "succeeded": len(successes), "failed": len(failures)})
+        return error(
+            f"all {len(targets)} target(s) failed",
+            "DeployFailed",
+            data={
+                "results": results,
+                "total": len(targets),
+                "succeeded": len(successes),
+                "failed": len(failures),
+            },
+        )
     msg_parts = [f"{len(successes)}/{len(targets)} target(s) deployed"]
     if failures:
         msg_parts.append(f"{len(failures)} failed: {[r['target'] for r in failures]}")
     return success(
-        {"results": results, "total": len(targets),
-         "succeeded": len(successes), "failed": len(failures)},
+        {
+            "results": results,
+            "total": len(targets),
+            "succeeded": len(successes),
+            "failed": len(failures),
+        },
         "; ".join(msg_parts),
     )
 
@@ -200,7 +218,12 @@ def _deploy_one(target: str, use_copy: bool, src: Path) -> dict:
         target_name, desc, dest = _resolve_target(target)
     except ValueError as e:
         err_class = "NoAgentDetected" if target == "auto" else "UnknownTarget"
-        return {"status": "error", "target": target, "error": str(e), "err_class": err_class}
+        return {
+            "status": "error",
+            "target": target,
+            "error": str(e),
+            "err_class": err_class,
+        }
 
     mode = "copy" if use_copy else "symlink"
     deployed = []
@@ -278,19 +301,23 @@ def _deploy_one(target: str, use_copy: bool, src: Path) -> dict:
     }
 
 
-def _write_manifest(target: str, dest: Path, mode: str, link_target: str | None) -> None:
+def _write_manifest(
+    target: str, dest: Path, mode: str, link_target: str | None
+) -> None:
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     manifest = _read_manifest() or Manifest()
     manifest.pip_installer = _detect_installer_for_manifest()
 
     manifest.deployments = [d for d in manifest.deployments if d.agent != target]
-    manifest.deployments.append(Deployment(
-        agent=target,
-        skill_path=str(dest),
-        mode=mode,
-        link_target=link_target,
-        installed_at=datetime.now(timezone.utc).isoformat(),
-    ))
+    manifest.deployments.append(
+        Deployment(
+            agent=target,
+            skill_path=str(dest),
+            mode=mode,
+            link_target=link_target,
+            installed_at=datetime.now(timezone.utc).isoformat(),
+        )
+    )
 
     data = {
         "version": manifest.version,

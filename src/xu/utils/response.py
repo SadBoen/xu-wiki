@@ -5,6 +5,7 @@ Every CLI command returns {status, data, message, hints}.
 - warning: partially succeeded (e.g. SHA256 dup, partial relations)
 - error: fully failed (data.error_class for classification)
 """
+
 from __future__ import annotations
 
 import json
@@ -27,11 +28,15 @@ def make_response(
     }
 
 
-def success(data: Any = None, message: str = "", hints: list[str] | None = None) -> dict:
+def success(
+    data: Any = None, message: str = "", hints: list[str] | None = None
+) -> dict:
     return make_response("success", data, message, hints)
 
 
-def warning(data: Any = None, message: str = "", hints: list[str] | None = None) -> dict:
+def warning(
+    data: Any = None, message: str = "", hints: list[str] | None = None
+) -> dict:
     return make_response("warning", data, message, hints)
 
 

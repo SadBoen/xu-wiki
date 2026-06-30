@@ -7,6 +7,7 @@ read: single-node full body.
 nodes: DB metadata query (read-only, no ripgrep).
 CLI never generates summaries (PRIN-QRY-15).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,7 +19,6 @@ from ..utils import frontmatter as fm
 from ..utils.config import cfg_get
 from ..utils.response import error, success
 from ..utils.wiki import find_node_md, resolve_wiki, write_node_frontmatter
-
 
 
 def _split_kw(s: str) -> list[str]:
@@ -55,10 +55,12 @@ def _build_reflection(ctx, keywords: list[str], top_blocks: list[dict]) -> dict:
                     if uid in seen:
                         continue
                     seen.add(uid)
-                    collection.append({
-                        "uid": uid,
-                        "title": fd.get("title", ""),
-                    })
+                    collection.append(
+                        {
+                            "uid": uid,
+                            "title": fd.get("title", ""),
+                        }
+                    )
                 except Exception:
                     continue
 
@@ -148,9 +150,12 @@ def cmd_query(args) -> dict:
         _, body = fm.parse(text)
         body_offset = text.find(body) if body else 0
 
-        title_hits = sum(1 for _, h in kw_hits
-                         if (pos := _line_col_to_offset(text, h["line"], h["col"])) is not None
-                         and pos < body_offset)
+        title_hits = sum(
+            1
+            for _, h in kw_hits
+            if (pos := _line_col_to_offset(text, h["line"], h["col"])) is not None
+            and pos < body_offset
+        )
         total_hits = len(kw_hits)
         body_hit_count = total_hits - title_hits
 
@@ -161,27 +166,31 @@ def cmd_query(args) -> dict:
                 continue
             if char_pos < body_offset:
                 continue
-            s, e, snippet = make_slice(text, char_pos, char_pos + len(h["match"]),
-                                        slice_chars, slice_chars)
-            slices.append({"start": s, "end": e, "text": snippet,
-                           "hits": {kw}, "line": h["line"]})
+            s, e, snippet = make_slice(
+                text, char_pos, char_pos + len(h["match"]), slice_chars, slice_chars
+            )
+            slices.append(
+                {"start": s, "end": e, "text": snippet, "hits": {kw}, "line": h["line"]}
+            )
 
         merged = merge_slices(slices, radius, text)
         layer = node["layer"]
         bonus = layer_bonus.get(layer, 0)
         for blk in merged:
             score = _score_block(blk, keywords, title_hits, body_hit_count, bonus)
-            scored_blocks.append({
-                "uid": node["uid"],
-                "title": node["title"],
-                "layer": layer,
-                "node_path": node["node_path"],
-                "file": file_path,
-                "line": blk["line"],
-                "text": blk["text"].strip(),
-                "matched": sorted(blk["hits"]),
-                "score": round(score, 2),
-            })
+            scored_blocks.append(
+                {
+                    "uid": node["uid"],
+                    "title": node["title"],
+                    "layer": layer,
+                    "node_path": node["node_path"],
+                    "file": file_path,
+                    "line": blk["line"],
+                    "text": blk["text"].strip(),
+                    "matched": sorted(blk["hits"]),
+                    "score": round(score, 2),
+                }
+            )
 
     scored_blocks.sort(key=lambda b: b["score"], reverse=True)
     top = scored_blocks[:top_blocks]
@@ -243,7 +252,11 @@ def cmd_expand(args) -> dict:
                     continue
                 all_rels = list_relations(fd, uid)
                 if rel_names_filter:
-                    all_rels = [r for r in all_rels if r.get("relation_name") in rel_names_filter]
+                    all_rels = [
+                        r
+                        for r in all_rels
+                        if r.get("relation_name") in rel_names_filter
+                    ]
                 if limit:
                     all_rels = all_rels[:limit]
                 for r in all_rels:
@@ -268,7 +281,9 @@ def cmd_expand(args) -> dict:
     return success(
         {"nodes": result, "found": len(found), "requested": len(uids)},
         f"expanded {len(found)}/{len(uids)} UID(s) (max {query_max_expand} per call, max {max_rounds} rounds total)",
-        hints=[f"pick UIDs from these bodies and expand again (max {query_max_expand} per call); Path B: use --relation-names to narrow direction"],
+        hints=[
+            f"pick UIDs from these bodies and expand again (max {query_max_expand} per call); Path B: use --relation-names to narrow direction"
+        ],
     )
 
 
@@ -296,10 +311,16 @@ def cmd_read(args) -> dict:
     if found:
         fm_dict, body = found
         return success(
-            {"uid": fm_dict.get("uid"), "title": fm_dict.get("title"),
-             "layer": fm_dict.get("layer"), "content_type": fm_dict.get("content_type", "article"),
-             "node_path": fm_dict.get("node_path", ""), "active": fm_dict.get("active", True),
-             "body": body, "patch_versions": []},
+            {
+                "uid": fm_dict.get("uid"),
+                "title": fm_dict.get("title"),
+                "layer": fm_dict.get("layer"),
+                "content_type": fm_dict.get("content_type", "article"),
+                "node_path": fm_dict.get("node_path", ""),
+                "active": fm_dict.get("active", True),
+                "body": body,
+                "patch_versions": [],
+            },
             f"read {fm_dict.get('layer')} node {args.uid}",
         )
     return error(f"node not found: {args.uid}", "NodeNotFound")
@@ -320,15 +341,17 @@ def cmd_nodes(args) -> dict:
                     continue
                 if not args.include_inactive and not fm_dict.get("active", True):
                     continue
-                results.append({
-                    "uid": fm_dict.get("uid"),
-                    "title": fm_dict.get("title"),
-                    "layer": fm_dict.get("layer"),
-                    "content_type": fm_dict.get("content_type", "article"),
-                    "node_path": fm_dict.get("node_path", ""),
-                    "active": fm_dict.get("active", True),
-                    "created_at": fm_dict.get("created_at", 0),
-                })
+                results.append(
+                    {
+                        "uid": fm_dict.get("uid"),
+                        "title": fm_dict.get("title"),
+                        "layer": fm_dict.get("layer"),
+                        "content_type": fm_dict.get("content_type", "article"),
+                        "node_path": fm_dict.get("node_path", ""),
+                        "active": fm_dict.get("active", True),
+                        "created_at": fm_dict.get("created_at", 0),
+                    }
+                )
             except Exception:
                 continue
     results.sort(key=lambda n: n.get("created_at", 0), reverse=True)

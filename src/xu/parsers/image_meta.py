@@ -10,6 +10,7 @@ resolution / GPS / DateTime is intentionally NOT extracted — the source
 files in raws/ remain the authoritative carrier of full EXIF
 (design-docs/05-ingest §5.7).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -84,7 +85,7 @@ def read_image_meta(path: str | Path) -> dict[str, Any]:
     try:
         with Image.open(str(path)) as im:
             out["width"], out["height"] = im.size
-            exif = im.getexif() or {}
+            exif: Any = im.getexif() or {}
             if not exif:
                 return out
             # 306 = DateTime; 0x9003 = DateTimeOriginal (preferred when present)
