@@ -95,10 +95,16 @@ xu ingest-verify --wiki <w> --uid <uid>
 ## CLI reference
 
 ```bash
-# Standard
+# Standard (single-file commit — four-arg set, --node-path is required for sourced files)
 xu ingest-file --wiki <w> --file <abs> [--author <a>]
-xu ingest-commit --wiki <w> --temp <f> --title <t> [--content-type article|table|gallery] [--author <a>]
+xu ingest-commit --wiki <w> --temp <f> --title <t> --node-path <p> \
+                  [--content-type article|table|gallery] [--author <a>] \
+                  [--relations '<json>']
 xu ingest-verify --wiki <w> --uid <uid>
+
+# Album (N images, one theme → gallery)
+xu ingest-file --wiki <w> --files <abs1,abs2,...> --title <t> [--vision] [--captions '<json>'] [--author <a>]
+xu ingest-commit --wiki <w> --temp <f> --title <t> --node-path <p> --content-type gallery [--author <a>]
 
 # Native (direct body, skips Phase 1)
 xu ingest-commit --wiki <w> --native "<markdown>" --source <abs-path> --title <t> [--author <a>]
@@ -113,3 +119,4 @@ xu ingest-commit --wiki <w> --native "<markdown>" --source <abs-path> --title <t
 | Empty `raws/` despite Page nodes | `raw_path` is null in `--native` mode only — elsewhere indicates bug |
 | Skipping `ingest-verify` | Don't — always verify after commit |
 | Phase 1 temp not deleted | `ingest-commit` cleans up on success; on failure temp remains but is orphaned |
+| `ingest-commit` without `--node-path` on a sourced file | **Orphan node** at `nodes/pages/` root; `ingest-verify` reports `raw_path_node_path_mirror: skip`. Always pass `--node-path` for any source with a ship/project/category semantic. Recover via the 4-step recipe in [Step 4](#step-4-verify-mandatory). |

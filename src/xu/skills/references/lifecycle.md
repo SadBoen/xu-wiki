@@ -14,7 +14,7 @@ xu create --name <n> --path <abs> [--alias <a>]
 
 Registers in `~/.xu-wiki/registry.yaml`. Wiki data lives at `<path>/`.
 
-Use `xu install` for first-time setup (pip/pipx). `xu create` only registers existing directories.
+Use `pip install "xu-wiki[parse,nlp,vision]"` for first-time setup. `xu create` only registers existing directories.
 
 ### Step 2 — Register existing wiki
 
@@ -94,4 +94,4 @@ xu alias show --wiki <w>
 | `create` / `register` | no (registry only) | no | yes | yes |
 | `unregister` | no (registry only) | no | yes | yes |
 | `update` | no | yes | no | yes (reinstall old SHA) |
-| `uninstall --execute` | **never deleted** | yes | yes | no (pkg removed) |
+| `uninstall --execute` | **never deleted** | yes | yes | yes (reinstall via pip) |
